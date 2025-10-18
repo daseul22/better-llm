@@ -93,14 +93,18 @@ class Orchestrator:
             while turn < max_turns:
                 turn += 1
 
-                # Manager가 Worker Tool들을 호출하여 작업 수행
+                # Manager가 Worker Tool들을 호출하여 작업 수행 (스트리밍)
                 print(f"\n[Turn {turn}] 👔 ManagerAgent:")
                 print("─" * 60)
 
-                manager_response = await self.manager.analyze_and_plan(
+                manager_response = ""
+                async for chunk in self.manager.analyze_and_plan_stream(
                     self.history.get_history()
-                )
-                print(manager_response)
+                ):
+                    manager_response += chunk
+                    print(chunk, end="", flush=True)
+
+                print()
                 print()
 
                 # Manager 응답을 히스토리에 추가

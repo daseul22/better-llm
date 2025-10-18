@@ -204,14 +204,19 @@ class OrchestratorTUI(App):
             output_log.write("[bold yellow]🤖 Manager Agent:[/bold yellow]")
             output_log.write("")
 
-            # Manager가 Worker Tools를 호출하여 작업 수행
+            # Manager가 Worker Tools를 호출하여 작업 수행 (스트리밍)
             task_start_time = time.time()
-            manager_response = await self.manager.analyze_and_plan(
-                self.history.get_history()
-            )
+            manager_response = ""
 
-            # 응답 표시 (Markdown 렌더링)
-            output_log.write(Markdown(manager_response))
+            # 스트리밍으로 실시간 출력
+            async for chunk in self.manager.analyze_and_plan_stream(
+                self.history.get_history()
+            ):
+                manager_response += chunk
+                # 실시간으로 텍스트 출력 (Markdown 대신 일반 텍스트)
+                output_log.write(chunk, end="")
+
+            output_log.write("")
             output_log.write("")
 
             # 히스토리에 추가

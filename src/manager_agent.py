@@ -99,15 +99,15 @@ class ManagerAgent:
 
         return "".join(prompt_parts)
 
-    async def analyze_and_plan(self, history: List[Message]) -> str:
+    async def analyze_and_plan_stream(self, history: List[Message]):
         """
-        사용자 요청을 분석하고 작업 수행
+        사용자 요청을 분석하고 작업 수행 (스트리밍)
 
         Args:
             history: 전체 대화 히스토리
 
-        Returns:
-            매니저의 응답 (Tool 호출 결과 포함)
+        Yields:
+            매니저의 응답 청크 (텍스트만)
 
         Raises:
             Exception: SDK 호출 실패 시
@@ -133,26 +133,21 @@ class ManagerAgent:
                 permission_mode="bypassPermissions"
             )
 
-            response_text = ""
             async with ClaudeSDKClient(options=options) as client:
                 # 프롬프트 전송
                 await client.query(prompt)
 
-                # 응답 수신
+                # 응답 수신 (스트리밍)
                 async for msg in client.receive_response():
-                    # 텍스트 콘텐츠 추출
-                    if hasattr(msg, 'content'):
+                    # 텍스트 콘텐츠만 추출 (JSON 형태는 제외)
+                    if hasattr(msg, 'content') and isinstance(msg.content, list):
                         for content in msg.content:
-                            if hasattr(content, 'text'):
-                                response_text += content.text
-                    elif hasattr(msg, 'text'):
-                        response_text += msg.text
-                    else:
-                        response_text += str(msg)
+                            if hasattr(content, 'text') and content.text:
+                                yield content.text
+                    elif hasattr(msg, 'text') and isinstance(msg.text, str):
+                        yield msg.text
 
-            logger.debug(f"[Manager] Claude Agent SDK 호출 완료 (응답 길이: {len(response_text)} chars)")
-
-            return response_text
+            logger.debug(f"[Manager] Claude Agent SDK 호출 완료")
 
         except Exception as e:
             logger.error(f"❌ [Manager] SDK 호출 실패: {e}")
