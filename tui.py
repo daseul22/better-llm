@@ -43,26 +43,14 @@ class OrchestratorTUI(App):
     CSS = """
     Screen {
         background: #0d1117;
-        layers: base overlay;
-    }
-
-    /* 앱 타이틀 */
-    #app-header {
-        dock: top;
-        height: 3;
-        background: #161b22;
-        border: tall #30363d;
-        content-align: center middle;
-        text-style: bold;
-        color: #58a6ff;
     }
 
     /* 출력 영역 */
     #output-container {
-        border: tall #30363d;
+        border: tall #21262d;
         background: #0d1117;
         height: 1fr;
-        margin: 0 1;
+        margin: 1 1 0 1;
         padding: 0;
     }
 
@@ -77,36 +65,29 @@ class OrchestratorTUI(App):
     #worker-status-container {
         height: auto;
         margin: 1 1 0 1;
-        background: #161b22;
-        border: round #30363d;
+        background: transparent;
+        border: round #21262d;
         padding: 0;
     }
 
     #worker-status {
         background: transparent;
-        color: #c9d1d9;
+        color: #8b949e;
         padding: 1 2;
         height: auto;
-        text-style: bold;
     }
 
     /* 입력 영역 */
     #input-container {
         height: auto;
-        background: #161b22;
-        border: round #58a6ff;
-        margin: 1 1;
+        background: transparent;
+        border: round #388bfd;
+        margin: 1 1 0 1;
         padding: 1 2;
     }
 
-    #input-label {
-        color: #8b949e;
-        text-style: italic;
-        margin-bottom: 1;
-    }
-
     Input {
-        background: #0d1117;
+        background: transparent;
         border: none;
         color: #c9d1d9;
         padding: 0;
@@ -115,16 +96,22 @@ class OrchestratorTUI(App):
 
     Input:focus {
         border: none;
-        background: #0d1117;
+        background: transparent;
+    }
+
+    Input::placeholder {
+        color: #6e7681;
+        text-style: italic;
     }
 
     /* 하단 정보바 */
     #info-bar {
         dock: bottom;
         height: 1;
-        background: #161b22;
-        color: #8b949e;
+        background: #0d1117;
+        color: #6e7681;
         padding: 0 2;
+        border-top: tall #21262d;
     }
 
     #session-info {
@@ -139,16 +126,17 @@ class OrchestratorTUI(App):
 
     /* Footer 스타일 */
     Footer {
-        background: #161b22;
+        background: #0d1117;
+        border-top: tall #21262d;
     }
 
     Footer > .footer--key {
-        background: #21262d;
+        background: #1c2128;
         color: #58a6ff;
     }
 
     Footer > .footer--description {
-        color: #c9d1d9;
+        color: #8b949e;
     }
     """
 
@@ -171,9 +159,6 @@ class OrchestratorTUI(App):
 
     def compose(self) -> ComposeResult:
         """UI 구성"""
-        # 앱 헤더
-        yield Static("🤖 AI Orchestrator  │  Manager + Worker Tools Architecture", id="app-header")
-
         # 출력 영역
         with ScrollableContainer(id="output-container"):
             yield RichLog(id="output-log", markup=True, highlight=True)
@@ -215,10 +200,9 @@ class OrchestratorTUI(App):
             # Welcome 메시지
             output_log.write("")
             output_log.write(Panel(
-                "[bold cyan]AI Orchestration System[/bold cyan]\n\n"
+                "[bold]AI Orchestration System[/bold]\n\n"
                 "[dim]Manager Agent + Worker Tools Architecture[/dim]",
-                border_style="cyan",
-                title="[bold]Welcome[/bold]"
+                border_style="blue"
             ))
             output_log.write("")
 
@@ -248,15 +232,14 @@ class OrchestratorTUI(App):
 
             output_log.write("")
             output_log.write(Panel(
-                "[bold green]시스템 준비 완료![/bold green]\n\n"
-                "[cyan]사용 가능한 Worker Tools:[/cyan]\n"
-                "  • [bold]execute_planner_task[/bold] - 요구사항 분석 및 계획 수립\n"
-                "  • [bold]execute_coder_task[/bold] - 코드 작성 및 수정\n"
-                "  • [bold]execute_reviewer_task[/bold] - 코드 리뷰 및 품질 검증\n"
-                "  • [bold]execute_tester_task[/bold] - 테스트 작성 및 실행\n\n"
+                "[bold green]✅ 시스템 준비 완료[/bold green]\n\n"
+                "[dim]사용 가능한 Worker Tools:[/dim]\n"
+                "  • execute_planner_task - 요구사항 분석 및 계획 수립\n"
+                "  • execute_coder_task - 코드 작성 및 수정\n"
+                "  • execute_reviewer_task - 코드 리뷰 및 품질 검증\n"
+                "  • execute_tester_task - 테스트 작성 및 실행\n\n"
                 "[dim]작업을 입력하고 Enter를 눌러 시작하세요.[/dim]",
-                border_style="green",
-                title="[bold]Ready[/bold]"
+                border_style="green"
             ))
             output_log.write("")
 
@@ -296,9 +279,8 @@ class OrchestratorTUI(App):
             if not is_valid:
                 output_log.write("")
                 output_log.write(Panel(
-                    f"[bold red]입력 검증 실패[/bold red]\n\n{error_msg}",
-                    border_style="red",
-                    title="[bold]Error[/bold]"
+                    f"[bold red]❌ 입력 검증 실패[/bold red]\n\n{error_msg}",
+                    border_style="red"
                 ))
                 output_log.write("")
                 task_input.value = ""
@@ -313,8 +295,7 @@ class OrchestratorTUI(App):
             # 사용자 요청 표시
             output_log.write("")
             output_log.write(Panel(
-                f"[bold]{user_request}[/bold]",
-                title="[bold cyan]💬 User Request[/bold cyan]",
+                f"[bold]💬 {user_request}[/bold]",
                 border_style="blue"
             ))
             output_log.write("")
@@ -374,9 +355,8 @@ class OrchestratorTUI(App):
             task_duration = time.time() - task_start_time
             output_log.write(Panel(
                 f"[bold green]✅ 작업 완료[/bold green]\n\n"
-                f"⏱️  소요 시간: [cyan]{task_duration:.1f}초[/cyan]",
-                border_style="green",
-                title="[bold]Success[/bold]"
+                f"⏱️  소요 시간: {task_duration:.1f}초",
+                border_style="green"
             ))
             output_log.write("")
 
@@ -402,8 +382,7 @@ class OrchestratorTUI(App):
 
                 output_log.write(Panel(
                     stats_table,
-                    border_style="yellow",
-                    title="[bold]📊 Worker Tools Statistics[/bold]"
+                    border_style="dim"
                 ))
                 output_log.write("")
 
@@ -424,9 +403,8 @@ class OrchestratorTUI(App):
         except Exception as e:
             output_log.write("")
             output_log.write(Panel(
-                f"[bold red]오류 발생[/bold red]\n\n{str(e)}",
-                border_style="red",
-                title="[bold]❌ Error[/bold]"
+                f"[bold red]❌ 오류 발생[/bold red]\n\n{str(e)}",
+                border_style="red"
             ))
             output_log.write("")
             worker_status.update(f"❌ 오류")
@@ -449,10 +427,9 @@ class OrchestratorTUI(App):
         output_log.clear()
         output_log.write("")
         output_log.write(Panel(
-            f"[bold green]새 세션 시작[/bold green]\n\n"
-            f"Session ID: [cyan]{self.session_id}[/cyan]",
-            border_style="green",
-            title="[bold]New Session[/bold]"
+            f"[bold green]✅ 새 세션 시작[/bold green]\n\n"
+            f"Session ID: {self.session_id}",
+            border_style="green"
         ))
         output_log.write("")
 
@@ -478,7 +455,7 @@ class OrchestratorTUI(App):
         spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         spinner = spinner_frames[int(elapsed * 2) % len(spinner_frames)]
 
-        self.update_worker_status(f"{spinner} Manager Agent 실행 중... [cyan]⏱️  {elapsed:.1f}s[/cyan]")
+        self.update_worker_status(f"{spinner} Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
 
     async def action_interrupt_or_quit(self) -> None:
         """Ctrl+C: 1번 누르면 작업 중단, 2초 내 2번 누르면 프로세스 종료"""
@@ -493,9 +470,8 @@ class OrchestratorTUI(App):
         if time_since_last_ctrl_c < 2.0:
             output_log.write("")
             output_log.write(Panel(
-                "[bold red]프로그램을 종료합니다...[/bold red]",
-                border_style="red",
-                title="[bold]👋 Goodbye[/bold]"
+                "[bold]👋 프로그램을 종료합니다...[/bold]",
+                border_style="dim"
             ))
             output_log.write("")
             self.exit()
@@ -508,10 +484,9 @@ class OrchestratorTUI(App):
             self.current_task.cancel()
             output_log.write("")
             output_log.write(Panel(
-                "[bold yellow]작업이 중단되었습니다[/bold yellow]\n\n"
+                "[bold yellow]⚠️  작업이 중단되었습니다[/bold yellow]\n\n"
                 "[dim]다시 Ctrl+C를 누르면 프로그램이 종료됩니다[/dim]",
-                border_style="yellow",
-                title="[bold]⚠️  Interrupted[/bold]"
+                border_style="yellow"
             ))
             output_log.write("")
             self.timer_active = False
@@ -520,10 +495,9 @@ class OrchestratorTUI(App):
         else:
             output_log.write("")
             output_log.write(Panel(
-                "[bold yellow]실행 중인 작업이 없습니다[/bold yellow]\n\n"
+                "[bold]ℹ️  실행 중인 작업이 없습니다[/bold]\n\n"
                 "[dim]다시 Ctrl+C를 누르면 프로그램이 종료됩니다[/dim]",
-                border_style="yellow",
-                title="[bold]ℹ️  Info[/bold]"
+                border_style="dim"
             ))
             output_log.write("")
             worker_status.update("ℹ️  작업 없음")
