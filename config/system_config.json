@@ -4,11 +4,26 @@
     "max_history_messages": 20,
     "max_turns": 10
   },
+  "resilience": {
+    "circuit_breaker": {
+      "failure_threshold": 5,
+      "success_threshold": 2,
+      "timeout_seconds": 60,
+      "enable_per_worker": true
+    }
+  },
+  "timeouts": {
+    "default_worker_timeout": 300,
+    "max_worker_timeout": 1800
+  },
   "performance": {
     "enable_caching": true,
     "worker_retry_enabled": true,
     "worker_retry_max_attempts": 3,
-    "worker_retry_base_delay": 1.0
+    "worker_retry_base_delay": 1.0,
+    "worker_retry_max_delay": 30.0,
+    "worker_retry_jitter": 0.1,
+    "worker_retry_exponential": true
   },
   "security": {
     "max_input_length": 5000,

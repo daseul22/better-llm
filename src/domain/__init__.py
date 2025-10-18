@@ -17,6 +17,16 @@ from .models import (
 )
 from .agents import BaseAgent
 from .services import ConversationHistory, ProjectContext, CodingStyle
+from .exceptions import (
+    DomainException,
+    ValidationError,
+    WorkerExecutionError,
+    WorkerNotFoundError,
+    WorkerTimeoutError,
+    PreconditionFailedError,
+    CircuitOpenError,
+    RetryableError,
+)
 
 __all__ = [
     "Message",
@@ -32,4 +42,12 @@ __all__ = [
     "ConversationHistory",
     "ProjectContext",
     "CodingStyle",
+    "DomainException",
+    "ValidationError",
+    "WorkerExecutionError",
+    "WorkerNotFoundError",
+    "WorkerTimeoutError",
+    "PreconditionFailedError",
+    "CircuitOpenError",
+    "RetryableError",
 ]
