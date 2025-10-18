@@ -9,6 +9,7 @@ from pathlib import Path
 import logging
 
 from claude_agent_sdk import query
+from claude_agent_sdk.types import ClaudeAgentOptions
 
 from .models import AgentConfig
 
@@ -90,7 +91,12 @@ class WorkerAgent:
             # 파일 시스템 접근, bash 실행 등을 수행합니다
             async for response in query(
                 prompt=full_prompt,
-                model=self.config.model
+                options=ClaudeAgentOptions(
+                    model=self.config.model,
+                    allowed_tools=self.config.tools if self.config.tools else [],
+                    cli_path="/Users/simdaseul/.claude/local/claude",  # 최신 버전 사용
+                    permission_mode="bypassPermissions"  # 자동 승인
+                )
             ):
                 # response는 SDK에서 반환하는 응답 객체
                 # 텍스트 콘텐츠 추출

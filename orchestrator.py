@@ -267,11 +267,11 @@ def main(request: str, config: str, verbose: bool):
 
     \b
     예시:
-        python orchestrator_v2.py "FastAPI로 /users CRUD 엔드포인트 구현해줘"
-        python orchestrator_v2.py --verbose "로그인 API 버그 수정해줘"
+        python orchestrator.py "FastAPI로 /users CRUD 엔드포인트 구현해줘"
+        python orchestrator.py --verbose "로그인 API 버그 수정해줘"
     """
     try:
-        orchestrator = OrchestratorV2(Path(config), verbose)
+        orchestrator = Orchestrator(Path(config), verbose)
         # asyncio로 실행
         asyncio.run(orchestrator.run(request))
     except KeyboardInterrupt:

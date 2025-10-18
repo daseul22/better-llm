@@ -8,6 +8,7 @@ from typing import List, Optional, AsyncIterator
 import logging
 
 from claude_agent_sdk import query
+from claude_agent_sdk.types import ClaudeAgentOptions
 
 from .models import Message
 
@@ -114,10 +115,15 @@ class ManagerAgent:
             logger.debug(f"[Manager] Claude Agent SDK 호출 시작")
 
             # Claude Agent SDK의 query() 함수 사용
+            # options에 model을 포함하고 최신 Claude CLI 경로 지정
             response_text = ""
             async for response in query(
                 prompt=prompt,
-                model=self.model
+                options=ClaudeAgentOptions(
+                    model=self.model,
+                    cli_path="/Users/simdaseul/.claude/local/claude",  # 최신 버전 사용
+                    permission_mode="bypassPermissions"  # 자동 승인
+                )
             ):
                 # 응답 텍스트 추출
                 if hasattr(response, 'content'):

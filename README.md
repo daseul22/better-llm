@@ -43,7 +43,22 @@ echo "ANTHROPIC_API_KEY=your-api-key-here" > .env
 
 ## 사용법
 
-### 기본 실행
+### 방법 1: 웹 UI (권장) 🌐
+
+```bash
+streamlit run app.py
+```
+
+브라우저에서 http://localhost:8501 로 접속하세요.
+
+**웹 UI 기능:**
+- 🖥️ 사용자 친화적인 인터페이스
+- 📊 실시간 스트리밍 출력
+- 📜 세션 히스토리 조회
+- 🔄 새 세션 시작
+- 💾 자동 세션 저장
+
+### 방법 2: CLI (Command Line Interface)
 
 ```bash
 python orchestrator.py "작업 설명"

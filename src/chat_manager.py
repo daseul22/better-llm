@@ -4,12 +4,11 @@
 ChatManager: 다음 응답할 에이전트를 결정하는 중앙 조정자
 """
 
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Any
 import re
 import logging
 
 from .models import Message
-from .agents import Agent
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ class ChatManager:
     순차 진행 등을 처리합니다.
 
     Attributes:
-        agents: 사용 가능한 에이전트 딕셔너리 (name -> Agent)
+        agents: 사용 가능한 에이전트 딕셔너리 (name -> WorkerAgent)
         max_turns: 최대 턴 수 (무한 루프 방지)
         max_consecutive: 동일 에이전트 최대 연속 실행 횟수
     """
@@ -43,13 +42,13 @@ class ChatManager:
 
     def __init__(
         self,
-        agents: Dict[str, Agent],
+        agents: Dict[str, Any],
         max_turns: int = 50,
         max_consecutive: int = 5
     ):
         """
         Args:
-            agents: 에이전트 딕셔너리 (name -> Agent)
+            agents: 에이전트 딕셔너리 (name -> WorkerAgent)
             max_turns: 최대 턴 수 (기본값: 50)
             max_consecutive: 동일 에이전트 최대 연속 실행 횟수 (기본값: 5)
         """

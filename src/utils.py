@@ -222,12 +222,16 @@ def get_agent_emoji(agent_name: str) -> str:
 
 def validate_environment() -> None:
     """
-    환경 변수 검증 (ANTHROPIC_API_KEY)
+    환경 변수 검증 (ANTHROPIC_API_KEY 또는 CLAUDE_CODE_OAUTH_TOKEN)
 
     .env 파일이 있으면 자동으로 로드합니다.
 
+    Claude Agent SDK는 두 가지 인증 방식을 지원합니다:
+    - ANTHROPIC_API_KEY: API 키 기반 (pay-as-you-go)
+    - CLAUDE_CODE_OAUTH_TOKEN: OAuth 토큰 기반 (구독 사용자)
+
     Raises:
-        ValueError: API 키가 설정되지 않은 경우
+        ValueError: 인증 정보가 설정되지 않은 경우
     """
     import os
     from dotenv import load_dotenv
@@ -236,10 +240,15 @@ def validate_environment() -> None:
     load_dotenv()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
+
+    if not api_key and not oauth_token:
         raise ValueError(
-            "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.\n"
-            "다음 명령으로 설정하세요:\n"
-            "  export ANTHROPIC_API_KEY='your-api-key'\n"
+            "인증 정보가 설정되지 않았습니다.\n"
+            "다음 중 하나의 방법으로 설정하세요:\n\n"
+            "방법 1 - API 키 (pay-as-you-go):\n"
+            "  export ANTHROPIC_API_KEY='sk-ant-...'\n\n"
+            "방법 2 - OAuth 토큰 (Claude 구독 사용자):\n"
+            "  export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token'\n\n"
             "또는 .env 파일에 추가하세요."
         )
