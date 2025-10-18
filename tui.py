@@ -20,7 +20,11 @@ from rich.text import Text
 
 from src.models import SessionResult
 from src.manager_agent import ManagerAgent
-from src.worker_tools import initialize_workers, create_worker_tools_server
+from src.worker_tools import (
+    initialize_workers,
+    create_worker_tools_server,
+    get_error_statistics
+)
 from src.conversation import ConversationHistory
 from src.utils import (
     generate_session_id,
@@ -228,6 +232,24 @@ class OrchestratorTUI(App):
                 f"[bold green]작업 완료[/bold green]\n"
                 f"소요 시간: {task_duration:.1f}초",
                 border_style="green"
+            ))
+            output_log.write("")
+
+            # 에러 통계 표시
+            error_stats = get_error_statistics()
+            stats_lines = ["📊 [bold]Worker Tools 에러 통계[/bold]\n"]
+            for worker_name, data in error_stats.items():
+                stats_lines.append(
+                    f"[cyan]{worker_name.upper()}[/cyan]: "
+                    f"시도 {data['attempts']}, "
+                    f"성공 {data['successes']}, "
+                    f"실패 {data['failures']}, "
+                    f"에러율 {data['error_rate']}%"
+                )
+
+            output_log.write(Panel(
+                "\n".join(stats_lines),
+                border_style="yellow"
             ))
             output_log.write("")
 

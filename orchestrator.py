@@ -21,7 +21,11 @@ import click
 
 from src.models import SessionResult
 from src.manager_agent import ManagerAgent
-from src.worker_tools import initialize_workers, create_worker_tools_server
+from src.worker_tools import (
+    initialize_workers,
+    create_worker_tools_server,
+    log_error_summary
+)
 from src.conversation import ConversationHistory
 from src.utils import (
     setup_logging,
@@ -128,6 +132,11 @@ class Orchestrator:
             )
 
         finally:
+            # 에러 통계 출력
+            print()
+            log_error_summary()
+            print()
+
             # 세션 히스토리 저장
             duration = time.time() - self.start_time
             result = SessionResult(status="completed")

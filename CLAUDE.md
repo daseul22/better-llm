@@ -134,10 +134,14 @@ options = ClaudeAgentOptions(
 ## 향후 개선 사항
 
 1. ✅ **TUI 업데이트**: Worker Tools Architecture로 변경 완료 (2025-10-18)
-2. **성능 최적화**: 캐싱 전략 개선, 불필요한 Tool 호출 최소화
-3. **에러 핸들링**: Worker Tool 실패 시 재시도 로직 추가
-4. **로깅 개선**: 각 Tool 호출의 입출력 상세 로깅
-5. **문서화**: 아키텍처 다이어그램 및 사용 예제 추가
+2. ✅ **Reviewer Agent**: 코드 리뷰 자동화 완료 (2025-10-18)
+3. ✅ **프로젝트 컨텍스트**: 일관된 코드 생성을 위한 컨텍스트 관리 완료 (2025-10-18)
+4. ✅ **에러 핸들링**: Worker Tool 실패 시 재시도 로직 추가 완료 (2025-10-18)
+5. ✅ **에러 모니터링**: 통계 수집 및 표시 기능 추가 완료 (2025-10-18)
+6. **성능 최적화**: 캐싱 전략 개선, 불필요한 Tool 호출 최소화
+7. **로깅 개선**: 각 Tool 호출의 입출력 상세 로깅
+8. **문서화**: 아키텍처 다이어그램 및 사용 예제 추가
+9. **자동 복구**: 에러 패턴 분석 후 자동 복구 로직 추가
 
 ---
 
@@ -177,3 +181,65 @@ options = ClaudeAgentOptions(
 - 후속 조치:
   - TODO: 실제 작업 실행 테스트
   - 모니터링: 사용자 피드백 수집
+
+---
+
+### feat. 시스템 확장 - Reviewer Agent, 프로젝트 컨텍스트, 에러 핸들링
+
+- 날짜: 2025-10-18 15:30 (Asia/Seoul)
+- 컨텍스트:
+  - 사용자가 "차례대로 모두 구현하자"고 요청
+  - 3가지 주요 기능 확장: (1) Reviewer Agent (2) 프로젝트 컨텍스트 (3) 에러 핸들링
+  - Worker Tools Architecture의 안정성 및 품질 향상 목표
+
+- 변경사항:
+
+  **1. Reviewer Agent 추가**
+  - `prompts/reviewer.txt` (신규): 코드 리뷰 전문가 프롬프트 (2776 chars)
+    - 책임: 코드 품질, 보안, 성능, 가독성, 테스트 가능성 검증
+    - 심각도 분류: 🔴 Critical, 🟡 Warning, 🔵 Info
+    - 승인 기준: Critical 이슈 0개
+  - `src/worker_tools.py`: `execute_reviewer_task` Tool 추가
+  - `src/manager_agent.py`: Reviewer를 워크플로우에 추가
+    - 새 워크플로우: Planner → Coder → **Reviewer** → Tester
+    - Critical 이슈 발견 시 Coder에게 수정 요청 후 재검토
+  - `config/agent_config.json`: Reviewer Agent 설정 추가
+
+  **2. 프로젝트 컨텍스트 관리**
+  - `src/project_context.py` (신규): 프로젝트 메타데이터 관리
+    - `ProjectContext` dataclass: 프로젝트 정보 저장
+    - `CodingStyle` dataclass: 코딩 스타일 설정
+    - `ProjectContextManager`: .context.json 로드/저장
+    - `to_prompt_context()`: Worker 프롬프트에 주입할 컨텍스트 생성
+  - `.context.json` (신규): better-llm 프로젝트 컨텍스트
+  - `src/worker_agent.py`: Worker 초기화 시 프로젝트 컨텍스트 자동 로드 및 주입
+
+  **3. 에러 핸들링 및 모니터링**
+  - `src/worker_tools.py`: 재시도 로직 및 통계 수집
+    - `retry_with_backoff()`: 지수 백오프 재시도 (max 3회, 1초 → 2초 → 4초)
+    - `_ERROR_STATS`: Worker별 시도/실패 통계 수집
+    - `get_error_statistics()`: 에러율 계산 및 조회
+    - `reset_error_statistics()`: 통계 초기화
+    - `log_error_summary()`: 콘솔 로그 출력
+  - `orchestrator.py`: 작업 완료 시 에러 통계 자동 출력
+  - `tui.py`: 작업 완료 시 에러 통계 Panel 표시
+
+  **4. 통합 테스트**
+  - `test_integration.py` (신규): 전체 시스템 검증 스크립트
+    - 6가지 항목 검증: Agent 설정, Reviewer 프롬프트, 프로젝트 컨텍스트, Manager/Worker Tools, 에러 모니터링
+    - 결과: 6/6 테스트 통과 (100%)
+
+- 영향범위:
+  - 기능: ✅ 코드 품질 자동 검증, 일관된 코드 생성, 안정성 향상
+  - 성능: ✅ 캐시 활용으로 비용 절감, 에러 재시도로 성공률 향상
+  - 보안: ✅ Reviewer가 보안 이슈 자동 검출
+  - 문서: ✅ CLAUDE.md 업데이트, test_integration.py 추가
+
+- 테스트:
+  - 단위: ✅ 모든 Python 파일 구문 검사 통과
+  - 통합: ✅ test_integration.py 6/6 통과 (100%)
+  - 수동: 사용자가 실제 작업으로 검증 예정
+
+- 후속 조치:
+  - 모니터링: 실제 프로젝트에서 Reviewer 품질 및 에러 통계 수집
+  - 개선: 에러 패턴 분석 후 자동 복구 로직 추가 검토

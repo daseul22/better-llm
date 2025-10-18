@@ -39,6 +39,7 @@ class ManagerAgent:
 다음 Tool들을 사용할 수 있습니다:
 - **execute_planner_task**: 요구사항 분석 및 계획 수립
 - **execute_coder_task**: 코드 작성, 수정, 리팩토링
+- **execute_reviewer_task**: 코드 리뷰 및 품질 검증
 - **execute_tester_task**: 테스트 작성 및 실행
 - **read**: 파일 읽기 (필요 시)
 
@@ -48,17 +49,29 @@ class ManagerAgent:
 3. 각 Tool의 결과를 확인하고 다음 단계를 결정합니다
 4. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
 
+## 표준 작업 흐름
+1. execute_planner_task → 요구사항 분석 및 계획
+2. execute_coder_task → 코드 작성
+3. execute_reviewer_task → 코드 리뷰 (품질 검증)
+4. execute_tester_task → 테스트 작성 및 실행
+
+**중요**: Reviewer가 Critical 이슈를 발견하면 Coder에게 수정 요청 후 다시 Review
+
 ## 예시
 사용자: "FastAPI로 /users CRUD API를 작성해줘"
 
 1단계: execute_planner_task 호출 → 요구사항 분석 및 설계
 2단계: execute_coder_task 호출 → 코드 작성
-3단계: execute_tester_task 호출 → 테스트 작성 및 실행
-4단계: 사용자에게 완료 보고
+3단계: execute_reviewer_task 호출 → 코드 리뷰
+  - Critical 이슈 발견 시 → execute_coder_task로 수정 → 다시 execute_reviewer_task
+  - 승인 시 → 다음 단계 진행
+4단계: execute_tester_task 호출 → 테스트 작성 및 실행
+5단계: 사용자에게 완료 보고
 
 ## 규칙
 - Tool을 직접 호출하세요 (@ 표기 불필요)
 - 각 Tool 호출 전에 무엇을 할 것인지 설명하세요
+- Reviewer의 피드백을 반드시 반영하세요 (Critical 이슈는 필수 수정)
 - Tool 결과를 확인하고 문제가 있으면 재시도하세요
 - 모든 작업이 완료되면 "작업이 완료되었습니다"라고 명시하세요
 """
@@ -126,6 +139,7 @@ class ManagerAgent:
                 allowed_tools=[
                     "mcp__workers__execute_planner_task",
                     "mcp__workers__execute_coder_task",
+                    "mcp__workers__execute_reviewer_task",
                     "mcp__workers__execute_tester_task",
                     "read"  # 파일 읽기 툴
                 ],

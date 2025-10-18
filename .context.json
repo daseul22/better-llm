@@ -1,0 +1,29 @@
+{
+  "project_name": "better-llm",
+  "language": "python",
+  "framework": "claude-agent-sdk",
+  "architecture": "Worker Tools Architecture",
+  "key_files": {
+    "main": "orchestrator.py",
+    "tui": "tui.py",
+    "manager": "src/manager_agent.py",
+    "workers": "src/worker_tools.py",
+    "worker_agent": "src/worker_agent.py",
+    "models": "src/models.py",
+    "config": "config/agent_config.json"
+  },
+  "coding_style": {
+    "docstring_style": "google",
+    "type_hints": true,
+    "line_length": 100,
+    "quote_style": "double",
+    "import_style": "absolute"
+  },
+  "dependencies": [
+    "claude-agent-sdk",
+    "textual",
+    "click",
+    "python-dotenv"
+  ],
+  "description": "그룹 챗 오케스트레이션 시스템 - Manager Agent가 Worker Tools를 호출하여 소프트웨어 개발 작업 자동화"
+}

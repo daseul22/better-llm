@@ -25,6 +25,17 @@
       "model": "claude-sonnet-4-5-20250929"
     },
     {
+      "name": "reviewer",
+      "role": "코드 리뷰",
+      "system_prompt_file": "prompts/reviewer.txt",
+      "tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929"
+    },
+    {
       "name": "tester",
       "role": "테스트 및 검증",
       "system_prompt_file": "prompts/tester.txt",

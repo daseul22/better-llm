@@ -4,7 +4,7 @@
 WorkerAgent: Claude Code의 agentic harness를 사용하여 파일 읽기/쓰기, 코드 실행 등 수행
 """
 
-from typing import List, AsyncIterator
+from typing import List, AsyncIterator, Optional
 from pathlib import Path
 import logging
 
@@ -12,6 +12,7 @@ from claude_agent_sdk import query
 from claude_agent_sdk.types import ClaudeAgentOptions
 
 from .models import AgentConfig
+from .project_context import ProjectContext, ProjectContextManager
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +29,32 @@ class WorkerAgent:
         system_prompt: 시스템 프롬프트
     """
 
-    def __init__(self, config: AgentConfig):
+    def __init__(self, config: AgentConfig, project_context: Optional[ProjectContext] = None):
         """
         Args:
             config: 에이전트 설정
+            project_context: 프로젝트 컨텍스트 (선택)
         """
         self.config = config
+        self.project_context = project_context or self._load_project_context()
         self.system_prompt = self._load_system_prompt()
+
+    def _load_project_context(self) -> Optional[ProjectContext]:
+        """
+        프로젝트 컨텍스트 로드
+
+        Returns:
+            ProjectContext 또는 None
+        """
+        try:
+            manager = ProjectContextManager()
+            context = manager.load()
+            if context:
+                logger.debug(f"✅ 프로젝트 컨텍스트 로드: {context.project_name}")
+            return context
+        except Exception as e:
+            logger.warning(f"⚠️  프로젝트 컨텍스트 로드 실패: {e}")
+            return None
 
     def _load_system_prompt(self) -> str:
         """
@@ -42,6 +62,7 @@ class WorkerAgent:
 
         config.system_prompt가 파일 경로면 파일에서 로드하고,
         그렇지 않으면 문자열 그대로 사용합니다.
+        프로젝트 컨텍스트가 있으면 프롬프트에 추가합니다.
 
         Returns:
             시스템 프롬프트 문자열
@@ -59,11 +80,17 @@ class WorkerAgent:
                     with open(prompt_path, 'r', encoding='utf-8') as f:
                         loaded_prompt = f.read().strip()
                         logger.info(f"✅ 시스템 프롬프트 로드: {prompt_path}")
-                        return loaded_prompt
+                        prompt_text = loaded_prompt
                 else:
                     logger.warning(f"⚠️  프롬프트 파일 없음: {prompt_path}, 기본값 사용")
             except Exception as e:
                 logger.error(f"❌ 프롬프트 로드 실패: {e}, 기본값 사용")
+
+        # 프로젝트 컨텍스트 추가
+        if self.project_context:
+            context_text = self.project_context.to_prompt_context()
+            prompt_text = f"{prompt_text}\n\n{context_text}"
+            logger.debug(f"✅ 프로젝트 컨텍스트 추가: {self.project_context.project_name}")
 
         return prompt_text
 
