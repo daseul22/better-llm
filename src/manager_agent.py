@@ -7,7 +7,7 @@ ManagerAgent: Claude Agent SDK를 사용하여 Worker Tool들을 호출하고 �
 from typing import List, Optional
 import logging
 
-from claude_agent_sdk import query
+from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import ClaudeAgentOptions
 
 from .models import Message
@@ -118,33 +118,37 @@ class ManagerAgent:
 
             logger.debug(f"[Manager] Claude Agent SDK 호출 시작 (Worker Tools 사용)")
 
-            # Claude Agent SDK의 query() 함수 사용
+            # ClaudeSDKClient를 사용 (query()는 툴을 지원하지 않음)
             # Worker Tools MCP Server를 등록하고, read 툴도 허용
+            options = ClaudeAgentOptions(
+                model=self.model,
+                mcp_servers={"workers": self.worker_tools_server},
+                allowed_tools=[
+                    "mcp__workers__execute_planner_task",
+                    "mcp__workers__execute_coder_task",
+                    "mcp__workers__execute_tester_task",
+                    "read"  # 파일 읽기 툴
+                ],
+                cli_path="/Users/simdaseul/.claude/local/claude",
+                permission_mode="bypassPermissions"
+            )
+
             response_text = ""
-            async for response in query(
-                prompt=prompt,
-                options=ClaudeAgentOptions(
-                    model=self.model,
-                    mcp_servers={"workers": self.worker_tools_server},
-                    allowed_tools=[
-                        "mcp__workers__execute_planner_task",
-                        "mcp__workers__execute_coder_task",
-                        "mcp__workers__execute_tester_task",
-                        "read"  # 파일 읽기 툴
-                    ],
-                    cli_path="/Users/simdaseul/.claude/local/claude",
-                    permission_mode="bypassPermissions"
-                )
-            ):
-                # 응답 텍스트 추출
-                if hasattr(response, 'content'):
-                    for content in response.content:
-                        if hasattr(content, 'text'):
-                            response_text += content.text
-                elif hasattr(response, 'text'):
-                    response_text += response.text
-                else:
-                    response_text += str(response)
+            async with ClaudeSDKClient(options=options) as client:
+                # 프롬프트 전송
+                await client.query(prompt)
+
+                # 응답 수신
+                async for msg in client.receive_response():
+                    # 텍스트 콘텐츠 추출
+                    if hasattr(msg, 'content'):
+                        for content in msg.content:
+                            if hasattr(content, 'text'):
+                                response_text += content.text
+                    elif hasattr(msg, 'text'):
+                        response_text += msg.text
+                    else:
+                        response_text += str(msg)
 
             logger.debug(f"[Manager] Claude Agent SDK 호출 완료 (응답 길이: {len(response_text)} chars)")
 
