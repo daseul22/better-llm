@@ -37,7 +37,8 @@ from src.utils import (
     validate_user_input,
     sanitize_user_input,
     load_system_config,
-    SystemConfig
+    SystemConfig,
+    get_project_root
 )
 
 
@@ -212,7 +213,12 @@ def main(request: str, config: str, verbose: bool):
         python orchestrator.py --verbose "로그인 API 버그 수정해줘"
     """
     try:
-        orchestrator = Orchestrator(Path(config), verbose)
+        # config 경로를 프로젝트 루트 기준으로 변환
+        config_path = Path(config)
+        if not config_path.is_absolute():
+            config_path = get_project_root() / config
+
+        orchestrator = Orchestrator(config_path, verbose)
         # asyncio로 실행
         asyncio.run(orchestrator.run(request))
     except KeyboardInterrupt:

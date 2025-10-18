@@ -7,13 +7,14 @@ WorkerAgent: Claude Code의 agentic harness를 사용하여 파일 읽기/쓰기
 from typing import List, AsyncIterator, Optional
 from pathlib import Path
 import logging
+import os
 
 from claude_agent_sdk import query
 from claude_agent_sdk.types import ClaudeAgentOptions
 
 from .models import AgentConfig
 from .project_context import ProjectContext, ProjectContextManager
-from .utils import get_claude_cli_path
+from .utils import get_claude_cli_path, get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class WorkerAgent:
 
     def _load_system_prompt(self) -> str:
         """
-        시스템 프롬프트 로드
+        시스템 프롬프트 로드 (프로젝트 루트 기준)
 
         config.system_prompt가 파일 경로면 파일에서 로드하고,
         그렇지 않으면 문자열 그대로 사용합니다.
@@ -75,7 +76,8 @@ class WorkerAgent:
             try:
                 prompt_path = Path(prompt_text)
                 if not prompt_path.is_absolute():
-                    prompt_path = Path.cwd() / prompt_text
+                    # 프로젝트 루트 기준으로 경로 해석
+                    prompt_path = get_project_root() / prompt_text
 
                 if prompt_path.exists():
                     with open(prompt_path, 'r', encoding='utf-8') as f:
@@ -113,10 +115,12 @@ class WorkerAgent:
             full_prompt = f"{self.system_prompt}\n\n{task_description}"
 
             logger.debug(f"[{self.config.name}] Claude Agent SDK 실행 시작")
+            logger.debug(f"[{self.config.name}] Working Directory: {os.getcwd()}")
 
             # Claude Agent SDK의 query() 함수 사용
             # 이 함수는 Claude Code의 agentic harness를 사용하여
             # 파일 시스템 접근, bash 실행 등을 수행합니다
+            # Note: working_dir는 ClaudeAgentOptions에서 지원하지 않음 (os.getcwd()가 기본값)
             async for response in query(
                 prompt=full_prompt,
                 options=ClaudeAgentOptions(

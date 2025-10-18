@@ -7,12 +7,50 @@
 import json
 import logging
 import uuid
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 
 from .models import AgentConfig
 from dataclasses import dataclass
+
+
+# 프로젝트 루트 디렉토리 (better-llm)
+# orchestrator.py, tui.py가 있는 디렉토리
+_PROJECT_ROOT = None
+
+
+def get_project_root() -> Path:
+    """
+    프로젝트 루트 디렉토리 반환
+
+    orchestrator.py 또는 tui.py가 있는 디렉토리를 프로젝트 루트로 간주
+
+    Returns:
+        프로젝트 루트 디렉토리 (절대 경로)
+    """
+    global _PROJECT_ROOT
+
+    if _PROJECT_ROOT is not None:
+        return _PROJECT_ROOT
+
+    # 현재 파일(utils.py)의 부모의 부모 = better-llm
+    # better-llm/src/utils.py -> better-llm
+    _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+    return _PROJECT_ROOT
+
+
+def set_project_root(path: Path) -> None:
+    """
+    프로젝트 루트 디렉토리 수동 설정
+
+    Args:
+        path: 프로젝트 루트 디렉토리 경로
+    """
+    global _PROJECT_ROOT
+    _PROJECT_ROOT = path.resolve()
 
 
 @dataclass
@@ -64,16 +102,20 @@ class SystemConfig:
 
 def load_system_config(config_path: Optional[Path] = None) -> SystemConfig:
     """
-    시스템 설정 파일 로드
+    시스템 설정 파일 로드 (프로젝트 루트 기준)
 
     Args:
-        config_path: 설정 파일 경로 (기본: config/system_config.json)
+        config_path: 설정 파일 경로 (기본: config/system_config.json, 프로젝트 루트 기준)
 
     Returns:
         SystemConfig 객체
     """
     if config_path is None:
-        config_path = Path("config/system_config.json")
+        # 프로젝트 루트 기준
+        config_path = get_project_root() / "config" / "system_config.json"
+    elif not config_path.is_absolute():
+        # 상대 경로면 프로젝트 루트 기준으로 변환
+        config_path = get_project_root() / config_path
 
     if not config_path.exists():
         logging.warning(f"시스템 설정 파일이 없습니다: {config_path}. 기본값 사용.")

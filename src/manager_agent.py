@@ -6,6 +6,7 @@ ManagerAgent: Claude Agent SDK를 사용하여 Worker Tool들을 호출하고 �
 
 from typing import List, Optional
 import logging
+import os
 
 from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import ClaudeAgentOptions
@@ -156,9 +157,11 @@ class ManagerAgent:
             prompt = self._build_prompt_from_history(history)
 
             logger.debug(f"[Manager] Claude Agent SDK 호출 시작 (Worker Tools 사용)")
+            logger.debug(f"[Manager] Working Directory: {os.getcwd()}")
 
             # ClaudeSDKClient를 사용 (query()는 툴을 지원하지 않음)
             # Worker Tools MCP Server를 등록하고, read 툴도 허용
+            # Note: working_dir는 ClaudeAgentOptions에서 지원하지 않음 (os.getcwd()가 기본값)
             options = ClaudeAgentOptions(
                 model=self.model,
                 mcp_servers={"workers": self.worker_tools_server},
