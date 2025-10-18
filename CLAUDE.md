@@ -133,8 +133,47 @@ options = ClaudeAgentOptions(
 
 ## 향후 개선 사항
 
-1. **TUI 업데이트**: Worker Tools Architecture로 변경 필요
+1. ✅ **TUI 업데이트**: Worker Tools Architecture로 변경 완료 (2025-10-18)
 2. **성능 최적화**: 캐싱 전략 개선, 불필요한 Tool 호출 최소화
 3. **에러 핸들링**: Worker Tool 실패 시 재시도 로직 추가
 4. **로깅 개선**: 각 Tool 호출의 입출력 상세 로깅
 5. **문서화**: 아키텍처 다이어그램 및 사용 예제 추가
+
+---
+
+## 작업 기록 (계속)
+
+### feat. Claude Code 스타일 TUI 개선
+
+- 날짜: 2025-10-18 14:45 (Asia/Seoul)
+- 컨텍스트:
+  - 사용자가 "tui 툴을 claude code처럼 쓸 수 있도록 개선해줘"라고 요청
+  - 이전 TUI는 Worker Tools Architecture와 호환되지 않음
+  - Claude Code처럼 간단하고 직관적인 인터페이스 필요
+
+- 변경사항:
+  - `tui.py` (신규): Claude Code 스타일 TUI 구현
+    - Textual 기반 터미널 UI
+    - Manager Agent + Worker Tools 통합
+    - 실시간 Markdown 렌더링 및 Syntax highlighting
+    - 간단한 사용법: 텍스트 입력 후 Enter
+    - 키보드 단축키: Enter (실행), Ctrl+N (새 세션), Ctrl+C (종료)
+    - 세션 자동 저장
+  - `README.md`: TUI 사용법 업데이트
+    - Worker Tools Architecture 특징 추가
+    - Claude Code 스타일 TUI 강조
+
+- 영향범위:
+  - 기능: ✅ Claude Code처럼 간단하게 사용 가능
+  - 성능: ✅ Manager Agent가 자동으로 Worker Tools 호출
+  - 보안: ✅ 기존 설정 유지
+  - 문서: ✅ README 업데이트 완료
+
+- 테스트:
+  - 단위: ✅ Python 구문 검사 통과
+  - 통합: ✅ TUI 실행 확인 (UI 렌더링 성공)
+  - 수동: 사용자가 직접 테스트 예정
+
+- 후속 조치:
+  - TODO: 실제 작업 실행 테스트
+  - 모니터링: 사용자 피드백 수집
