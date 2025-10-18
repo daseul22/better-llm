@@ -4,7 +4,7 @@
 ManagerAgent: Claude Agent SDK를 사용하여 사용자와 대화하고 워커 에이전트에게 작업 할당
 """
 
-from typing import List, Optional, AsyncIterator
+from typing import List, Optional
 import logging
 
 from claude_agent_sdk import query
@@ -112,17 +112,18 @@ class ManagerAgent:
             # 대화 히스토리를 프롬프트로 변환
             prompt = self._build_prompt_from_history(history)
 
-            logger.debug(f"[Manager] Claude Agent SDK 호출 시작")
+            logger.debug(f"[Manager] Claude Agent SDK 호출 시작 (툴 사용: 없음)")
 
             # Claude Agent SDK의 query() 함수 사용
-            # options에 model을 포함하고 최신 Claude CLI 경로 지정
+            # allowed_tools=[] 로 설정하여 툴 사용 제한 (대화만)
             response_text = ""
             async for response in query(
                 prompt=prompt,
                 options=ClaudeAgentOptions(
                     model=self.model,
-                    cli_path="/Users/simdaseul/.claude/local/claude",  # 최신 버전 사용
-                    permission_mode="bypassPermissions"  # 자동 승인
+                    allowed_tools=[],  # 툴 사용 안함 (대화만)
+                    cli_path="/Users/simdaseul/.claude/local/claude",
+                    permission_mode="bypassPermissions"
                 )
             ):
                 # 응답 텍스트 추출
