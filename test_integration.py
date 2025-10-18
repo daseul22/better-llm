@@ -66,7 +66,7 @@ try:
     from src.infrastructure.storage import JsonContextRepository
     from src.infrastructure.config import get_project_root
 
-    repo = JsonContextRepository(get_project_root())
+    repo = JsonContextRepository(get_project_root() / ".context.json")
     context = repo.load()
 
     if context:
