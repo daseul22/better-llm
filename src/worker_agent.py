@@ -13,6 +13,7 @@ from claude_agent_sdk.types import ClaudeAgentOptions
 
 from .models import AgentConfig
 from .project_context import ProjectContext, ProjectContextManager
+from .utils import get_claude_cli_path
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ class WorkerAgent:
                 options=ClaudeAgentOptions(
                     model=self.config.model,
                     allowed_tools=self.config.tools if self.config.tools else [],
-                    cli_path="/Users/simdaseul/.claude/local/claude",  # 최신 버전 사용
+                    cli_path=get_claude_cli_path(),
                     permission_mode="bypassPermissions"  # 자동 승인
                 )
             ):

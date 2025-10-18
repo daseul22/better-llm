@@ -12,6 +12,80 @@ from pathlib import Path
 from typing import List, Dict, Optional
 
 from .models import AgentConfig
+from dataclasses import dataclass
+
+
+@dataclass
+class SystemConfig:
+    """시스템 설정"""
+    # Manager 설정
+    manager_model: str = "claude-sonnet-4-5-20250929"
+    max_history_messages: int = 20
+    max_turns: int = 10
+
+    # 성능 설정
+    enable_caching: bool = True
+    worker_retry_enabled: bool = True
+    worker_retry_max_attempts: int = 3
+    worker_retry_base_delay: float = 1.0
+
+    # 보안 설정
+    max_input_length: int = 5000
+    enable_input_validation: bool = True
+
+    # 로깅 설정
+    log_level: str = "INFO"
+    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    enable_structured_logging: bool = False
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "SystemConfig":
+        """딕셔너리에서 SystemConfig 생성"""
+        manager = data.get("manager", {})
+        performance = data.get("performance", {})
+        security = data.get("security", {})
+        logging_config = data.get("logging", {})
+
+        return cls(
+            manager_model=manager.get("model", "claude-sonnet-4-5-20250929"),
+            max_history_messages=manager.get("max_history_messages", 20),
+            max_turns=manager.get("max_turns", 10),
+            enable_caching=performance.get("enable_caching", True),
+            worker_retry_enabled=performance.get("worker_retry_enabled", True),
+            worker_retry_max_attempts=performance.get("worker_retry_max_attempts", 3),
+            worker_retry_base_delay=performance.get("worker_retry_base_delay", 1.0),
+            max_input_length=security.get("max_input_length", 5000),
+            enable_input_validation=security.get("enable_input_validation", True),
+            log_level=logging_config.get("level", "INFO"),
+            log_format=logging_config.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
+            enable_structured_logging=logging_config.get("enable_structured_logging", False)
+        )
+
+
+def load_system_config(config_path: Optional[Path] = None) -> SystemConfig:
+    """
+    시스템 설정 파일 로드
+
+    Args:
+        config_path: 설정 파일 경로 (기본: config/system_config.json)
+
+    Returns:
+        SystemConfig 객체
+    """
+    if config_path is None:
+        config_path = Path("config/system_config.json")
+
+    if not config_path.exists():
+        logging.warning(f"시스템 설정 파일이 없습니다: {config_path}. 기본값 사용.")
+        return SystemConfig()
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return SystemConfig.from_dict(data)
+    except Exception as e:
+        logging.error(f"시스템 설정 로드 실패: {e}. 기본값 사용.")
+        return SystemConfig()
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -218,6 +292,129 @@ def get_agent_emoji(agent_name: str) -> str:
         "user": "👤"
     }
     return emoji_map.get(agent_name, "🤖")
+
+
+def validate_user_input(user_input: str, max_length: int = 5000) -> tuple[bool, Optional[str]]:
+    """
+    사용자 입력을 검증합니다.
+
+    Args:
+        user_input: 사용자 입력 문자열
+        max_length: 최대 길이 (기본 5000자)
+
+    Returns:
+        (is_valid, error_message) 튜플
+        - is_valid: 입력이 유효하면 True
+        - error_message: 유효하지 않을 경우 에러 메시지
+    """
+    # 1. 빈 입력 체크
+    if not user_input or not user_input.strip():
+        return False, "입력이 비어있습니다."
+
+    # 2. 길이 체크
+    if len(user_input) > max_length:
+        return False, f"입력이 너무 깁니다. (최대 {max_length}자, 현재 {len(user_input)}자)"
+
+    # 3. 위험한 패턴 감지 (프롬프트 인젝션 방지)
+    dangerous_patterns = [
+        "system:",
+        "assistant:",
+        "<|im_start|>",
+        "<|im_end|>",
+        "###instruction",
+        "###system",
+    ]
+
+    user_input_lower = user_input.lower()
+    for pattern in dangerous_patterns:
+        if pattern in user_input_lower:
+            return False, f"입력에 허용되지 않는 패턴이 포함되어 있습니다: {pattern}"
+
+    # 4. 제어 문자 체크 (일부 허용: \n, \t)
+    for char in user_input:
+        if char.isprintable() or char in ['\n', '\t']:
+            continue
+        # 비정상적인 제어 문자
+        return False, f"입력에 허용되지 않는 제어 문자가 포함되어 있습니다."
+
+    return True, None
+
+
+def sanitize_user_input(user_input: str) -> str:
+    """
+    사용자 입력을 정제합니다.
+
+    Args:
+        user_input: 사용자 입력 문자열
+
+    Returns:
+        정제된 입력 문자열
+    """
+    # 1. 앞뒤 공백 제거
+    sanitized = user_input.strip()
+
+    # 2. 연속된 공백을 하나로 축약 (줄바꿈은 유지)
+    import re
+    sanitized = re.sub(r'[ \t]+', ' ', sanitized)
+
+    # 3. 연속된 줄바꿈을 최대 2개로 제한
+    sanitized = re.sub(r'\n{3,}', '\n\n', sanitized)
+
+    return sanitized
+
+
+def get_claude_cli_path() -> str:
+    """
+    Claude CLI 실행 파일 경로를 반환합니다.
+
+    우선순위:
+    1. 환경변수 CLAUDE_CLI_PATH (명시적 오버라이드)
+    2. 자동 탐지 (~/.claude/local/claude)
+
+    Returns:
+        Claude CLI 실행 파일 경로
+
+    Raises:
+        FileNotFoundError: CLI를 찾을 수 없을 경우
+    """
+    import os
+    import platform
+    from dotenv import load_dotenv
+
+    # .env 파일 로드
+    load_dotenv()
+
+    # 1. 환경변수 확인
+    env_path = os.getenv("CLAUDE_CLI_PATH")
+    if env_path:
+        cli_path = Path(env_path).expanduser()
+        if cli_path.exists():
+            return str(cli_path)
+        else:
+            logging.warning(f"환경변수 CLAUDE_CLI_PATH가 유효하지 않습니다: {env_path}")
+
+    # 2. 자동 탐지
+    home_dir = Path.home()
+    system = platform.system()
+
+    if system == "Windows":
+        default_path = home_dir / ".claude" / "local" / "claude.exe"
+    else:  # macOS, Linux
+        default_path = home_dir / ".claude" / "local" / "claude"
+
+    if default_path.exists():
+        return str(default_path)
+
+    # 찾을 수 없음
+    raise FileNotFoundError(
+        f"Claude CLI를 찾을 수 없습니다.\n"
+        f"다음 중 하나의 방법으로 설정하세요:\n\n"
+        f"방법 1 - 환경변수 설정:\n"
+        f"  export CLAUDE_CLI_PATH='/path/to/claude'\n\n"
+        f"방법 2 - 기본 경로에 설치:\n"
+        f"  {default_path}\n\n"
+        f"Claude CLI 설치 방법: https://docs.anthropic.com/en/docs/claude-code"
+    )
 
 
 def validate_environment() -> None:

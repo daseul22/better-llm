@@ -33,7 +33,11 @@ from src.utils import (
     save_session_history,
     print_header,
     print_footer,
-    validate_environment
+    validate_environment,
+    validate_user_input,
+    sanitize_user_input,
+    load_system_config,
+    SystemConfig
 )
 
 
@@ -45,12 +49,21 @@ class Orchestrator:
     Worker Tool들은 실제 작업(파일 읽기/쓰기, 코드 실행)을 담당합니다.
     """
 
-    def __init__(self, config_path: Path, verbose: bool = False):
+    def __init__(
+        self,
+        config_path: Path,
+        verbose: bool = False,
+        system_config: Optional[SystemConfig] = None
+    ):
         """
         Args:
             config_path: 워커 에이전트 설정 파일 경로
             verbose: 상세 로깅 활성화 여부
+            system_config: 시스템 설정 (없으면 기본값 사용)
         """
+        # 시스템 설정 로드
+        self.system_config = system_config or load_system_config()
+
         setup_logging(verbose)
         validate_environment()
 
@@ -60,8 +73,12 @@ class Orchestrator:
         # Worker Tools MCP Server 생성
         worker_tools_server = create_worker_tools_server()
 
-        # Manager Agent 초기화 (Worker Tools 전달)
-        self.manager = ManagerAgent(worker_tools_server)
+        # Manager Agent 초기화 (Worker Tools + 시스템 설정 전달)
+        self.manager = ManagerAgent(
+            worker_tools_server,
+            model=self.system_config.manager_model,
+            max_history_messages=self.system_config.max_history_messages
+        )
 
         # 대화 히스토리
         self.history = ConversationHistory()
@@ -80,6 +97,15 @@ class Orchestrator:
         Returns:
             작업 결과
         """
+        # 입력 검증
+        is_valid, error_msg = validate_user_input(user_request)
+        if not is_valid:
+            print(f"\n❌ 입력 검증 실패: {error_msg}")
+            return SessionResult(status="invalid_input")
+
+        # 입력 정제
+        user_request = sanitize_user_input(user_request)
+
         # 헤더 출력
         print_header(f"Group Chat Orchestration v3.0 (Worker Tools) - Session {self.session_id}")
         print(f"📝 작업: {user_request}")
@@ -91,7 +117,7 @@ class Orchestrator:
         self.history.add_message("user", user_request)
 
         turn = 0
-        max_turns = 10  # Manager 호출 최대 반복
+        max_turns = self.system_config.max_turns  # 설정에서 로드
 
         try:
             while turn < max_turns:

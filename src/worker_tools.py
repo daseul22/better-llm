@@ -110,6 +110,54 @@ def initialize_workers(config_path: Path):
         logger.info(f"✅ Worker Agent 초기화: {config.name} ({config.role})")
 
 
+async def _execute_worker_task(
+    worker_name: str,
+    task_description: str,
+    use_retry: bool = False
+) -> Dict[str, Any]:
+    """
+    Worker Agent 실행 공통 로직
+
+    Args:
+        worker_name: Worker 이름 (예: "planner", "coder")
+        task_description: 작업 설명
+        use_retry: 재시도 로직 사용 여부
+
+    Returns:
+        Agent 실행 결과
+    """
+    logger.debug(f"[{worker_name.capitalize()} Tool] 작업 실행: {task_description[:50]}...")
+
+    worker = _WORKER_AGENTS.get(worker_name)
+    if not worker:
+        return {
+            "content": [
+                {"type": "text", "text": f"❌ {worker_name.capitalize()} Agent를 찾을 수 없습니다."}
+            ]
+        }
+
+    async def execute():
+        result = ""
+        async for chunk in worker.execute_task(task_description):
+            result += chunk
+        return {"content": [{"type": "text", "text": result}]}
+
+    if use_retry:
+        return await retry_with_backoff(execute, worker_name)
+    else:
+        try:
+            _ERROR_STATS[worker_name]["attempts"] += 1
+            return await execute()
+        except Exception as e:
+            _ERROR_STATS[worker_name]["failures"] += 1
+            logger.error(f"[{worker_name.capitalize()} Tool] 실행 실패: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"❌ {worker_name.capitalize()} 실행 실패: {e}"}
+                ]
+            }
+
+
 @tool(
     "execute_planner_task",
     "Planner Agent에게 작업을 할당합니다. 요구사항 분석 및 계획 수립을 담당합니다.",
@@ -125,24 +173,7 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    task = args["task_description"]
-    logger.debug(f"[Planner Tool] 작업 실행: {task[:50]}...")
-
-    worker = _WORKER_AGENTS.get("planner")
-    if not worker:
-        return {
-            "content": [
-                {"type": "text", "text": "❌ Planner Agent를 찾을 수 없습니다."}
-            ]
-        }
-
-    async def execute():
-        result = ""
-        async for chunk in worker.execute_task(task):
-            result += chunk
-        return {"content": [{"type": "text", "text": result}]}
-
-    return await retry_with_backoff(execute, "planner")
+    return await _execute_worker_task("planner", args["task_description"], use_retry=True)
 
 
 @tool(
@@ -160,35 +191,7 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    task = args["task_description"]
-    logger.debug(f"[Coder Tool] 작업 실행: {task[:50]}...")
-
-    worker = _WORKER_AGENTS.get("coder")
-    if not worker:
-        return {
-            "content": [
-                {"type": "text", "text": "❌ Coder Agent를 찾을 수 없습니다."}
-            ]
-        }
-
-    try:
-        # Worker Agent 실행 (스트리밍)
-        result = ""
-        async for chunk in worker.execute_task(task):
-            result += chunk
-
-        return {
-            "content": [
-                {"type": "text", "text": result}
-            ]
-        }
-    except Exception as e:
-        logger.error(f"[Coder Tool] 실행 실패: {e}")
-        return {
-            "content": [
-                {"type": "text", "text": f"❌ Coder 실행 실패: {e}"}
-            ]
-        }
+    return await _execute_worker_task("coder", args["task_description"], use_retry=False)
 
 
 @tool(
@@ -206,35 +209,7 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    task = args["task_description"]
-    logger.debug(f"[Tester Tool] 작업 실행: {task[:50]}...")
-
-    worker = _WORKER_AGENTS.get("tester")
-    if not worker:
-        return {
-            "content": [
-                {"type": "text", "text": "❌ Tester Agent를 찾을 수 없습니다."}
-            ]
-        }
-
-    try:
-        # Worker Agent 실행 (스트리밍)
-        result = ""
-        async for chunk in worker.execute_task(task):
-            result += chunk
-
-        return {
-            "content": [
-                {"type": "text", "text": result}
-            ]
-        }
-    except Exception as e:
-        logger.error(f"[Tester Tool] 실행 실패: {e}")
-        return {
-            "content": [
-                {"type": "text", "text": f"❌ Tester 실행 실패: {e}"}
-            ]
-        }
+    return await _execute_worker_task("tester", args["task_description"], use_retry=False)
 
 
 @tool(
@@ -252,35 +227,7 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    task = args["task_description"]
-    logger.debug(f"[Reviewer Tool] 작업 실행: {task[:50]}...")
-
-    worker = _WORKER_AGENTS.get("reviewer")
-    if not worker:
-        return {
-            "content": [
-                {"type": "text", "text": "❌ Reviewer Agent를 찾을 수 없습니다."}
-            ]
-        }
-
-    try:
-        # Worker Agent 실행 (스트리밍)
-        result = ""
-        async for chunk in worker.execute_task(task):
-            result += chunk
-
-        return {
-            "content": [
-                {"type": "text", "text": result}
-            ]
-        }
-    except Exception as e:
-        logger.error(f"[Reviewer Tool] 실행 실패: {e}")
-        return {
-            "content": [
-                {"type": "text", "text": f"❌ Reviewer 실행 실패: {e}"}
-            ]
-        }
+    return await _execute_worker_task("reviewer", args["task_description"], use_retry=False)
 
 
 def get_error_statistics() -> Dict[str, Any]:

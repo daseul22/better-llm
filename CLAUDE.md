@@ -133,15 +133,32 @@ options = ClaudeAgentOptions(
 
 ## 향후 개선 사항
 
-1. ✅ **TUI 업데이트**: Worker Tools Architecture로 변경 완료 (2025-10-18)
-2. ✅ **Reviewer Agent**: 코드 리뷰 자동화 완료 (2025-10-18)
-3. ✅ **프로젝트 컨텍스트**: 일관된 코드 생성을 위한 컨텍스트 관리 완료 (2025-10-18)
-4. ✅ **에러 핸들링**: Worker Tool 실패 시 재시도 로직 추가 완료 (2025-10-18)
-5. ✅ **에러 모니터링**: 통계 수집 및 표시 기능 추가 완료 (2025-10-18)
-6. **성능 최적화**: 캐싱 전략 개선, 불필요한 Tool 호출 최소화
-7. **로깅 개선**: 각 Tool 호출의 입출력 상세 로깅
-8. **문서화**: 아키텍처 다이어그램 및 사용 예제 추가
-9. **자동 복구**: 에러 패턴 분석 후 자동 복구 로직 추가
+### 완료 (2025-10-18)
+1. ✅ **TUI 업데이트**: Worker Tools Architecture로 변경 완료
+2. ✅ **Reviewer Agent**: 코드 리뷰 자동화 완료
+3. ✅ **프로젝트 컨텍스트**: 일관된 코드 생성을 위한 컨텍스트 관리 완료
+4. ✅ **에러 핸들링**: Worker Tool 실패 시 재시도 로직 추가 완료
+5. ✅ **에러 모니터링**: 통계 수집 및 표시 기능 추가 완료
+6. ✅ **CLI 경로 하드코딩 제거**: 환경변수 및 자동 탐지 완료
+7. ✅ **코드 리팩토링**: Worker Tools 중복 코드 120줄 감소
+8. ✅ **입력 검증**: 프롬프트 인젝션 방어 추가
+9. ✅ **프롬프트 최적화**: 슬라이딩 윈도우 구현
+10. ✅ **시스템 설정**: 중앙 집중식 설정 파일 추가
+
+### 우선순위 1 (단기)
+11. **병렬 실행 지원**: 독립적인 Worker Tool 병렬 실행 (성능 향상)
+12. **Worker Tool 동적 로딩**: 플러그인 아키텍처 (확장성 향상)
+13. **파일 접근 화이트리스트**: 보안 강화 (permission_mode 개선)
+
+### 우선순위 2 (중기)
+14. **캐싱 전략 개선**: Worker Agent 파일 캐싱 (비용 절감)
+15. **구조화된 로깅**: JSON 로그 및 모니터링 도구 연동
+16. **메트릭 수집**: Worker별 평균 실행 시간, 토큰 사용량, 성공률
+
+### 우선순위 3 (장기)
+17. **아키텍처 다이어그램**: 시각적 문서화
+18. **자동 복구**: 에러 패턴 분석 후 자동 복구 로직
+19. **마이크로서비스 아키텍처**: Worker Tool 분산 실행
 
 ---
 
@@ -243,3 +260,84 @@ options = ClaudeAgentOptions(
 - 후속 조치:
   - 모니터링: 실제 프로젝트에서 Reviewer 품질 및 에러 통계 수집
   - 개선: 에러 패턴 분석 후 자동 복구 로직 추가 검토
+
+---
+
+### refactor. 아키텍처 리뷰 기반 시스템 개선
+
+- 날짜: 2025-10-18 16:30 (Asia/Seoul)
+- 컨텍스트:
+  - 사용자가 "이 프로젝트의 아키텍트 리뷰해줘" 요청
+  - 전체 아키텍처 분석 후 6.4/10 평가 (양호)
+  - 핵심 개선사항 7가지 도출 및 모두 구현 완료
+
+- 변경사항:
+
+  **1. CLI 경로 하드코딩 제거 (보안 🔴 Critical)**
+  - `src/utils.py`: `get_claude_cli_path()` 함수 추가
+    - 환경변수 `CLAUDE_CLI_PATH` 우선 확인
+    - 자동 탐지: `~/.claude/local/claude` (macOS/Linux), `%USERPROFILE%\.claude\local\claude.exe` (Windows)
+    - 명확한 에러 메시지 및 설치 안내
+  - `src/manager_agent.py`: 하드코딩 경로 제거 → `get_claude_cli_path()` 사용
+  - `src/worker_agent.py`: 하드코딩 경로 제거 → `get_claude_cli_path()` 사용
+  - 영향: 다른 환경에서 즉시 실행 가능, 보안 개선
+
+  **2. Worker Tools 중복 코드 리팩토링 (코드 품질)**
+  - `src/worker_tools.py`: `_execute_worker_task()` 공통 함수 추출
+    - `execute_planner_task`: 재시도 로직 포함 (use_retry=True)
+    - `execute_coder_task`: 재시도 로직 미포함 (use_retry=False)
+    - `execute_reviewer_task`: 재시도 로직 미포함
+    - `execute_tester_task`: 재시도 로직 미포함
+  - 코드 감소: 4개 함수 각각 ~30줄 → ~3줄 (총 ~120줄 감소)
+  - 영향: 유지보수성 향상, 버그 감소
+
+  **3. 사용자 입력 검증 및 Sanitization (보안 🟡 Warning)**
+  - `src/utils.py`: 입력 검증 함수 추가
+    - `validate_user_input()`: 빈 입력, 길이, 위험 패턴, 제어 문자 검증
+    - `sanitize_user_input()`: 공백 정제, 연속 줄바꿈 제한
+    - 위험 패턴: "system:", "assistant:", "<|im_start|>", "###instruction" 등
+  - `orchestrator.py`: 실행 전 입력 검증 추가
+  - `tui.py`: 실행 전 입력 검증 추가
+  - 영향: 프롬프트 인젝션 방어, 안정성 향상
+
+  **4. 프롬프트 히스토리 슬라이딩 윈도우 (성능 최적화)**
+  - `src/manager_agent.py`: `_build_prompt_from_history()` 최적화
+    - `max_history_messages` 파라미터 추가 (기본값: 20)
+    - 슬라이딩 윈도우: 첫 번째 사용자 메시지 + 최근 N-1개 메시지
+    - 긴 대화에서 토큰 비용 절감
+  - 영향: API 비용 절감, 성능 향상
+
+  **5. 시스템 설정 파일 개선 (확장성)**
+  - `config/system_config.json` (신규): 중앙 집중식 설정
+    - Manager 설정: model, max_history_messages, max_turns
+    - 성능 설정: enable_caching, worker_retry 관련
+    - 보안 설정: max_input_length, enable_input_validation
+    - 로깅 설정: level, format, enable_structured_logging
+  - `src/utils.py`: `SystemConfig` dataclass, `load_system_config()` 함수 추가
+  - `orchestrator.py`: SystemConfig 로드 및 사용
+  - 영향: 설정 관리 용이, 유연성 향상
+
+  **6. 테스트 자동화 (품질 보증)**
+  - `test_improvements.py` (신규): 개선사항 검증 스크립트
+    - CLI 경로 자동 탐지 테스트
+    - Worker Tools 리팩토링 검증
+    - 입력 검증 및 Sanitization 테스트
+    - 프롬프트 히스토리 최적화 검증
+    - 시스템 설정 로드 테스트
+  - 결과: 5/5 테스트 통과 (100%)
+
+- 영향범위:
+  - 기능: ✅ 모든 기능 정상 작동 유지
+  - 성능: ✅ 프롬프트 최적화로 토큰 비용 절감
+  - 보안: ✅ 하드코딩 제거, 입력 검증 추가
+  - 코드 품질: ✅ 중복 코드 120줄 감소, 유지보수성 향상
+  - 문서: ✅ test_improvements.py, system_config.json 추가
+
+- 테스트:
+  - 단위: ✅ Python 구문 검사 통과 (모든 파일)
+  - 통합: ✅ test_improvements.py 5/5 통과 (100%)
+
+- 후속 조치:
+  - TODO: 병렬 실행 지원 (독립적인 Worker Tool 병렬화)
+  - TODO: Worker Tool 동적 로딩 (플러그인 아키텍처)
+  - 모니터링: 실제 사용 시 성능 및 비용 측정

@@ -1,0 +1,22 @@
+{
+  "manager": {
+    "model": "claude-sonnet-4-5-20250929",
+    "max_history_messages": 20,
+    "max_turns": 10
+  },
+  "performance": {
+    "enable_caching": true,
+    "worker_retry_enabled": true,
+    "worker_retry_max_attempts": 3,
+    "worker_retry_base_delay": 1.0
+  },
+  "security": {
+    "max_input_length": 5000,
+    "enable_input_validation": true
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "enable_structured_logging": false
+  }
+}

@@ -30,6 +30,8 @@ from src.utils import (
     generate_session_id,
     save_session_history,
     validate_environment,
+    validate_user_input,
+    sanitize_user_input
 )
 
 
@@ -188,6 +190,16 @@ class OrchestratorTUI(App):
         status_bar = self.query_one("#status-bar", Static)
 
         try:
+            # 입력 검증
+            is_valid, error_msg = validate_user_input(user_request)
+            if not is_valid:
+                output_log.write(f"[bold red]❌ 입력 검증 실패: {error_msg}[/bold red]")
+                task_input.value = ""
+                return
+
+            # 입력 정제
+            user_request = sanitize_user_input(user_request)
+
             # 입력 필드 비우기
             task_input.value = ""
 

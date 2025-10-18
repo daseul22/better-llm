@@ -11,6 +11,7 @@ from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import ClaudeAgentOptions
 
 from .models import Message
+from .utils import get_claude_cli_path
 
 logger = logging.getLogger(__name__)
 
@@ -76,18 +77,25 @@ class ManagerAgent:
 - 모든 작업이 완료되면 "작업이 완료되었습니다"라고 명시하세요
 """
 
-    def __init__(self, worker_tools_server, model: str = "claude-sonnet-4-5-20250929"):
+    def __init__(
+        self,
+        worker_tools_server,
+        model: str = "claude-sonnet-4-5-20250929",
+        max_history_messages: int = 20
+    ):
         """
         Args:
             worker_tools_server: Worker Tools MCP 서버
             model: 사용할 Claude 모델
+            max_history_messages: 프롬프트에 포함할 최대 히스토리 메시지 수 (슬라이딩 윈도우)
         """
         self.model = model
         self.worker_tools_server = worker_tools_server
+        self.max_history_messages = max_history_messages
 
     def _build_prompt_from_history(self, history: List[Message]) -> str:
         """
-        대화 히스토리를 프롬프트 텍스트로 변환
+        대화 히스토리를 프롬프트 텍스트로 변환 (슬라이딩 윈도우 적용)
 
         Args:
             history: 대화 히스토리
@@ -98,7 +106,22 @@ class ManagerAgent:
         # 시스템 프롬프트로 시작
         prompt_parts = [self.SYSTEM_PROMPT, "\n\n## 대화 히스토리:\n"]
 
-        for msg in history:
+        # 슬라이딩 윈도우: 최근 N개 메시지만 포함
+        # 단, 첫 번째 사용자 요청은 항상 포함 (컨텍스트 유지)
+        if len(history) > self.max_history_messages:
+            # 첫 번째 사용자 메시지 + 최근 메시지들
+            first_user_msg = next((msg for msg in history if msg.role == "user"), None)
+            recent_messages = history[-(self.max_history_messages - 1):]
+
+            if first_user_msg and first_user_msg not in recent_messages:
+                messages_to_include = [first_user_msg] + recent_messages
+                prompt_parts.append("\n[참고: 초기 요청과 최근 대화만 표시]\n")
+            else:
+                messages_to_include = recent_messages
+        else:
+            messages_to_include = history
+
+        for msg in messages_to_include:
             if msg.role == "user":
                 prompt_parts.append(f"\n[사용자]\n{msg.content}\n")
             elif msg.role == "agent":
@@ -143,7 +166,7 @@ class ManagerAgent:
                     "mcp__workers__execute_tester_task",
                     "read"  # 파일 읽기 툴
                 ],
-                cli_path="/Users/simdaseul/.claude/local/claude",
+                cli_path=get_claude_cli_path(),
                 permission_mode="bypassPermissions"
             )
 
