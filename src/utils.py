@@ -224,15 +224,22 @@ def validate_environment() -> None:
     """
     환경 변수 검증 (ANTHROPIC_API_KEY)
 
+    .env 파일이 있으면 자동으로 로드합니다.
+
     Raises:
         ValueError: API 키가 설정되지 않은 경우
     """
     import os
+    from dotenv import load_dotenv
+
+    # .env 파일 로드 (있을 경우)
+    load_dotenv()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise ValueError(
             "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.\n"
             "다음 명령으로 설정하세요:\n"
-            "  export ANTHROPIC_API_KEY='your-api-key'"
+            "  export ANTHROPIC_API_KEY='your-api-key'\n"
+            "또는 .env 파일에 추가하세요."
         )

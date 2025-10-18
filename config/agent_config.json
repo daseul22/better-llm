@@ -4,22 +4,36 @@
       "name": "planner",
       "role": "계획 수립",
       "system_prompt_file": "prompts/planner.txt",
-      "tools": ["read", "glob"],
-      "model": "claude-sonnet-4"
+      "tools": [
+        "read",
+        "glob"
+      ],
+      "model": "claude-4-5-haiku-20251001"
     },
     {
       "name": "coder",
       "role": "코드 작성",
       "system_prompt_file": "prompts/coder.txt",
-      "tools": ["read", "write", "edit", "glob", "grep", "bash"],
-      "model": "claude-sonnet-4"
+      "tools": [
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep",
+        "bash"
+      ],
+      "model": "claude-4-5-haiku-20251001"
     },
     {
       "name": "tester",
       "role": "테스트 및 검증",
       "system_prompt_file": "prompts/tester.txt",
-      "tools": ["read", "bash", "write"],
-      "model": "claude-sonnet-4"
+      "tools": [
+        "read",
+        "bash",
+        "write"
+      ],
+      "model": "claude-4-5-haiku-20251001"
     }
   ]
 }
