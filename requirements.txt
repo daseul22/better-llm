@@ -1,0 +1,17 @@
+# 그룹 챗 오케스트레이션 시스템 의존성
+# Python 3.10 이상 필요
+
+# Claude API
+anthropic>=0.18.0
+
+# CLI 프레임워크
+click>=8.0.0
+
+# 유틸리티
+python-dotenv>=1.0.0
+
+# 개발 의존성 (선택사항)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+ruff>=0.1.0
