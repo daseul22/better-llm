@@ -2,15 +2,34 @@
   "project_name": "better-llm",
   "language": "python",
   "framework": "claude-agent-sdk",
-  "architecture": "Worker Tools Architecture",
+  "architecture": "Clean Architecture (4-Layer)",
   "key_files": {
-    "main": "orchestrator.py",
-    "tui": "tui.py",
-    "manager": "src/manager_agent.py",
-    "workers": "src/worker_tools.py",
-    "worker_agent": "src/worker_agent.py",
-    "models": "src/models.py",
-    "config": "config/agent_config.json"
+    "entry_points": {
+      "cli": "orchestrator.py",
+      "tui": "tui.py"
+    },
+    "domain": {
+      "models": "src/domain/models/",
+      "agents": "src/domain/agents/base.py",
+      "services": "src/domain/services/"
+    },
+    "application": {
+      "ports": "src/application/ports/"
+    },
+    "infrastructure": {
+      "manager": "src/infrastructure/claude/manager_client.py",
+      "worker": "src/infrastructure/claude/worker_client.py",
+      "worker_tools": "src/infrastructure/mcp/worker_tools.py",
+      "config": "src/infrastructure/config/",
+      "storage": "src/infrastructure/storage/"
+    },
+    "presentation": {
+      "cli": "src/presentation/cli/orchestrator.py",
+      "tui": "src/presentation/tui/tui_app.py",
+      "utils": "src/presentation/cli/utils.py"
+    },
+    "config": "config/agent_config.json",
+    "system_config": "config/system_config.json"
   },
   "coding_style": {
     "docstring_style": "google",
@@ -22,8 +41,15 @@
   "dependencies": [
     "claude-agent-sdk",
     "textual",
+    "rich",
     "click",
-    "python-dotenv"
+    "python-dotenv",
+    "pytest",
+    "pytest-asyncio"
   ],
-  "description": "그룹 챗 오케스트레이션 시스템 - Manager Agent가 Worker Tools를 호출하여 소프트웨어 개발 작업 자동화"
+  "testing": {
+    "framework": "pytest",
+    "integration_tests": "test_integration.py"
+  },
+  "description": "그룹 챗 오케스트레이션 시스템 - Clean Architecture 기반, Manager Agent가 Worker Tools를 호출하여 소프트웨어 개발 작업 자동화"
 }

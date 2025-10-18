@@ -55,7 +55,15 @@ class ProjectContext:
         # CodingStyle 변환
         if "coding_style" in data and isinstance(data["coding_style"], dict):
             data["coding_style"] = CodingStyle(**data["coding_style"])
-        return cls(**data)
+
+        # ProjectContext 필드만 추출 (알려지지 않은 필드 제거)
+        valid_fields = {
+            'project_name', 'language', 'framework', 'architecture',
+            'key_files', 'coding_style', 'dependencies', 'description'
+        }
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+        return cls(**filtered_data)
 
     def to_prompt_context(self) -> str:
         """

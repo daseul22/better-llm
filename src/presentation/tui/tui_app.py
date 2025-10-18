@@ -20,7 +20,7 @@ from rich.text import Text
 from rich.table import Table
 
 from src.domain.models import SessionResult
-from src.domain.services import ConversationHistory
+from src.domain.services import ConversationHistory, ProjectContextAnalyzer
 from src.infrastructure.claude import ManagerAgent
 from src.infrastructure.mcp import (
     initialize_workers,
@@ -31,6 +31,7 @@ from src.infrastructure.config import (
     validate_environment,
     get_project_root,
 )
+from src.infrastructure.storage import JsonContextRepository
 from ..cli.utils import (
     generate_session_id,
     save_session_history,
@@ -258,6 +259,11 @@ class OrchestratorTUI(App):
         if not user_request:
             return
 
+        # 슬래시 커맨드 처리
+        if user_request.startswith('/'):
+            await self.handle_slash_command(user_request)
+            return
+
         # 현재 실행 중인 작업이 있으면 중단
         if self.current_task and not self.current_task.done():
             self.current_task.cancel()
@@ -412,6 +418,124 @@ class OrchestratorTUI(App):
             status_info.update("Error")
             import traceback
             output_log.write(f"[dim]{traceback.format_exc()}[/dim]")
+
+    async def handle_slash_command(self, command: str) -> None:
+        """
+        슬래시 커맨드 처리
+
+        지원 커맨드:
+        - /init: 현재 작업공간 분석하여 context 생성 및 새 세션 시작
+        """
+        task_input = self.query_one("#task-input", Input)
+        output_log = self.query_one("#output-log", RichLog)
+        worker_status = self.query_one("#worker-status", Static)
+        status_info = self.query_one("#status-info", Static)
+
+        # 입력 필드 비우기
+        task_input.value = ""
+
+        command = command.strip().lower()
+
+        if command == '/init':
+            # /init 커맨드: 프로젝트 분석 및 context 생성
+            try:
+                output_log.write("")
+                output_log.write(Panel(
+                    "[bold cyan]🔍 프로젝트 분석 시작...[/bold cyan]",
+                    border_style="cyan"
+                ))
+                output_log.write("")
+
+                worker_status.update("🔍 프로젝트 구조 분석 중...")
+                status_info.update("Analyzing...")
+
+                # 프로젝트 루트 가져오기
+                project_root = get_project_root()
+
+                # 프로젝트 분석
+                output_log.write("[dim]프로젝트 루트:[/dim] " + str(project_root))
+                output_log.write("[dim]파일 스캔 중...[/dim]")
+
+                analyzer = ProjectContextAnalyzer(project_root)
+                context = analyzer.analyze()
+
+                output_log.write("")
+                output_log.write("[bold green]✅ 분석 완료[/bold green]")
+                output_log.write("")
+
+                # 분석 결과 표시
+                result_table = Table(show_header=False, border_style="cyan", box=None, padding=(0, 2))
+                result_table.add_column("항목", style="dim")
+                result_table.add_column("값", style="white")
+
+                result_table.add_row("프로젝트", context.project_name)
+                result_table.add_row("언어", context.language)
+                result_table.add_row("프레임워크", context.framework)
+                result_table.add_row("아키텍처", context.architecture)
+                result_table.add_row("의존성", f"{len(context.dependencies)}개 패키지")
+
+                output_log.write(Panel(
+                    result_table,
+                    title="[bold cyan]분석 결과[/bold cyan]",
+                    border_style="cyan"
+                ))
+                output_log.write("")
+
+                # .context.json 저장
+                output_log.write("[dim]컨텍스트 저장 중...[/dim]")
+                worker_status.update("💾 컨텍스트 저장 중...")
+
+                context_file = project_root / ".context.json"
+                repo = JsonContextRepository(context_file)
+                repo.save(context)
+
+                output_log.write(f"[green]✅ 저장 완료:[/green] {context_file.name}")
+                output_log.write("")
+
+                # 새 세션 시작
+                output_log.write("[dim]새 세션 시작...[/dim]")
+                self.session_id = generate_session_id()
+                self.history = ConversationHistory()
+                self.start_time = time.time()
+
+                # UI 업데이트
+                session_info = self.query_one("#session-info", Static)
+                session_info.update(f"Session: {self.session_id}")
+
+                output_log.write("")
+                output_log.write(Panel(
+                    f"[bold green]✅ 초기화 완료[/bold green]\n\n"
+                    f"Session ID: {self.session_id}\n"
+                    f"Context: {context.project_name} ({context.architecture})",
+                    border_style="green"
+                ))
+                output_log.write("")
+
+                worker_status.update("✅ 초기화 완료")
+                status_info.update("Ready")
+
+            except Exception as e:
+                output_log.write("")
+                output_log.write(Panel(
+                    f"[bold red]❌ 초기화 실패[/bold red]\n\n{str(e)}",
+                    border_style="red"
+                ))
+                output_log.write("")
+                worker_status.update(f"❌ 오류")
+                status_info.update("Error")
+                import traceback
+                output_log.write(f"[dim]{traceback.format_exc()}[/dim]")
+
+        else:
+            # 알 수 없는 커맨드
+            output_log.write("")
+            output_log.write(Panel(
+                f"[bold yellow]⚠️  알 수 없는 커맨드: {command}[/bold yellow]\n\n"
+                f"사용 가능한 커맨드:\n"
+                f"  /init - 프로젝트 분석 및 context 초기화",
+                border_style="yellow"
+            ))
+            output_log.write("")
 
     async def action_new_session(self) -> None:
         """Ctrl+N: 새 세션"""
