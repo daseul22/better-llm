@@ -12,9 +12,10 @@ import os
 from claude_agent_sdk import query
 from claude_agent_sdk.types import ClaudeAgentOptions
 
-from .models import AgentConfig
-from .project_context import ProjectContext, ProjectContextManager
-from .utils import get_claude_cli_path, get_project_root
+from ...domain.models import AgentConfig
+from ...domain.services import ProjectContext
+from ..config import get_claude_cli_path, get_project_root
+from ..storage import JsonContextRepository
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,8 @@ class WorkerAgent:
             ProjectContext 또는 None
         """
         try:
-            manager = ProjectContextManager()
-            context = manager.load()
+            repo = JsonContextRepository(get_project_root() / ".context.json")
+            context = repo.load()
             if context:
                 logger.debug(f"✅ 프로젝트 컨텍스트 로드: {context.project_name}")
             return context

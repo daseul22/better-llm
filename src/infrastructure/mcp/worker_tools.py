@@ -14,9 +14,9 @@ from functools import wraps
 from claude_agent_sdk import tool, create_sdk_mcp_server
 from claude_agent_sdk.types import ClaudeAgentOptions
 
-from .worker_agent import WorkerAgent
-from .models import AgentConfig
-from .utils import load_agent_config
+from ..claude import WorkerAgent
+from ...domain.models import AgentConfig
+from ..config import JsonConfigLoader, get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,8 @@ def initialize_workers(config_path: Path):
     """
     global _WORKER_AGENTS
 
-    worker_configs = load_agent_config(config_path)
+    loader = JsonConfigLoader(get_project_root())
+    worker_configs = loader.load_agent_configs()
 
     for config in worker_configs:
         worker = WorkerAgent(config)

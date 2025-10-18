@@ -11,8 +11,8 @@ import os
 from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import ClaudeAgentOptions
 
-from .models import Message
-from .utils import get_claude_cli_path
+from ...domain.models import Message
+from ..config import get_claude_cli_path
 
 logger = logging.getLogger(__name__)
 
