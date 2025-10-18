@@ -58,6 +58,15 @@ class OrchestratorTUI(App):
         margin: 1 0;
     }
 
+    #worker-status {
+        background: $boost;
+        color: $text;
+        padding: 1;
+        margin: 1 0;
+        height: auto;
+        border: solid $accent;
+    }
+
     #input-container {
         height: auto;
         background: $panel;
@@ -91,6 +100,7 @@ class OrchestratorTUI(App):
     BINDINGS = [
         Binding("ctrl+c", "quit", "종료"),
         Binding("ctrl+n", "new_session", "새 세션"),
+        Binding("ctrl+i", "interrupt", "중단"),
     ]
 
     def __init__(self):
@@ -100,6 +110,9 @@ class OrchestratorTUI(App):
         self.history: Optional[ConversationHistory] = None
         self.initialized = False
         self.start_time = time.time()
+        self.current_task = None  # 현재 실행 중인 asyncio Task
+        self.task_start_time = None  # 작업 시작 시간
+        self.timer_active = False  # 타이머 활성화 여부
 
     def compose(self) -> ComposeResult:
         """UI 구성"""
@@ -109,6 +122,9 @@ class OrchestratorTUI(App):
             f"세션 ID: {self.session_id} | Worker Tools Architecture",
             id="session-info"
         )
+
+        # Worker Tool 실행 상태 표시 (Claude Code 스타일)
+        yield Static("", id="worker-status")
 
         with Container(id="input-container"):
             yield Input(
@@ -125,6 +141,8 @@ class OrchestratorTUI(App):
     async def on_mount(self) -> None:
         """앱 마운트 시 초기화"""
         await self.initialize_orchestrator()
+        # 타이머: 0.5초마다 Worker Tool 실행 시간 업데이트
+        self.set_interval(0.5, self.update_worker_status_timer)
 
     async def initialize_orchestrator(self) -> None:
         """오케스트레이터 초기화"""
@@ -181,7 +199,14 @@ class OrchestratorTUI(App):
         if not user_request:
             return
 
-        await self.run_task(user_request)
+        # 현재 실행 중인 작업이 있으면 중단
+        if self.current_task and not self.current_task.done():
+            self.current_task.cancel()
+            self.timer_active = False
+            self.update_worker_status("")
+
+        # 새 작업 시작
+        self.current_task = asyncio.create_task(self.run_task(user_request))
 
     async def run_task(self, user_request: str) -> None:
         """작업 실행 - Manager가 Worker Tools를 자동으로 호출"""
@@ -220,17 +245,41 @@ class OrchestratorTUI(App):
             output_log.write("[bold yellow]🤖 Manager Agent:[/bold yellow]")
             output_log.write("")
 
+            # Worker Tool 상태 업데이트 (시작)
+            self.task_start_time = time.time()
+            self.timer_active = True
+            self.update_worker_status("🔧 Manager Agent 실행 중...")
+
             # Manager가 Worker Tools를 호출하여 작업 수행 (스트리밍)
             task_start_time = time.time()
             manager_response = ""
 
             # 스트리밍으로 실시간 출력
-            async for chunk in self.manager.analyze_and_plan_stream(
-                self.history.get_history()
-            ):
-                manager_response += chunk
-                # 실시간으로 텍스트 출력 (Markdown 대신 일반 텍스트)
-                output_log.write(chunk, end="")
+            try:
+                async for chunk in self.manager.analyze_and_plan_stream(
+                    self.history.get_history()
+                ):
+                    manager_response += chunk
+                    # 실시간으로 텍스트 출력
+                    # RichLog.write()는 'end' 파라미터를 지원하지 않음
+                    output_log.write(chunk)
+            except asyncio.CancelledError:
+                # 사용자가 Ctrl+I로 중단
+                output_log.write(f"\n[bold yellow]⚠️  작업이 사용자에 의해 중단되었습니다[/bold yellow]")
+                self.timer_active = False
+                self.update_worker_status("")
+                return
+            except Exception as stream_error:
+                output_log.write(f"\n[bold red]❌ 스트리밍 에러: {stream_error}[/bold red]")
+                import traceback
+                output_log.write(f"[dim]{traceback.format_exc()}[/dim]")
+                self.timer_active = False
+                self.update_worker_status("")
+                raise
+
+            # Worker Tool 상태 업데이트 (종료)
+            self.timer_active = False
+            self.update_worker_status("")
 
             output_log.write("")
             output_log.write("")
@@ -305,6 +354,33 @@ class OrchestratorTUI(App):
 
         status_bar = self.query_one("#status-bar", Static)
         status_bar.update("새 세션 준비됨")
+
+    def update_worker_status(self, message: str) -> None:
+        """Worker Tool 상태 메시지 업데이트"""
+        try:
+            worker_status = self.query_one("#worker-status", Static)
+            worker_status.update(message)
+        except Exception:
+            pass  # 위젯이 아직 없으면 무시
+
+    def update_worker_status_timer(self) -> None:
+        """타이머: Worker Tool 실행 시간 업데이트 (0.5초마다 호출)"""
+        if not self.timer_active or self.task_start_time is None:
+            return
+
+        elapsed = time.time() - self.task_start_time
+        self.update_worker_status(f"🔧 Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
+
+    async def action_interrupt(self) -> None:
+        """Ctrl+I: 현재 작업 중단"""
+        if self.current_task and not self.current_task.done():
+            self.current_task.cancel()
+            output_log = self.query_one("#output-log", RichLog)
+            output_log.write("[bold yellow]⚠️  작업 중단 요청됨[/bold yellow]")
+            status_bar = self.query_one("#status-bar", Static)
+            status_bar.update("작업 중단됨")
+            self.timer_active = False
+            self.update_worker_status("")
 
 
 def main():
