@@ -98,7 +98,7 @@ class OrchestratorTUI(App):
         super().__init__()
         self.session_id = generate_session_id()
         self.manager: Optional[ManagerAgent] = None
-        self.workers: dict = {}
+        self.worker_agents: dict = {}
         self.chat_manager: Optional[ChatManager] = None
         self.history: Optional[ConversationHistory] = None
         self.initialized = False
@@ -148,14 +148,14 @@ class OrchestratorTUI(App):
             worker_configs = load_agent_config(config_path)
 
             # 워커 에이전트 초기화
-            self.workers = {}
+            self.worker_agents = {}
             for config in worker_configs:
                 worker = WorkerAgent(config)
-                self.workers[config.name] = worker
-            output_log.write(f"✅ 워커 에이전트 초기화 완료: {', '.join(self.workers.keys())}")
+                self.worker_agents[config.name] = worker
+            output_log.write(f"✅ 워커 에이전트 초기화 완료: {', '.join(self.worker_agents.keys())}")
 
             # 챗 매니저
-            self.chat_manager = ChatManager(self.workers)
+            self.chat_manager = ChatManager(self.worker_agents)
 
             # 대화 히스토리
             self.history = ConversationHistory()
@@ -165,7 +165,7 @@ class OrchestratorTUI(App):
             session_info.update(
                 f"세션 ID: {self.session_id} | "
                 f"매니저: ManagerAgent | "
-                f"워커: {', '.join(self.workers.keys())}"
+                f"워커: {', '.join(self.worker_agents.keys())}"
             )
 
             self.initialized = True
@@ -196,7 +196,7 @@ class OrchestratorTUI(App):
         session_info.update(
             f"세션 ID: {self.session_id} | "
             f"매니저: ManagerAgent | "
-            f"워커: {', '.join(self.workers.keys())}"
+            f"워커: {', '.join(self.worker_agents.keys())}"
         )
 
         output_log = self.query_one("#output-log", RichLog)
@@ -261,12 +261,12 @@ class OrchestratorTUI(App):
                 if not next_worker:
                     continue
 
-                if next_worker not in self.workers:
+                if next_worker not in self.worker_agents:
                     output_log.write(f"[yellow]⚠️ 알 수 없는 워커: {next_worker}[/yellow]")
                     continue
 
                 # 4. 워커 실행
-                worker = self.workers[next_worker]
+                worker = self.worker_agents[next_worker]
                 emoji = get_agent_emoji(next_worker)
 
                 output_log.write(f"[bold magenta]━━━ Turn {turn} ━━━ {emoji} {worker.config.role} ({next_worker}) ━━━[/bold magenta]")
@@ -321,7 +321,7 @@ class OrchestratorTUI(App):
 
         if matches:
             for match in matches:
-                if match in self.workers:
+                if match in self.worker_agents:
                     return match
         return None
 
