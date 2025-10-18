@@ -11,12 +11,13 @@ from pathlib import Path
 from typing import Optional
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Vertical, ScrollableContainer
-from textual.widgets import Footer, Input, Static, RichLog
+from textual.containers import Container, Vertical, ScrollableContainer, Horizontal
+from textual.widgets import Footer, Input, Static, RichLog, Header
 from textual.binding import Binding
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
+from rich.table import Table
 
 from src.models import SessionResult
 from src.manager_agent import ManagerAgent
@@ -37,50 +38,117 @@ from src.utils import (
 
 
 class OrchestratorTUI(App):
-    """Claude Code 스타일 TUI 애플리케이션"""
+    """전문적인 오케스트레이션 TUI 애플리케이션"""
 
     CSS = """
     Screen {
-        background: $surface;
+        background: #0d1117;
+        layers: base overlay;
     }
 
+    /* 앱 타이틀 */
+    #app-header {
+        dock: top;
+        height: 3;
+        background: #161b22;
+        border: tall #30363d;
+        content-align: center middle;
+        text-style: bold;
+        color: #58a6ff;
+    }
+
+    /* 출력 영역 */
     #output-container {
-        border: solid $primary;
+        border: tall #30363d;
+        background: #0d1117;
         height: 1fr;
-        margin: 1 0;
+        margin: 0 1;
+        padding: 0;
     }
 
     #output-log {
         height: 1fr;
-        background: $surface;
+        background: #0d1117;
+        padding: 1;
+        scrollbar-gutter: stable;
+    }
+
+    /* Worker 상태 표시 */
+    #worker-status-container {
+        height: auto;
+        margin: 1 1 0 1;
+        background: #161b22;
+        border: round #30363d;
+        padding: 0;
     }
 
     #worker-status {
-        background: $boost;
-        color: $text;
-        padding: 1;
-        margin: 1 0;
+        background: transparent;
+        color: #c9d1d9;
+        padding: 1 2;
         height: auto;
-        border: solid $accent;
+        text-style: bold;
     }
 
+    /* 입력 영역 */
     #input-container {
         height: auto;
-        background: $panel;
-        padding: 1;
-        margin: 1 0;
+        background: #161b22;
+        border: round #58a6ff;
+        margin: 1 1;
+        padding: 1 2;
+    }
+
+    #input-label {
+        color: #8b949e;
+        text-style: italic;
+        margin-bottom: 1;
     }
 
     Input {
-        margin: 0 1;
+        background: #0d1117;
+        border: none;
+        color: #c9d1d9;
+        padding: 0;
+        margin: 0;
     }
 
-    #session-id {
-        background: $panel;
-        color: $text-muted;
-        padding: 0 1;
-        text-align: right;
+    Input:focus {
+        border: none;
+        background: #0d1117;
+    }
+
+    /* 하단 정보바 */
+    #info-bar {
+        dock: bottom;
         height: 1;
+        background: #161b22;
+        color: #8b949e;
+        padding: 0 2;
+    }
+
+    #session-info {
+        text-align: left;
+        width: 1fr;
+    }
+
+    #status-info {
+        text-align: right;
+        width: 1fr;
+    }
+
+    /* Footer 스타일 */
+    Footer {
+        background: #161b22;
+    }
+
+    Footer > .footer--key {
+        background: #21262d;
+        color: #58a6ff;
+    }
+
+    Footer > .footer--description {
+        color: #c9d1d9;
     }
     """
 
@@ -103,22 +171,30 @@ class OrchestratorTUI(App):
 
     def compose(self) -> ComposeResult:
         """UI 구성"""
-        # 출력 영역 (위)
+        # 앱 헤더
+        yield Static("🤖 AI Orchestrator  │  Manager + Worker Tools Architecture", id="app-header")
+
+        # 출력 영역
         with ScrollableContainer(id="output-container"):
             yield RichLog(id="output-log", markup=True, highlight=True)
 
-        # Worker Tool 실행 상태 + Status (중간)
-        yield Static("준비 중...", id="worker-status")
+        # Worker 상태 표시
+        with Container(id="worker-status-container"):
+            yield Static("⏳ 초기화 중...", id="worker-status")
 
-        # 입력 영역 (아래)
+        # 입력 영역
         with Container(id="input-container"):
             yield Input(
-                placeholder="작업을 입력하세요 (예: 'FastAPI로 CRUD API 작성해줘')...",
+                placeholder="작업을 입력하세요...",
                 id="task-input"
             )
 
+        # 하단 정보바
+        with Horizontal(id="info-bar"):
+            yield Static(f"Session: {self.session_id}", id="session-info")
+            yield Static("Ready", id="status-info")
+
         yield Footer()
-        yield Static(f"세션 ID: {self.session_id}", id="session-id")
 
     async def on_mount(self) -> None:
         """앱 마운트 시 초기화"""
@@ -129,48 +205,65 @@ class OrchestratorTUI(App):
     async def initialize_orchestrator(self) -> None:
         """오케스트레이터 초기화"""
         worker_status = self.query_one("#worker-status", Static)
+        status_info = self.query_one("#status-info", Static)
         output_log = self.query_one("#output-log", RichLog)
 
         try:
-            worker_status.update("초기화 중...")
-            output_log.write("🔧 Worker Tools 초기화 중...")
+            worker_status.update("⏳ 초기화 중...")
+            status_info.update("Initializing...")
+
+            # Welcome 메시지
+            output_log.write("")
+            output_log.write(Panel(
+                "[bold cyan]AI Orchestration System[/bold cyan]\n\n"
+                "[dim]Manager Agent + Worker Tools Architecture[/dim]",
+                border_style="cyan",
+                title="[bold]Welcome[/bold]"
+            ))
+            output_log.write("")
 
             # 환경 검증
             validate_environment()
-            output_log.write("✅ 환경 검증 완료")
+            output_log.write("✅ [green]환경 검증 완료[/green]")
 
             # Worker Agent들 초기화 (프로젝트 루트 기준)
             config_path = get_project_root() / "config" / "agent_config.json"
             initialize_workers(config_path)
-            output_log.write("✅ Worker Agents 초기화 완료 (Planner, Coder, Reviewer, Tester)")
+            output_log.write("✅ [green]Worker Agents 초기화[/green] [dim](Planner, Coder, Reviewer, Tester)[/dim]")
 
             # Worker Tools MCP Server 생성
             worker_tools_server = create_worker_tools_server()
-            output_log.write("✅ Worker Tools MCP Server 생성 완료")
+            output_log.write("✅ [green]Worker Tools MCP Server 생성[/green]")
 
             # Manager Agent 초기화
             self.manager = ManagerAgent(worker_tools_server)
-            output_log.write("✅ Manager Agent 초기화 완료")
+            output_log.write("✅ [green]Manager Agent 준비 완료[/green]")
 
             # 대화 히스토리
             self.history = ConversationHistory()
 
             self.initialized = True
-            worker_status.update("준비됨 - 작업을 입력하고 Enter를 누르세요")
+            worker_status.update("✅ 준비 완료")
+            status_info.update("Ready")
+
             output_log.write("")
             output_log.write(Panel(
-                "[bold green]초기화 완료![/bold green]\n\n"
-                "Manager Agent가 자동으로 Worker Tools를 호출하여 작업을 수행합니다.\n"
-                "- execute_planner_task: 요구사항 분석 및 계획\n"
-                "- execute_coder_task: 코드 작성\n"
-                "- execute_tester_task: 테스트 작성 및 실행",
-                border_style="green"
+                "[bold green]시스템 준비 완료![/bold green]\n\n"
+                "[cyan]사용 가능한 Worker Tools:[/cyan]\n"
+                "  • [bold]execute_planner_task[/bold] - 요구사항 분석 및 계획 수립\n"
+                "  • [bold]execute_coder_task[/bold] - 코드 작성 및 수정\n"
+                "  • [bold]execute_reviewer_task[/bold] - 코드 리뷰 및 품질 검증\n"
+                "  • [bold]execute_tester_task[/bold] - 테스트 작성 및 실행\n\n"
+                "[dim]작업을 입력하고 Enter를 눌러 시작하세요.[/dim]",
+                border_style="green",
+                title="[bold]Ready[/bold]"
             ))
             output_log.write("")
 
         except Exception as e:
             output_log.write(f"[red]❌ 초기화 실패: {e}[/red]")
-            worker_status.update(f"오류: {e}")
+            worker_status.update(f"❌ 오류: {e}")
+            status_info.update("Error")
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Enter 키 입력 시 작업 실행"""
@@ -195,12 +288,19 @@ class OrchestratorTUI(App):
         task_input = self.query_one("#task-input", Input)
         output_log = self.query_one("#output-log", RichLog)
         worker_status = self.query_one("#worker-status", Static)
+        status_info = self.query_one("#status-info", Static)
 
         try:
             # 입력 검증
             is_valid, error_msg = validate_user_input(user_request)
             if not is_valid:
-                output_log.write(f"[bold red]❌ 입력 검증 실패: {error_msg}[/bold red]")
+                output_log.write("")
+                output_log.write(Panel(
+                    f"[bold red]입력 검증 실패[/bold red]\n\n{error_msg}",
+                    border_style="red",
+                    title="[bold]Error[/bold]"
+                ))
+                output_log.write("")
                 task_input.value = ""
                 return
 
@@ -213,9 +313,9 @@ class OrchestratorTUI(App):
             # 사용자 요청 표시
             output_log.write("")
             output_log.write(Panel(
-                f"[bold cyan]{user_request}[/bold cyan]",
-                title="[bold]사용자 요청[/bold]",
-                border_style="cyan"
+                f"[bold]{user_request}[/bold]",
+                title="[bold cyan]💬 User Request[/bold cyan]",
+                border_style="blue"
             ))
             output_log.write("")
 
@@ -223,14 +323,15 @@ class OrchestratorTUI(App):
             self.history.add_message("user", user_request)
 
             # Manager Agent 실행
-            worker_status.update("Manager Agent 실행 중...")
-            output_log.write("[bold yellow]🤖 Manager Agent:[/bold yellow]")
+            status_info.update("Running...")
+            output_log.write("[bold yellow]🤖 Manager Agent[/bold yellow]")
+            output_log.write("[dim]" + "─" * 60 + "[/dim]")
             output_log.write("")
 
             # Worker Tool 상태 업데이트 (시작)
             self.task_start_time = time.time()
             self.timer_active = True
-            self.update_worker_status("🔧 Manager Agent 실행 중...")
+            self.update_worker_status("🔄 Manager Agent 실행 중...")
 
             # Manager가 Worker Tools를 호출하여 작업 수행 (스트리밍)
             task_start_time = time.time()
@@ -261,9 +362,9 @@ class OrchestratorTUI(App):
 
             # Worker Tool 상태 업데이트 (종료)
             self.timer_active = False
-            self.update_worker_status("")
 
             output_log.write("")
+            output_log.write("[dim]" + "─" * 60 + "[/dim]")
             output_log.write("")
 
             # 히스토리에 추가
@@ -272,29 +373,39 @@ class OrchestratorTUI(App):
             # 작업 완료
             task_duration = time.time() - task_start_time
             output_log.write(Panel(
-                f"[bold green]작업 완료[/bold green]\n"
-                f"소요 시간: {task_duration:.1f}초",
-                border_style="green"
+                f"[bold green]✅ 작업 완료[/bold green]\n\n"
+                f"⏱️  소요 시간: [cyan]{task_duration:.1f}초[/cyan]",
+                border_style="green",
+                title="[bold]Success[/bold]"
             ))
             output_log.write("")
 
             # 에러 통계 표시
             error_stats = get_error_statistics()
-            stats_lines = ["📊 [bold]Worker Tools 에러 통계[/bold]\n"]
-            for worker_name, data in error_stats.items():
-                stats_lines.append(
-                    f"[cyan]{worker_name.upper()}[/cyan]: "
-                    f"시도 {data['attempts']}, "
-                    f"성공 {data['successes']}, "
-                    f"실패 {data['failures']}, "
-                    f"에러율 {data['error_rate']}%"
-                )
+            if error_stats:
+                stats_table = Table(show_header=True, header_style="bold cyan", border_style="dim")
+                stats_table.add_column("Worker", style="cyan", width=15)
+                stats_table.add_column("시도", justify="right", width=8)
+                stats_table.add_column("성공", justify="right", width=8, style="green")
+                stats_table.add_column("실패", justify="right", width=8, style="red")
+                stats_table.add_column("에러율", justify="right", width=10)
 
-            output_log.write(Panel(
-                "\n".join(stats_lines),
-                border_style="yellow"
-            ))
-            output_log.write("")
+                for worker_name, data in error_stats.items():
+                    error_rate_style = "red" if data['error_rate'] > 20 else "yellow" if data['error_rate'] > 0 else "green"
+                    stats_table.add_row(
+                        worker_name.upper(),
+                        str(data['attempts']),
+                        str(data['successes']),
+                        str(data['failures']),
+                        f"[{error_rate_style}]{data['error_rate']}%[/{error_rate_style}]"
+                    )
+
+                output_log.write(Panel(
+                    stats_table,
+                    border_style="yellow",
+                    title="[bold]📊 Worker Tools Statistics[/bold]"
+                ))
+                output_log.write("")
 
             # 세션 저장
             result = SessionResult(status="completed")
@@ -307,11 +418,19 @@ class OrchestratorTUI(App):
                 sessions_dir
             )
 
-            worker_status.update(f"완료 ({task_duration:.1f}초) - 세션 저장: {filepath.name}")
+            worker_status.update(f"✅ 완료 ({task_duration:.1f}초)")
+            status_info.update(f"Completed • {filepath.name}")
 
         except Exception as e:
-            output_log.write(f"[bold red]❌ 오류 발생: {e}[/bold red]")
-            worker_status.update(f"오류: {e}")
+            output_log.write("")
+            output_log.write(Panel(
+                f"[bold red]오류 발생[/bold red]\n\n{str(e)}",
+                border_style="red",
+                title="[bold]❌ Error[/bold]"
+            ))
+            output_log.write("")
+            worker_status.update(f"❌ 오류")
+            status_info.update("Error")
             import traceback
             output_log.write(f"[dim]{traceback.format_exc()}[/dim]")
 
@@ -321,20 +440,25 @@ class OrchestratorTUI(App):
         self.history = ConversationHistory()
         self.start_time = time.time()
 
-        # 세션 ID 업데이트
-        session_id_widget = self.query_one("#session-id", Static)
-        session_id_widget.update(f"세션 ID: {self.session_id}")
+        # UI 업데이트
+        session_info = self.query_one("#session-info", Static)
+        status_info = self.query_one("#status-info", Static)
+        session_info.update(f"Session: {self.session_id}")
 
         output_log = self.query_one("#output-log", RichLog)
         output_log.clear()
+        output_log.write("")
         output_log.write(Panel(
-            f"[bold green]새 세션 시작[/bold green]\n세션 ID: {self.session_id}",
-            border_style="green"
+            f"[bold green]새 세션 시작[/bold green]\n\n"
+            f"Session ID: [cyan]{self.session_id}[/cyan]",
+            border_style="green",
+            title="[bold]New Session[/bold]"
         ))
         output_log.write("")
 
         worker_status = self.query_one("#worker-status", Static)
-        worker_status.update("새 세션 준비됨")
+        worker_status.update("✅ 준비 완료")
+        status_info.update("Ready")
 
     def update_worker_status(self, message: str) -> None:
         """Worker Tool 상태 메시지 업데이트"""
@@ -350,17 +474,30 @@ class OrchestratorTUI(App):
             return
 
         elapsed = time.time() - self.task_start_time
-        self.update_worker_status(f"🔧 Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
+        # 애니메이션 효과를 위한 스피너
+        spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        spinner = spinner_frames[int(elapsed * 2) % len(spinner_frames)]
+
+        self.update_worker_status(f"{spinner} Manager Agent 실행 중... [cyan]⏱️  {elapsed:.1f}s[/cyan]")
 
     async def action_interrupt_or_quit(self) -> None:
         """Ctrl+C: 1번 누르면 작업 중단, 2초 내 2번 누르면 프로세스 종료"""
         current_time = time.time()
         time_since_last_ctrl_c = current_time - self.last_ctrl_c_time
 
+        output_log = self.query_one("#output-log", RichLog)
+        worker_status = self.query_one("#worker-status", Static)
+        status_info = self.query_one("#status-info", Static)
+
         # 2초 이내에 다시 누르면 종료
         if time_since_last_ctrl_c < 2.0:
-            output_log = self.query_one("#output-log", RichLog)
-            output_log.write("[bold red]👋 종료합니다...[/bold red]")
+            output_log.write("")
+            output_log.write(Panel(
+                "[bold red]프로그램을 종료합니다...[/bold red]",
+                border_style="red",
+                title="[bold]👋 Goodbye[/bold]"
+            ))
+            output_log.write("")
             self.exit()
             return
 
@@ -369,14 +506,28 @@ class OrchestratorTUI(App):
 
         if self.current_task and not self.current_task.done():
             self.current_task.cancel()
-            output_log = self.query_one("#output-log", RichLog)
-            output_log.write("[bold yellow]⚠️  작업 중단됨 (다시 Ctrl+C를 누르면 종료)[/bold yellow]")
+            output_log.write("")
+            output_log.write(Panel(
+                "[bold yellow]작업이 중단되었습니다[/bold yellow]\n\n"
+                "[dim]다시 Ctrl+C를 누르면 프로그램이 종료됩니다[/dim]",
+                border_style="yellow",
+                title="[bold]⚠️  Interrupted[/bold]"
+            ))
+            output_log.write("")
             self.timer_active = False
-            self.update_worker_status("작업 중단됨 (Ctrl+C 다시 누르면 종료)")
+            worker_status.update("⚠️  작업 중단됨")
+            status_info.update("Interrupted")
         else:
-            output_log = self.query_one("#output-log", RichLog)
-            output_log.write("[bold yellow]ℹ️  실행 중인 작업이 없습니다 (다시 Ctrl+C를 누르면 종료)[/bold yellow]")
-            self.update_worker_status("Ctrl+C 다시 누르면 종료")
+            output_log.write("")
+            output_log.write(Panel(
+                "[bold yellow]실행 중인 작업이 없습니다[/bold yellow]\n\n"
+                "[dim]다시 Ctrl+C를 누르면 프로그램이 종료됩니다[/dim]",
+                border_style="yellow",
+                title="[bold]ℹ️  Info[/bold]"
+            ))
+            output_log.write("")
+            worker_status.update("ℹ️  작업 없음")
+            status_info.update("Idle")
 
 
 def main():
