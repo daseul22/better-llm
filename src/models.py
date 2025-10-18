@@ -15,6 +15,7 @@ class Role(str, Enum):
     """메시지 역할"""
     USER = "user"
     AGENT = "agent"
+    MANAGER = "manager"
     SYSTEM = "system"
 
 

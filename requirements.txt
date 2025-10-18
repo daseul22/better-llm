@@ -1,8 +1,11 @@
 # 그룹 챗 오케스트레이션 시스템 의존성
 # Python 3.10 이상 필요
 
-# Claude API
+# Claude API (매니저 에이전트용)
 anthropic>=0.18.0
+
+# Claude Agent SDK (워커 에이전트용)
+claude-agent-sdk>=0.1.0
 
 # CLI 프레임워크
 click>=8.0.0

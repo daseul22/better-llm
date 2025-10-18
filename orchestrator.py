@@ -2,26 +2,26 @@
 """
 그룹 챗 오케스트레이션 시스템
 
-여러 Claude 에이전트가 협업하여 복잡한 소프트웨어 개발 작업을 자동화합니다.
+매니저 에이전트와 워커 에이전트 모두 Claude Agent SDK를 사용합니다.
+- 매니저: 사용자와 대화, 작업 계획
+- 워커: 실제 작업 수행 (파일 읽기/쓰기, 코드 실행)
 
 Usage:
     python orchestrator.py "작업 설명"
-    python orchestrator.py --config custom_agents.json "작업 설명"
-    python orchestrator.py --verbose "작업 설명"
 """
 
 import sys
 import time
-import select
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict
 
 import click
-from anthropic import Anthropic
 
-from src.models import AgentConfig, SessionResult
-from src.agents import Agent
+from src.models import SessionResult
+from src.manager_agent import ManagerAgent
+from src.worker_agent import WorkerAgent
 from src.conversation import ConversationHistory
 from src.chat_manager import ChatManager
 from src.utils import (
@@ -38,34 +38,38 @@ from src.utils import (
 
 class Orchestrator:
     """
-    그룹 챗 오케스트레이션 메인 클래스
+    그룹 챗 오케스트레이션 - 매니저/워커 분리 아키텍처
 
-    에이전트들을 초기화하고 대화 루프를 관리합니다.
+    매니저가 사용자와 대화하고 작업을 계획하며,
+    워커들이 실제 작업(파일 읽기/쓰기, 코드 실행)을 수행합니다.
     """
 
     def __init__(self, config_path: Path, verbose: bool = False):
         """
         Args:
-            config_path: 에이전트 설정 파일 경로
+            config_path: 워커 에이전트 설정 파일 경로
             verbose: 상세 로깅 활성화 여부
         """
         setup_logging(verbose)
         validate_environment()
 
-        # 설정 로드
-        self.agent_configs = load_agent_config(config_path)
+        # 매니저 에이전트 초기화 (Claude Agent SDK)
+        self.manager = ManagerAgent()
 
-        # Anthropic 클라이언트 초기화
-        self.client = Anthropic()
+        # 워커 에이전트 설정 로드
+        worker_configs = load_agent_config(config_path)
 
-        # 에이전트 초기화
-        self.agents: Dict[str, Agent] = {}
-        for config in self.agent_configs:
-            agent = Agent(config, self.client)
-            self.agents[config.name] = agent
+        # 워커 에이전트 초기화 (Claude Agent SDK)
+        # CLAUDE_CODE_OAUTH_TOKEN 환경 변수 사용
+        self.workers: Dict[str, WorkerAgent] = {}
+        for config in worker_configs:
+            worker = WorkerAgent(config)
+            self.workers[config.name] = worker
 
-        # 챗 매니저 초기화
-        self.chat_manager = ChatManager(self.agents)
+        # 챗 매니저
+        self.chat_manager = ChatManager(
+            {name: worker for name, worker in self.workers.items()}
+        )
 
         # 대화 히스토리
         self.history = ConversationHistory()
@@ -74,7 +78,7 @@ class Orchestrator:
         self.session_id = generate_session_id()
         self.start_time = time.time()
 
-    def run(self, user_request: str) -> SessionResult:
+    async def run(self, user_request: str) -> SessionResult:
         """
         작업 실행
 
@@ -85,80 +89,79 @@ class Orchestrator:
             작업 결과
         """
         # 헤더 출력
-        print_header(f"Group Chat Orchestration - Session {self.session_id}")
+        print_header(f"Group Chat Orchestration v2.0 - Session {self.session_id}")
         print(f"📝 작업: {user_request}")
-        print(f"🤖 활성 에이전트: {', '.join(self.agents.keys())}")
+        print(f"👔 매니저: ManagerAgent (Claude Agent SDK)")
+        print(f"👷 워커: {', '.join(self.workers.keys())} (Claude Agent SDK)")
         print()
 
         # 사용자 요청을 히스토리에 추가
         self.history.add_message("user", user_request)
 
         turn = 0
-        max_turns = self.chat_manager.max_turns
+        max_turns = 20  # 매니저-워커 루프 최대 반복
 
         try:
             while turn < max_turns:
                 turn += 1
 
-                # 다음 에이전트 선택
-                next_agent = self.chat_manager.select_next_agent(self.history.get_history())
-
-                # 종료 조건 확인
-                if next_agent == "TERMINATE":
-                    print("\n✅ 작업이 정상적으로 완료되었습니다.")
-                    break
-
-                if next_agent == "USER_INPUT":
-                    # 사용자 입력 대기
-                    user_input = self._get_user_input()
-                    if user_input:
-                        self.history.add_message("user", user_input)
-                        continue
-
-                # 에이전트 실행
-                if next_agent not in self.agents:
-                    print(f"⚠️  알 수 없는 에이전트: {next_agent}")
-                    break
-
-                agent = self.agents[next_agent]
-                emoji = get_agent_emoji(next_agent)
-
-                print(f"\n[Turn {turn}] {emoji} {agent.config.role} ({next_agent}):")
+                # 1. 매니저가 작업 분석 및 계획
+                print(f"\n[Turn {turn}] 👔 ManagerAgent:")
                 print("─" * 60)
 
-                # 에이전트 응답 생성
+                manager_response = await self.manager.analyze_and_plan(
+                    self.history.get_history()
+                )
+                print(manager_response)
+                print()
+
+                # 매니저 응답을 히스토리에 추가
+                self.history.add_message("manager", manager_response)
+
+                # 2. 종료 조건 확인
+                if "TERMINATE" in manager_response.upper() or "작업 완료" in manager_response:
+                    print("\n✅ 매니저가 작업 완료를 보고했습니다.")
+                    break
+
+                # 3. 다음 워커 선택 (@agent_name 추출)
+                next_worker = self._extract_worker_assignment(manager_response)
+
+                if not next_worker:
+                    # 매니저가 워커를 지정하지 않으면 사용자 개입 대기
+                    user_input = input("💬 추가 지시사항 (Enter: 계속): ").strip()
+                    if user_input:
+                        self.history.add_message("user", user_input)
+                    continue
+
+                if next_worker not in self.workers:
+                    print(f"⚠️  알 수 없는 워커: {next_worker}")
+                    continue
+
+                # 4. 워커 실행 (Claude Agent SDK)
+                worker = self.workers[next_worker]
+                emoji = get_agent_emoji(next_worker)
+
+                print(f"[Turn {turn}] {emoji} {worker.config.role} ({next_worker}) - Claude Agent SDK:")
+                print("─" * 60)
+
+                # 워커에게 전달할 작업 추출
+                task_description = self._extract_task_for_worker(manager_response, next_worker)
+
                 try:
-                    response = agent.respond(self.history.get_history())
-                    print(response)
+                    # Claude Agent SDK로 작업 실행 (비동기)
+                    worker_response = ""
+                    async for chunk in worker.execute_task(task_description):
+                        print(chunk, end="", flush=True)
+                        worker_response += chunk
                     print()
 
-                    # 히스토리에 추가
-                    self.history.add_message("agent", response, agent.config.name)
+                    # 워커 응답을 히스토리에 추가
+                    self.history.add_message("agent", worker_response, next_worker)
 
                 except Exception as e:
-                    print(f"❌ 에러 발생: {e}")
-                    return SessionResult(
-                        status="error",
-                        error_message=str(e)
-                    )
-
-                # 사용자 개입 대기 (5초)
-                user_input = self._prompt_user_intervention()
-                if user_input:
-                    # 명령어 처리
-                    if user_input.startswith("/"):
-                        command = self._handle_command(user_input)
-                        if command == "STOP":
-                            print("\n🛑 사용자가 작업을 중단했습니다.")
-                            return SessionResult(status="terminated")
-                        elif command == "PAUSE":
-                            # 일시정지 모드
-                            paused_input = input("💬 메시지를 입력하세요 (또는 Enter로 계속): ")
-                            if paused_input:
-                                self.history.add_message("user", paused_input)
-                    else:
-                        # 일반 메시지
-                        self.history.add_message("user", user_input)
+                    error_msg = f"❌ 워커 실행 실패: {e}"
+                    print(error_msg)
+                    self.history.add_message("agent", error_msg, next_worker)
 
             # 최대 턴 수 도달
             if turn >= max_turns:
@@ -168,7 +171,7 @@ class Orchestrator:
             # 정상 완료
             return SessionResult(
                 status="completed",
-                files_modified=[],  # TODO: 실제 수정된 파일 추적
+                files_modified=[],
                 tests_passed=True
             )
 
@@ -188,61 +191,58 @@ class Orchestrator:
 
             print_footer(
                 self.session_id,
-                sum(1 for msg in self.history.get_history() if msg.role == "agent"),
+                sum(1 for msg in self.history.get_history() if msg.role in ["agent", "manager"]),
                 duration,
-                0,  # TODO: 실제 파일 개수
+                0,
                 filepath
             )
 
-    def _prompt_user_intervention(self, timeout: int = 5) -> Optional[str]:
+    def _extract_worker_assignment(self, manager_response: str) -> Optional[str]:
         """
-        사용자 개입 대기 (timeout 포함)
+        매니저 응답에서 @worker_name 추출
 
         Args:
-            timeout: 대기 시간 (초)
+            manager_response: 매니저 응답
 
         Returns:
-            사용자 입력 또는 None
+            워커 이름 또는 None
         """
-        print(f"⏸  [Enter: 계속 | /pause: 일시정지 | /stop: 종료] ({timeout}초 대기)", end="", flush=True)
+        import re
 
-        # Unix 계열 시스템에서만 동작
-        if sys.platform != "win32":
-            ready, _, _ = select.select([sys.stdin], [], [], timeout)
-            if ready:
-                user_input = sys.stdin.readline().strip()
-                return user_input if user_input else None
-            else:
-                print()  # 새 줄
-                return None
-        else:
-            # Windows에서는 timeout 없이 대기
-            print(" (Enter를 눌러 계속)")
-            user_input = input().strip()
-            return user_input if user_input else None
+        # @planner, @coder, @tester 패턴 찾기
+        pattern = r'@(\w+)'
+        matches = re.findall(pattern, manager_response.lower())
 
-    def _get_user_input(self) -> Optional[str]:
-        """일반 사용자 입력 받기"""
-        user_input = input("💬 입력: ").strip()
-        return user_input if user_input else None
+        if matches:
+            for match in matches:
+                if match in self.workers:
+                    return match
 
-    def _handle_command(self, command: str) -> Optional[str]:
+        return None
+
+    def _extract_task_for_worker(self, manager_response: str, worker_name: str) -> str:
         """
-        사용자 명령어 처리
+        매니저 응답에서 워커에게 전달할 작업 추출
 
         Args:
-            command: 명령어 문자열
+            manager_response: 매니저 응답
+            worker_name: 워커 이름
 
         Returns:
-            처리 결과 ("STOP", "PAUSE", None)
+            작업 설명
         """
-        if command == "/stop":
-            return "STOP"
-        elif command == "/pause":
-            return "PAUSE"
-        else:
-            print(f"⚠️  알 수 없는 명령어: {command}")
-            return None
+        # @worker_name 이후의 텍스트를 작업으로 간주
+        import re
+
+        pattern = rf'@{worker_name}\s+(.+?)(?=@\w+|$)'
+        match = re.search(pattern, manager_response, re.DOTALL | re.IGNORECASE)
+
+        if match:
+            task = match.group(1).strip()
+            return task
+
+        # 매칭 실패 시 전체 응답 반환
+        return manager_response
 
 
 @click.command()
@@ -251,7 +251,7 @@ class Orchestrator:
     "--config",
     default="config/agent_config.json",
     type=click.Path(exists=True),
-    help="에이전트 설정 파일 경로"
+    help="워커 에이전트 설정 파일 경로"
 )
 @click.option(
     "--verbose",
@@ -260,19 +260,20 @@ class Orchestrator:
 )
 def main(request: str, config: str, verbose: bool):
     """
-    그룹 챗 오케스트레이션 시스템
+    그룹 챗 오케스트레이션 시스템 v2.0
 
-    여러 Claude 에이전트가 협업하여 복잡한 소프트웨어 개발 작업을 자동화합니다.
+    매니저 에이전트가 사용자와 대화하고 작업을 계획하며,
+    워커 에이전트들이 Claude Agent SDK로 실제 작업을 수행합니다.
 
     \b
     예시:
-        python orchestrator.py "FastAPI로 /users CRUD 엔드포인트 구현해줘"
-        python orchestrator.py --verbose "로그인 API 버그 수정해줘"
-        python orchestrator.py --config custom.json "작업 설명"
+        python orchestrator_v2.py "FastAPI로 /users CRUD 엔드포인트 구현해줘"
+        python orchestrator_v2.py --verbose "로그인 API 버그 수정해줘"
     """
     try:
-        orchestrator = Orchestrator(Path(config), verbose)
-        orchestrator.run(request)
+        orchestrator = OrchestratorV2(Path(config), verbose)
+        # asyncio로 실행
+        asyncio.run(orchestrator.run(request))
     except KeyboardInterrupt:
         print("\n\n🛑 사용자가 작업을 중단했습니다.")
         sys.exit(0)
