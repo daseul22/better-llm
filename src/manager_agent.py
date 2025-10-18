@@ -1,7 +1,7 @@
 """
 매니저 에이전트 - 사용자와 대화하고 작업을 계획
 
-ManagerAgent: Claude Agent SDK를 사용하여 사용자와 대화하고 워커 에이전트에게 작업 할당
+ManagerAgent: Claude Agent SDK를 사용하여 Worker Tool들을 호출하고 작업 조율
 """
 
 from typing import List, Optional
@@ -20,10 +20,11 @@ class ManagerAgent:
     사용자와 대화하는 매니저 에이전트
 
     Claude Agent SDK를 사용하여 사용자 요청을 분석하고,
-    워커 에이전트에게 전달할 작업을 계획합니다.
+    Worker Tool들을 호출하여 작업을 수행합니다.
 
     Attributes:
         model: 사용할 Claude 모델
+        worker_tools_server: Worker Tools MCP 서버
     """
 
     SYSTEM_PROMPT = """당신은 소프트웨어 개발 프로젝트를 관리하는 매니저입니다.
@@ -31,42 +32,45 @@ class ManagerAgent:
 ## 역할
 - 사용자 요청을 분석하고 이해합니다
 - 작업을 계획하고 우선순위를 정합니다
-- 워커 에이전트(Planner, Coder, Tester)에게 작업을 할당합니다
+- Worker Agent Tool을 호출하여 작업을 할당합니다
 - 진행 상황을 사용자에게 보고합니다
 
-## 작업 분석
-사용자 요청을 받으면 다음을 수행하세요:
-1. 요구사항 명확화
-2. 필요한 에이전트 결정
-3. 작업 순서 계획
-4. 각 에이전트에게 전달할 구체적인 지시사항 작성
+## 사용 가능한 Tool
+다음 Tool들을 사용할 수 있습니다:
+- **execute_planner_task**: 요구사항 분석 및 계획 수립
+- **execute_coder_task**: 코드 작성, 수정, 리팩토링
+- **execute_tester_task**: 테스트 작성 및 실행
+- **read**: 파일 읽기 (필요 시)
 
-## 출력 형식
-다음 형식으로 응답하세요:
+## 작업 수행 방법
+1. 사용자 요청을 분석합니다
+2. 필요한 Worker Tool을 순차적으로 호출합니다
+3. 각 Tool의 결과를 확인하고 다음 단계를 결정합니다
+4. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
 
-**작업 분석:**
-[사용자 요청에 대한 요약]
+## 예시
+사용자: "FastAPI로 /users CRUD API를 작성해줘"
 
-**작업 계획:**
-1. [단계 1] - [@agent_name]에게 할당
-2. [단계 2] - [@agent_name]에게 할당
-...
-
-**다음 단계:**
-@[first_agent_name] [구체적인 지시사항]
+1단계: execute_planner_task 호출 → 요구사항 분석 및 설계
+2단계: execute_coder_task 호출 → 코드 작성
+3단계: execute_tester_task 호출 → 테스트 작성 및 실행
+4단계: 사용자에게 완료 보고
 
 ## 규칙
-- 명확하고 구체적인 지시사항을 제공하세요
-- 에이전트 이름 앞에 @를 붙이세요 (@planner, @coder, @tester)
-- 작업이 완료되면 사용자에게 요약 보고하세요
+- Tool을 직접 호출하세요 (@ 표기 불필요)
+- 각 Tool 호출 전에 무엇을 할 것인지 설명하세요
+- Tool 결과를 확인하고 문제가 있으면 재시도하세요
+- 모든 작업이 완료되면 "작업이 완료되었습니다"라고 명시하세요
 """
 
-    def __init__(self, model: str = "claude-sonnet-4-5-20250929"):
+    def __init__(self, worker_tools_server, model: str = "claude-sonnet-4-5-20250929"):
         """
         Args:
+            worker_tools_server: Worker Tools MCP 서버
             model: 사용할 Claude 모델
         """
         self.model = model
+        self.worker_tools_server = worker_tools_server
 
     def _build_prompt_from_history(self, history: List[Message]) -> str:
         """
@@ -85,25 +89,25 @@ class ManagerAgent:
             if msg.role == "user":
                 prompt_parts.append(f"\n[사용자]\n{msg.content}\n")
             elif msg.role == "agent":
-                # 워커 에이전트의 작업 결과
-                prompt_parts.append(f"\n[{msg.agent_name} 작업 완료]\n{msg.content}\n")
+                # 워커 Tool의 실행 결과
+                prompt_parts.append(f"\n[{msg.agent_name} Tool 완료]\n{msg.content}\n")
             elif msg.role == "manager":
                 # 매니저 자신의 이전 응답
                 prompt_parts.append(f"\n[매니저 (당신)]\n{msg.content}\n")
 
-        prompt_parts.append("\n다음 단계를 계획해주세요:")
+        prompt_parts.append("\n다음 단계를 수행해주세요:")
 
         return "".join(prompt_parts)
 
     async def analyze_and_plan(self, history: List[Message]) -> str:
         """
-        사용자 요청을 분석하고 작업 계획 수립
+        사용자 요청을 분석하고 작업 수행
 
         Args:
             history: 전체 대화 히스토리
 
         Returns:
-            매니저의 분석 및 계획 응답
+            매니저의 응답 (Tool 호출 결과 포함)
 
         Raises:
             Exception: SDK 호출 실패 시
@@ -112,16 +116,22 @@ class ManagerAgent:
             # 대화 히스토리를 프롬프트로 변환
             prompt = self._build_prompt_from_history(history)
 
-            logger.debug(f"[Manager] Claude Agent SDK 호출 시작 (툴 사용: 없음)")
+            logger.debug(f"[Manager] Claude Agent SDK 호출 시작 (Worker Tools 사용)")
 
             # Claude Agent SDK의 query() 함수 사용
-            # allowed_tools=[] 로 설정하여 툴 사용 제한 (대화만)
+            # Worker Tools MCP Server를 등록하고, read 툴도 허용
             response_text = ""
             async for response in query(
                 prompt=prompt,
                 options=ClaudeAgentOptions(
                     model=self.model,
-                    allowed_tools=[],  # 툴 사용 안함 (대화만)
+                    mcp_servers={"workers": self.worker_tools_server},
+                    allowed_tools=[
+                        "mcp__workers__execute_planner_task",
+                        "mcp__workers__execute_coder_task",
+                        "mcp__workers__execute_tester_task",
+                        "read"  # 파일 읽기 툴
+                    ],
                     cli_path="/Users/simdaseul/.claude/local/claude",
                     permission_mode="bypassPermissions"
                 )
