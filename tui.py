@@ -99,9 +99,8 @@ class OrchestratorTUI(App):
         background: transparent;
     }
 
-    Input::placeholder {
+    Input.-placeholder {
         color: #6e7681;
-        text-style: italic;
     }
 
     /* 하단 정보바 */
