@@ -1,0 +1,133 @@
+"""
+설정 로더 구현
+
+JsonConfigLoader: JSON 파일에서 설정 로드
+"""
+
+import json
+import logging
+from pathlib import Path
+from typing import List
+
+from ...application.ports import IConfigLoader, ISystemConfig
+from ...domain.models import AgentConfig
+
+logger = logging.getLogger(__name__)
+
+
+class SystemConfig(ISystemConfig):
+    """
+    시스템 설정 구현
+
+    JSON 파일에서 로드된 설정
+    """
+    pass
+
+
+class JsonConfigLoader(IConfigLoader):
+    """
+    JSON 설정 로더
+
+    config/agent_config.json, config/system_config.json에서 설정 로드
+    """
+
+    def __init__(self, project_root: Path):
+        """
+        Args:
+            project_root: 프로젝트 루트 디렉토리
+        """
+        self.project_root = project_root
+        self.agent_config_path = project_root / "config" / "agent_config.json"
+        self.system_config_path = project_root / "config" / "system_config.json"
+
+    def load_agent_configs(self) -> List[AgentConfig]:
+        """
+        에이전트 설정 로드
+
+        Returns:
+            AgentConfig 리스트
+
+        Raises:
+            FileNotFoundError: 설정 파일이 없을 경우
+            ValueError: 설정 파일 형식이 잘못된 경우
+        """
+        if not self.agent_config_path.exists():
+            raise FileNotFoundError(f"설정 파일을 찾을 수 없습니다: {self.agent_config_path}")
+
+        try:
+            with open(self.agent_config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # 유효성 검증
+            if "agents" not in data:
+                raise ValueError("설정 파일에 'agents' 필드가 없습니다")
+
+            agents_data = data["agents"]
+            if not isinstance(agents_data, list):
+                raise ValueError("'agents'는 리스트여야 합니다")
+
+            # AgentConfig 객체 생성
+            agent_configs = []
+            for agent_data in agents_data:
+                # 필수 필드 검증
+                required_fields = ["name", "role", "system_prompt_file", "tools", "model"]
+                for field in required_fields:
+                    if field not in agent_data:
+                        raise ValueError(f"에이전트 설정에 필수 필드 '{field}'가 없습니다: {agent_data}")
+
+                # system_prompt_file을 system_prompt로 변환
+                agent_data_copy = agent_data.copy()
+                agent_data_copy["system_prompt"] = agent_data_copy.pop("system_prompt_file")
+
+                config = AgentConfig.from_dict(agent_data_copy)
+                agent_configs.append(config)
+
+            logger.info(f"✅ 에이전트 설정 로드 완료: {len(agent_configs)}개")
+            return agent_configs
+
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSON 파싱 실패: {e}")
+        except Exception as e:
+            raise ValueError(f"설정 파일 로드 실패: {e}")
+
+    def load_system_config(self) -> ISystemConfig:
+        """
+        시스템 설정 로드
+
+        Returns:
+            시스템 설정 객체
+
+        Raises:
+            Exception: 로드 실패 시 (기본값 사용)
+        """
+        if not self.system_config_path.exists():
+            logger.warning(f"시스템 설정 파일이 없습니다: {self.system_config_path}. 기본값 사용.")
+            return SystemConfig()
+
+        try:
+            with open(self.system_config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            manager = data.get("manager", {})
+            performance = data.get("performance", {})
+            security = data.get("security", {})
+            logging_config = data.get("logging", {})
+
+            return SystemConfig(
+                manager_model=manager.get("model", "claude-sonnet-4-5-20250929"),
+                max_history_messages=manager.get("max_history_messages", 20),
+                max_turns=manager.get("max_turns", 10),
+                enable_caching=performance.get("enable_caching", True),
+                worker_retry_enabled=performance.get("worker_retry_enabled", True),
+                worker_retry_max_attempts=performance.get("worker_retry_max_attempts", 3),
+                worker_retry_base_delay=performance.get("worker_retry_base_delay", 1.0),
+                max_input_length=security.get("max_input_length", 5000),
+                enable_input_validation=security.get("enable_input_validation", True),
+                log_level=logging_config.get("level", "INFO"),
+                log_format=logging_config.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
+                enable_structured_logging=logging_config.get("enable_structured_logging", False)
+            )
+
+        except Exception as e:
+            logger.error(f"시스템 설정 로드 실패: {e}. 기본값 사용.")
+            return SystemConfig()

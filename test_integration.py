@@ -63,10 +63,11 @@ except Exception as e:
 # 3. 프로젝트 컨텍스트 확인
 print("\n[3/6] 프로젝트 컨텍스트 확인...")
 try:
-    from src.project_context import ProjectContextManager
+    from src.infrastructure.storage import JsonContextRepository
+    from src.infrastructure.config import get_project_root
 
-    manager = ProjectContextManager()
-    context = manager.load()
+    repo = JsonContextRepository(get_project_root())
+    context = repo.load()
 
     if context:
         print(f"  ✅ 프로젝트 컨텍스트 로드 성공")
@@ -84,7 +85,7 @@ except Exception as e:
 print("\n[4/6] Manager Agent 설정 확인...")
 try:
     # 소스 코드 직접 읽기 (SDK 없이도 확인 가능)
-    with open("src/manager_agent.py", "r") as f:
+    with open("src/infrastructure/claude/manager_client.py", "r") as f:
         source = f.read()
 
     # Reviewer가 allowed_tools에 포함되어 있는지 확인
@@ -109,7 +110,7 @@ except Exception as e:
 print("\n[5/6] Worker Tools 확인...")
 try:
     # 소스 코드 직접 읽기
-    with open("src/worker_tools.py", "r") as f:
+    with open("src/infrastructure/mcp/worker_tools.py", "r") as f:
         source = f.read()
 
     required_tools = [
@@ -141,7 +142,7 @@ except Exception as e:
 print("\n[6/6] 에러 모니터링 기능 확인...")
 try:
     # 소스 코드 직접 읽기
-    with open("src/worker_tools.py", "r") as f:
+    with open("src/infrastructure/mcp/worker_tools.py", "r") as f:
         source = f.read()
 
     required_functions = [
@@ -152,10 +153,10 @@ try:
     ]
 
     # orchestrator와 tui에서 에러 통계 사용 확인
-    with open("orchestrator.py", "r") as f:
+    with open("src/presentation/cli/orchestrator.py", "r") as f:
         orchestrator_source = f.read()
 
-    with open("tui.py", "r") as f:
+    with open("src/presentation/tui/tui_app.py", "r") as f:
         tui_source = f.read()
 
     has_all_functions = all(func in source for func in required_functions)

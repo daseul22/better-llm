@@ -6,31 +6,73 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요
 
-**그룹 챗 오케스트레이션 시스템** - Manager Agent가 전문화된 Worker Agent들을 조율하여 복잡한 소프트웨어 개발 작업을 자동화하는 시스템입니다.
+**그룹 챗 오케스트레이션 시스템 v4.0 (Clean Architecture)** - Manager Agent가 전문화된 Worker Agent들을 조율하여 복잡한 소프트웨어 개발 작업을 자동화하는 시스템입니다.
 
-### 핵심 아키텍처: Worker Tools Pattern
+### 아키텍처: Clean Architecture (4계층)
 
 ```
-사용자
-  ↓
-Manager Agent (ClaudeSDKClient)
-  ↓
-Worker Tools (MCP Server)
-  ├─ execute_planner_task
-  ├─ execute_coder_task
-  ├─ execute_reviewer_task
-  └─ execute_tester_task
-  ↓
-Worker Agents (ClaudeSDKClient)
-  └─ 실제 작업 수행 (read, write, edit, bash 등)
+┌─────────────────────────────────────────────────────────────┐
+│                    Presentation Layer                        │
+│  ┌──────────────┐              ┌──────────────┐             │
+│  │     CLI      │              │     TUI      │             │
+│  │ (orchestrator)│              │  (textual)   │             │
+│  └──────────────┘              └──────────────┘             │
+└────────────────────┬──────────────────────┬──────────────────┘
+                     │                      │
+┌─────────────────────────────────────────────────────────────┐
+│                   Application Layer                          │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │              Ports (Interfaces)                       │  │
+│  │  IAgentClient | IConfigLoader | ISessionRepository   │  │
+│  └───────────────────────────────────────────────────────┘  │
+└────────────────────┬────────────────────┬─────────────────  ┘
+                     │                    │
+┌─────────────────────────────────────────────────────────────┐
+│                  Infrastructure Layer                        │
+│  ┌──────────┐  ┌───────┐  ┌─────────┐  ┌──────────┐        │
+│  │  Claude  │  │  MCP  │  │ Storage │  │  Config  │        │
+│  │   SDK    │  │Server │  │  (JSON) │  │  (JSON)  │        │
+│  └──────────┘  └───────┘  └─────────┘  └──────────┘        │
+└─────────────────────────────────────────────────────────────┘
+                             ↑
+┌─────────────────────────────────────────────────────────────┐
+│                     Domain Layer                             │
+│  ┌──────────────┐  ┌────────────┐  ┌──────────────┐        │
+│  │   Models     │  │  Services  │  │    Agents    │        │
+│  │ (Message,    │  │(Conversation│  │  (BaseAgent) │        │
+│  │  Task, etc)  │  │  History)   │  │              │        │
+│  └──────────────┘  └────────────┘  └──────────────┘        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**중요한 개념:**
-- **Manager Agent**: 사용자와 대화, Worker Tools를 호출하여 작업 조율
-- **Worker Tools**: Worker Agent를 `@tool` 데코레이터로 래핑한 MCP Server
-- **Worker Agents**: 실제 작업 수행 (Planner, Coder, Reviewer, Tester)
-- 모든 Agent는 `ClaudeSDKClient` 사용 (query() 대신)
-- Worker Agent를 Tool로 래핑하여 Manager가 호출하는 구조
+**핵심 개념 (Worker Tools Pattern + Clean Architecture):**
+- **Domain Layer**: 핵심 비즈니스 로직 (순수 Python, 외부 의존성 없음)
+  - Models: Message, AgentConfig, Task, SessionResult
+  - Services: ConversationHistory, ProjectContext
+  - Agents: BaseAgent (인터페이스)
+- **Application Layer**: Use Cases 및 Ports (의존성 역전)
+  - Ports: IAgentClient, IConfigLoader, ISessionRepository (인터페이스)
+  - Use Cases: (향후 확장 가능)
+- **Infrastructure Layer**: 외부 의존성 구현
+  - Claude SDK: Manager/Worker Agent 클라이언트
+  - MCP: Worker Tools Server
+  - Storage: JSON 기반 세션/컨텍스트 저장소
+  - Config: JSON 설정 로더
+- **Presentation Layer**: 사용자 인터페이스
+  - CLI: orchestrator.py
+  - TUI: tui.py (Textual 기반)
+
+**의존성 방향 (Dependency Rule):**
+```
+Presentation → Application → Domain ← Infrastructure
+                              ↑
+                         (의존하지 않음)
+```
+
+**Worker Tools Pattern:**
+- Manager Agent가 Worker Tools (MCP Server)를 호출
+- Worker Tools는 Worker Agent를 `@tool` 데코레이터로 래핑
+- Worker Agents가 실제 작업 수행 (read, write, edit, bash 등)
 
 ---
 
@@ -107,40 +149,81 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 ## 코드 아키텍처
 
-### 주요 모듈
+### 디렉토리 구조 (Clean Architecture)
 
-**orchestrator.py** - 메인 실행 파일
-- `Orchestrator` 클래스: Manager Agent + Worker Tools 초기화 및 실행
-- `run()`: 사용자 입력 검증 → Manager 실행 → 에러 통계 출력
+```
+src/
+├── domain/                    # Domain Layer (순수 Python)
+│   ├── models/               # 도메인 모델
+│   │   ├── message.py        # Message, Role
+│   │   ├── agent.py          # AgentConfig, AgentRole
+│   │   ├── session.py        # SessionResult, SessionStatus
+│   │   └── task.py           # Task, TaskResult, TaskStatus
+│   ├── agents/               # Agent 인터페이스
+│   │   └── base.py           # BaseAgent (ABC)
+│   └── services/             # 도메인 서비스
+│       ├── conversation.py   # ConversationHistory
+│       └── context.py        # ProjectContext, CodingStyle
+│
+├── application/               # Application Layer
+│   ├── use_cases/            # Use Cases (향후 확장)
+│   └── ports/                # Ports (인터페이스)
+│       ├── agent_port.py     # IAgentClient
+│       ├── config_port.py    # IConfigLoader, ISystemConfig
+│       └── storage_port.py   # ISessionRepository, IContextRepository
+│
+├── infrastructure/            # Infrastructure Layer
+│   ├── config/               # 설정 구현
+│   │   ├── loader.py         # JsonConfigLoader, SystemConfig
+│   │   └── validator.py      # validate_environment, get_claude_cli_path
+│   ├── storage/              # 저장소 구현
+│   │   ├── session_repository.py   # JsonSessionRepository
+│   │   └── context_repository.py   # JsonContextRepository
+│   ├── claude/               # Claude SDK (기존 코드 재사용)
+│   └── mcp/                  # MCP Server (기존 코드 재사용)
+│
+└── presentation/              # Presentation Layer
+    ├── cli/                  # CLI
+    │   └── orchestrator_cli.py
+    └── tui/                  # TUI (Textual)
+        └── tui_app.py
 
-**src/manager_agent.py** - Manager Agent 구현
-- `ClaudeSDKClient` 사용 (query() 대신)
-- Worker Tools MCP Server 등록
-- 프롬프트 히스토리 슬라이딩 윈도우 (max_history_messages=20)
-- `allowed_tools`: Worker Tools + read
-- `permission_mode`: "bypassPermissions"
+# 기존 코드 (호환성 유지)
+src/
+├── manager_agent.py          # Manager Agent (기존)
+├── worker_agent.py           # Worker Agent (기존)
+├── worker_tools.py           # Worker Tools (기존)
+├── conversation.py           # → domain.services.conversation (호환성)
+├── project_context.py        # → domain.services.context (호환성)
+├── models.py                 # → domain.models (호환성)
+└── utils.py                  # → infrastructure.config (일부 이동)
+```
 
-**src/worker_tools.py** - Worker Tools MCP Server 🔑
-- `@tool` 데코레이터로 Worker Agent 래핑
-- `_execute_worker_task()`: 공통 실행 로직 (코드 중복 제거)
-- `retry_with_backoff()`: 지수 백오프 재시도 (max 3회)
-- `_ERROR_STATS`: Worker별 에러 통계 수집
-- `create_worker_tools_server()`: MCP Server 생성
+### 주요 모듈 (계층별)
 
-**src/worker_agent.py** - Worker Agent 구현
-- `ClaudeSDKClient` 사용
-- `execute_task()`: 스트리밍 실행 (async generator)
-- 프로젝트 컨텍스트 자동 로드 (.context.json)
+**Domain Layer (src/domain/)**
+- `models/`: Message, AgentConfig, Task, SessionResult 등 핵심 도메인 모델
+- `services/`: ConversationHistory, ProjectContext (비즈니스 로직)
+- `agents/`: BaseAgent 인터페이스 (모든 Agent가 구현)
 
-**src/project_context.py** - 프로젝트 컨텍스트 관리
-- `ProjectContextManager`: .context.json 로드/저장
-- `to_prompt_context()`: Worker 프롬프트에 주입할 컨텍스트 생성
+**Application Layer (src/application/)**
+- `ports/`: 외부 의존성 인터페이스 (의존성 역전)
+  - IAgentClient, IConfigLoader, ISessionRepository
 
-**src/utils.py** - 유틸리티
-- `get_claude_cli_path()`: 환경변수 + 자동 탐지 (하드코딩 제거)
-- `validate_user_input()`: 프롬프트 인젝션 방어
-- `sanitize_user_input()`: 공백 정제
-- `load_system_config()`: config/system_config.json 로드
+**Infrastructure Layer (src/infrastructure/)**
+- `config/`: JsonConfigLoader, SystemConfig (JSON 파일 기반)
+- `storage/`: JsonSessionRepository, JsonContextRepository
+- `claude/`: Manager/Worker Agent 클라이언트 (기존 코드)
+- `mcp/`: Worker Tools MCP Server (기존 코드)
+
+**Presentation Layer (src/presentation/)**
+- `cli/`: orchestrator.py (명령줄 인터페이스)
+- `tui/`: tui.py (Textual 기반 터미널 UI)
+
+**기존 코드 호환성**
+- src/models.py → domain.models로 re-export
+- src/conversation.py → domain.services로 re-export
+- 기존 import 경로 그대로 동작
 
 ### 설정 파일
 

@@ -1,5 +1,5 @@
 """
-대화 히스토리 관리
+대화 히스토리 도메인 서비스
 
 ConversationHistory: 모든 메시지를 시간순으로 저장하고 관리
 """
@@ -9,15 +9,15 @@ from datetime import datetime
 import json
 from pathlib import Path
 
-from .models import Message
+from ..models import Message
 
 
 class ConversationHistory:
     """
-    대화 히스토리 관리 클래스
+    대화 히스토리 관리 서비스
 
     모든 에이전트와 사용자 메시지를 하나의 스레드에 저장하고 관리합니다.
-    최대 50개 메시지 제한을 적용합니다.
+    최대 메시지 개수 제한을 적용합니다.
 
     Attributes:
         max_length: 최대 메시지 개수 (기본값: 50)
@@ -59,7 +59,6 @@ class ConversationHistory:
         # 최대 길이 초과 시 가장 오래된 메시지 제거
         if len(self.messages) > self.max_length:
             removed = self.messages.pop(0)
-            print(f"⚠️  히스토리 길이 초과: 가장 오래된 메시지 제거됨 (턴 {len(self.messages) - self.max_length + 1})")
 
     def get_history(self) -> List[Message]:
         """
@@ -69,22 +68,6 @@ class ConversationHistory:
             시간순으로 정렬된 메시지 리스트
         """
         return self.messages.copy()
-
-    def get_context_for_agent(self, agent_name: str) -> List[Message]:
-        """
-        특정 에이전트를 위한 컨텍스트 조회
-
-        MVP에서는 전체 히스토리를 반환합니다.
-        향후 에이전트별 필터링 로직을 추가할 수 있습니다.
-
-        Args:
-            agent_name: 에이전트 이름
-
-        Returns:
-            해당 에이전트가 볼 수 있는 메시지 리스트
-        """
-        # MVP: 모든 에이전트가 전체 히스토리에 접근
-        return self.get_history()
 
     def get_last_message(self) -> Optional[Message]:
         """
@@ -124,36 +107,21 @@ class ConversationHistory:
             "total_messages": len(self.messages)
         }
 
-    def save_to_file(self, filepath: Path) -> None:
-        """
-        히스토리를 JSON 파일로 저장
-
-        Args:
-            filepath: 저장할 파일 경로
-        """
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-
     @classmethod
-    def load_from_file(cls, filepath: Path) -> "ConversationHistory":
+    def from_dict(cls, data: dict) -> "ConversationHistory":
         """
-        JSON 파일에서 히스토리 로드
+        딕셔너리에서 히스토리 생성
 
         Args:
-            filepath: 로드할 파일 경로
+            data: 딕셔너리 데이터
 
         Returns:
             ConversationHistory 인스턴스
         """
-        with open(filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
         history = cls(max_length=data.get("max_length", 50))
         for msg_data in data.get("messages", []):
             msg = Message.from_dict(msg_data)
             history.messages.append(msg)
-
         return history
 
     def __len__(self) -> int:
