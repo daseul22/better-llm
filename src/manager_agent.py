@@ -148,6 +148,9 @@ class ManagerAgent:
         Raises:
             Exception: SDK 호출 실패 시
         """
+        client = None
+        cleanup_done = False
+
         try:
             # 대화 히스토리를 프롬프트로 변환
             prompt = self._build_prompt_from_history(history)
@@ -170,24 +173,44 @@ class ManagerAgent:
                 permission_mode="bypassPermissions"
             )
 
-            async with ClaudeSDKClient(options=options) as client:
-                # 프롬프트 전송
-                await client.query(prompt)
+            # 명시적으로 client 생성 및 연결 (async with 대신)
+            # Generator 내부에서 async with를 사용하면 cleanup이 다른 태스크에서 실행될 수 있음
+            client = ClaudeSDKClient(options=options)
+            await client.connect()
 
-                # 응답 수신 (스트리밍)
-                async for msg in client.receive_response():
-                    # 텍스트 콘텐츠만 추출 (JSON 형태는 제외)
-                    if hasattr(msg, 'content') and isinstance(msg.content, list):
-                        for content in msg.content:
-                            if hasattr(content, 'text') and content.text:
-                                yield content.text
-                    elif hasattr(msg, 'text') and isinstance(msg.text, str):
-                        yield msg.text
+            # 프롬프트 전송
+            await client.query(prompt)
+
+            # 응답 수신 (스트리밍)
+            async for msg in client.receive_response():
+                # 텍스트 콘텐츠만 추출 (JSON 형태는 제외)
+                if hasattr(msg, 'content') and isinstance(msg.content, list):
+                    for content in msg.content:
+                        if hasattr(content, 'text') and content.text:
+                            yield content.text
+                elif hasattr(msg, 'text') and isinstance(msg.text, str):
+                    yield msg.text
 
             logger.debug(f"[Manager] Claude Agent SDK 호출 완료")
 
+            # 정상 종료 시 cleanup
+            if client is not None and not cleanup_done:
+                try:
+                    await client.disconnect()
+                    cleanup_done = True
+                    logger.debug(f"[Manager] Client 연결 종료 완료")
+                except Exception as e:
+                    logger.debug(f"[Manager] Client disconnect 실패 무시: {e}")
+
+        except GeneratorExit:
+            # Generator가 중간에 종료될 때는 cleanup 하지 않음
+            # (다른 태스크에서 실행되어 cancel scope 에러 발생)
+            logger.debug(f"[Manager] Generator 종료 - cleanup 생략")
+            raise
         except Exception as e:
             logger.error(f"❌ [Manager] SDK 호출 실패: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             raise
 
     def __repr__(self) -> str:
