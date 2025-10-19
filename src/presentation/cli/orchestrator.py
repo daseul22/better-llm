@@ -42,6 +42,9 @@ from .utils import (
     sanitize_user_input,
     load_system_config,
 )
+from .session_commands import session_commands
+from .template_commands import template_commands
+from .approval_commands import approval_cli
 
 
 class Orchestrator:
@@ -189,8 +192,8 @@ class Orchestrator:
 
 
 
-@click.command()
-@click.argument("request", type=str)
+@click.group(invoke_without_command=True)
+@click.argument("request", type=str, required=False)
 @click.option(
     "--config",
     default="config/agent_config.json",
@@ -202,7 +205,8 @@ class Orchestrator:
     is_flag=True,
     help="상세 로깅 활성화"
 )
-def main(request: str, config: str, verbose: bool):
+@click.pass_context
+def main(ctx: click.Context, request: Optional[str], config: str, verbose: bool):
     """
     그룹 챗 오케스트레이션 시스템 v3.0 - Worker Tools Architecture
 
@@ -213,7 +217,18 @@ def main(request: str, config: str, verbose: bool):
     예시:
         python orchestrator.py "FastAPI로 /users CRUD 엔드포인트 구현해줘"
         python orchestrator.py --verbose "로그인 API 버그 수정해줘"
+        python orchestrator.py session list  # 세션 목록 조회
+        python orchestrator.py session search --keyword "API"  # 세션 검색
     """
+    # 서브커맨드 실행 시 (session 등)
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # request가 없으면 도움말 출력
+    if not request:
+        click.echo(ctx.get_help())
+        return
+
     try:
         # config 경로를 프로젝트 루트 기준으로 변환
         config_path = Path(config)
@@ -232,6 +247,16 @@ def main(request: str, config: str, verbose: bool):
             import traceback
             traceback.print_exc()
         sys.exit(1)
+
+
+# 세션 관리 서브커맨드 추가
+main.add_command(session_commands)
+
+# 템플릿 관리 서브커맨드 추가
+main.add_command(template_commands)
+
+# 승인 관리 서브커맨드 추가
+main.add_command(approval_cli)
 
 
 if __name__ == "__main__":

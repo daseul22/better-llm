@@ -8,6 +8,7 @@ Structure:
 - storage: Repositories (Session, Context)
 - claude: Claude SDK client (Manager, Worker)
 - mcp: MCP Server (Worker Tools)
+- template: Template engine and repository
 """
 
 from .config import (
@@ -32,6 +33,11 @@ from .mcp import (
     reset_error_statistics,
     log_error_summary,
 )
+from .template import (
+    Jinja2TemplateEngine,
+    FileBasedTemplateRepository,
+    get_builtin_templates,
+)
 
 __all__ = [
     # Config
@@ -52,4 +58,8 @@ __all__ = [
     "get_error_statistics",
     "reset_error_statistics",
     "log_error_summary",
+    # Template
+    "Jinja2TemplateEngine",
+    "FileBasedTemplateRepository",
+    "get_builtin_templates",
 ]

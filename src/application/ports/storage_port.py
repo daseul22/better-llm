@@ -7,9 +7,9 @@ IContextRepository: 프로젝트 컨텍스트 저장소 인터페이스
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
-from ...domain.models import SessionResult
+from ...domain.models import SessionResult, SessionMetadata, SessionSearchCriteria, SessionDetail
 from ...domain.services import ConversationHistory, ProjectContext
 
 
@@ -58,6 +58,71 @@ class ISessionRepository(ABC):
 
         Raises:
             Exception: 로드 실패 시
+        """
+        pass
+
+    @abstractmethod
+    def search_sessions(self, criteria: SessionSearchCriteria) -> List[SessionMetadata]:
+        """
+        세션 검색
+
+        Args:
+            criteria: 검색 조건
+
+        Returns:
+            검색된 세션 메타데이터 목록
+
+        Raises:
+            Exception: 검색 실패 시
+        """
+        pass
+
+    @abstractmethod
+    def get_session_detail(self, session_id: str) -> Optional[SessionDetail]:
+        """
+        세션 상세 정보 조회
+
+        Args:
+            session_id: 세션 ID
+
+        Returns:
+            세션 상세 정보 또는 None
+
+        Raises:
+            Exception: 조회 실패 시
+        """
+        pass
+
+    @abstractmethod
+    def list_sessions(self, limit: int = 50, offset: int = 0) -> List[SessionMetadata]:
+        """
+        세션 목록 조회 (최신순)
+
+        Args:
+            limit: 최대 결과 수
+            offset: 결과 오프셋
+
+        Returns:
+            세션 메타데이터 목록
+
+        Raises:
+            Exception: 조회 실패 시
+        """
+        pass
+
+    @abstractmethod
+    def delete_session(self, session_id: str) -> bool:
+        """
+        세션 삭제
+
+        Args:
+            session_id: 세션 ID
+
+        Returns:
+            삭제 성공 여부
+
+        Raises:
+            Exception: 삭제 실패 시
         """
         pass
 

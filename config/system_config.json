@@ -33,5 +33,27 @@
     "level": "INFO",
     "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     "enable_structured_logging": false
+  },
+  "storage": {
+    "backend": "sqlite",
+    "json_dir": "sessions",
+    "sqlite_db_path": "data/sessions.db",
+    "retention_days": 90
+  },
+  "templates": {
+    "storage_path": "~/.better-llm/templates",
+    "builtin_enabled": true
+  },
+  "approval": {
+    "enabled": false,
+    "timeout_seconds": 300,
+    "approval_points": {
+      "before_code_write": true,
+      "after_code_write": true,
+      "before_test_run": false,
+      "before_deployment": false
+    },
+    "max_feedback_length": 2000,
+    "auto_approve_on_timeout": false
   }
 }

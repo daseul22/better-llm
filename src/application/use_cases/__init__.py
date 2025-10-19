@@ -19,6 +19,23 @@ from .execute_coder_use_case import ExecuteCoderUseCase
 from .execute_reviewer_use_case import ExecuteReviewerUseCase
 from .execute_tester_use_case import ExecuteTesterUseCase
 from .use_case_factory import UseCaseFactory
+from .session_management import (
+    SessionSearchUseCase,
+    SessionReplayUseCase,
+    SessionAnalyticsUseCase
+)
+from .template_management import (
+    ListTemplatesUseCase,
+    ApplyTemplateUseCase,
+    CreateTemplateUseCase,
+    SearchTemplatesUseCase
+)
+from .approval_management import (
+    RequestApprovalUseCase,
+    ProcessApprovalResponseUseCase,
+    GetPendingApprovalsUseCase,
+    ApprovalHistoryUseCase
+)
 
 __all__ = [
     "BaseWorkerUseCase",
@@ -27,4 +44,15 @@ __all__ = [
     "ExecuteReviewerUseCase",
     "ExecuteTesterUseCase",
     "UseCaseFactory",
+    "SessionSearchUseCase",
+    "SessionReplayUseCase",
+    "SessionAnalyticsUseCase",
+    "ListTemplatesUseCase",
+    "ApplyTemplateUseCase",
+    "CreateTemplateUseCase",
+    "SearchTemplatesUseCase",
+    "RequestApprovalUseCase",
+    "ProcessApprovalResponseUseCase",
+    "GetPendingApprovalsUseCase",
+    "ApprovalHistoryUseCase",
 ]
