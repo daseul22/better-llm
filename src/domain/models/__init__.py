@@ -9,6 +9,7 @@ from .agent import AgentConfig, AgentRole
 from .session import SessionResult, SessionStatus
 from .task import Task, TaskResult, TaskStatus
 from .circuit_breaker import CircuitState, CircuitBreakerState
+from .metrics import WorkerMetrics, SessionMetrics
 
 __all__ = [
     "Message",
@@ -22,4 +23,6 @@ __all__ = [
     "TaskStatus",
     "CircuitState",
     "CircuitBreakerState",
+    "WorkerMetrics",
+    "SessionMetrics",
 ]

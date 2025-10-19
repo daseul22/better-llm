@@ -10,6 +10,8 @@ from .worker_tools import (
     get_error_statistics,
     reset_error_statistics,
     log_error_summary,
+    set_metrics_collector,
+    update_session_id,
 )
 
 __all__ = [
@@ -18,4 +20,6 @@ __all__ = [
     "get_error_statistics",
     "reset_error_statistics",
     "log_error_summary",
+    "set_metrics_collector",
+    "update_session_id",
 ]

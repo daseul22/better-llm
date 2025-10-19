@@ -7,6 +7,7 @@
 
 import asyncio
 import time
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -20,24 +21,29 @@ from rich.text import Text
 from rich.table import Table
 
 from src.domain.models import SessionResult
-from src.domain.services import ConversationHistory, ProjectContextAnalyzer
+from src.domain.services import ConversationHistory, ProjectContextAnalyzer, MetricsCollector
 from src.infrastructure.claude import ManagerAgent
 from src.infrastructure.mcp import (
     initialize_workers,
     create_worker_tools_server,
-    get_error_statistics
+    get_error_statistics,
+    set_metrics_collector,
+    update_session_id
 )
 from src.infrastructure.config import (
     validate_environment,
     get_project_root,
 )
-from src.infrastructure.storage import JsonContextRepository
+from src.infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
 from ..cli.utils import (
     generate_session_id,
     save_session_history,
     validate_user_input,
     sanitize_user_input,
+    save_metrics_report,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorTUI(App):
@@ -74,6 +80,22 @@ class OrchestratorTUI(App):
     }
 
     #worker-status {
+        background: transparent;
+        color: #8b949e;
+        padding: 1 2;
+        height: auto;
+    }
+
+    /* 메트릭 대시보드 */
+    #metrics-container {
+        height: auto;
+        margin: 1 1 0 1;
+        background: transparent;
+        border: round #21262d;
+        padding: 0;
+    }
+
+    #metrics-panel {
         background: transparent;
         color: #8b949e;
         padding: 1 2;
@@ -159,6 +181,10 @@ class OrchestratorTUI(App):
         self.timer_active = False  # 타이머 활성화 여부
         self.last_ctrl_c_time = 0  # 마지막 Ctrl+C 누른 시간
 
+        # 메트릭 수집
+        self.metrics_repository = InMemoryMetricsRepository()
+        self.metrics_collector = MetricsCollector(self.metrics_repository)
+
     def compose(self) -> ComposeResult:
         """UI 구성"""
         # 출력 영역
@@ -168,6 +194,10 @@ class OrchestratorTUI(App):
         # Worker 상태 표시
         with Container(id="worker-status-container"):
             yield Static("⏳ 초기화 중...", id="worker-status")
+
+        # 메트릭 대시보드
+        with Container(id="metrics-container"):
+            yield Static("📊 메트릭 없음", id="metrics-panel")
 
         # 입력 영역
         with Container(id="input-container"):
@@ -188,6 +218,8 @@ class OrchestratorTUI(App):
         await self.initialize_orchestrator()
         # 타이머: 0.5초마다 Worker Tool 실행 시간 업데이트
         self.set_interval(0.5, self.update_worker_status_timer)
+        # 타이머: 1초마다 메트릭 대시보드 업데이트
+        self.set_interval(1.0, self.update_metrics_panel)
 
     async def initialize_orchestrator(self) -> None:
         """오케스트레이터 초기화"""
@@ -227,6 +259,10 @@ class OrchestratorTUI(App):
 
             # 대화 히스토리
             self.history = ConversationHistory()
+
+            # 메트릭 컬렉터 설정
+            set_metrics_collector(self.metrics_collector, self.session_id)
+            output_log.write("✅ [green]메트릭 수집기 준비 완료[/green]")
 
             self.initialized = True
             worker_status.update("✅ 준비 완료")
@@ -404,6 +440,16 @@ class OrchestratorTUI(App):
                 sessions_dir
             )
 
+            # 메트릭 리포트 저장
+            metrics_filepath = save_metrics_report(
+                self.session_id,
+                self.metrics_collector,
+                sessions_dir,
+                format="text"
+            )
+            if metrics_filepath:
+                output_log.write(f"[dim]메트릭 리포트 저장: {metrics_filepath.name}[/dim]")
+
             worker_status.update(f"✅ 완료 ({task_duration:.1f}초)")
             status_info.update(f"Completed • {filepath.name}")
 
@@ -498,6 +544,9 @@ class OrchestratorTUI(App):
                 self.history = ConversationHistory()
                 self.start_time = time.time()
 
+                # 세션 ID 업데이트 (메트릭 수집용)
+                update_session_id(self.session_id)
+
                 # UI 업데이트
                 session_info = self.query_one("#session-info", Static)
                 session_info.update(f"Session: {self.session_id}")
@@ -543,6 +592,9 @@ class OrchestratorTUI(App):
         self.history = ConversationHistory()
         self.start_time = time.time()
 
+        # 세션 ID 업데이트 (메트릭 수집용)
+        update_session_id(self.session_id)
+
         # UI 업데이트
         session_info = self.query_one("#session-info", Static)
         status_info = self.query_one("#status-info", Static)
@@ -581,6 +633,81 @@ class OrchestratorTUI(App):
         spinner = spinner_frames[int(elapsed * 2) % len(spinner_frames)]
 
         self.update_worker_status(f"{spinner} Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
+
+    def update_metrics_panel(self) -> None:
+        """타이머: 메트릭 대시보드 업데이트 (1초마다 호출)"""
+        try:
+            metrics_panel = self.query_one("#metrics-panel", Static)
+
+            # 세션 메트릭 조회
+            session_metrics = self.metrics_collector.get_session_summary(self.session_id)
+
+            if not session_metrics or not session_metrics.workers_metrics:
+                metrics_panel.update("📊 메트릭 없음")
+                return
+
+            # 통계 테이블 생성
+            stats_table = Table(
+                show_header=True,
+                header_style="bold cyan",
+                border_style="dim",
+                box=None,
+                padding=(0, 1)
+            )
+            stats_table.add_column("Worker", style="cyan", width=12)
+            stats_table.add_column("시도", justify="right", width=6)
+            stats_table.add_column("성공", justify="right", width=6, style="green")
+            stats_table.add_column("실패", justify="right", width=6, style="red")
+            stats_table.add_column("성공률", justify="right", width=8)
+            stats_table.add_column("평균시간", justify="right", width=10)
+
+            # 모든 Worker 통계 조회
+            all_stats = self.metrics_collector.get_all_workers_statistics(self.session_id)
+
+            for worker_name, stats in all_stats.items():
+                success_rate = stats["success_rate"]
+                success_rate_style = (
+                    "green" if success_rate >= 80
+                    else "yellow" if success_rate >= 50
+                    else "red"
+                )
+
+                stats_table.add_row(
+                    worker_name.upper(),
+                    str(stats["attempts"]),
+                    str(stats["successes"]),
+                    str(stats["failures"]),
+                    f"[{success_rate_style}]{success_rate:.1f}%[/{success_rate_style}]",
+                    f"{stats['avg_execution_time']:.2f}s",
+                )
+
+            # 세션 요약 추가
+            total_duration = session_metrics.total_duration
+            total_attempts = len(session_metrics.workers_metrics)
+            overall_success_rate = session_metrics.get_success_rate()
+
+            summary_text = (
+                f"[bold]세션 요약[/bold]: "
+                f"총 {total_attempts}회 실행, "
+                f"소요시간 {total_duration:.1f}s, "
+                f"성공률 {overall_success_rate:.1f}%"
+            )
+
+            # Rich 렌더링 (테이블 + 요약)
+            from rich.console import Group
+            content = Group(
+                Text("📊 성능 메트릭", style="bold"),
+                Text(""),
+                stats_table,
+                Text(""),
+                Text.from_markup(summary_text),
+            )
+
+            metrics_panel.update(content)
+
+        except Exception as e:
+            # 메트릭 업데이트 실패는 로그만 남기고 무시
+            logger.warning(f"메트릭 패널 업데이트 실패: {e}")
 
     async def action_interrupt_or_quit(self) -> None:
         """Ctrl+C: 1번 누르면 작업 중단, 2초 내 2번 누르면 프로세스 종료"""

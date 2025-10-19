@@ -5,17 +5,19 @@ Worker Agent Tools - Worker Agent들을 Custom Tool로 래핑
 Manager Agent가 필요할 때 호출할 수 있도록 합니다.
 """
 
-from typing import Any, Dict, Callable
+from typing import Any, Dict, Callable, Optional
 from pathlib import Path
 import logging
 import asyncio
 from functools import wraps
+from datetime import datetime
 
 from claude_agent_sdk import tool, create_sdk_mcp_server
 from claude_agent_sdk.types import ClaudeAgentOptions
 
 from ..claude import WorkerAgent
 from ...domain.models import AgentConfig
+from ...domain.services import MetricsCollector
 from ..config import JsonConfigLoader, get_project_root
 
 logger = logging.getLogger(__name__)
@@ -67,23 +69,11 @@ async def retry_with_backoff(
                 )
                 await asyncio.sleep(wait_time)
             else:
-                # 최종 실패
+                # 최종 실패 - 예외를 다시 던져서 호출자가 처리하도록 함
                 logger.error(
                     f"❌ [{worker_name}] {max_retries}회 시도 후 최종 실패: {e}"
                 )
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                f"❌ {worker_name.capitalize()} Agent 실행 실패\n\n"
-                                f"**오류**: {str(e)}\n"
-                                f"**시도 횟수**: {max_retries}회\n\n"
-                                f"일시적인 오류일 수 있습니다. 다시 시도해주세요."
-                            )
-                        }
-                    ]
-                }
+                raise
 
     # 여기 도달하면 안 됨
     raise RuntimeError("Unexpected error in retry_with_backoff")
@@ -91,6 +81,10 @@ async def retry_with_backoff(
 
 # 전역 변수로 Worker Agent 인스턴스들을 저장
 _WORKER_AGENTS: Dict[str, WorkerAgent] = {}
+
+# 메트릭 수집기 (선택적)
+_METRICS_COLLECTOR: Optional[MetricsCollector] = None
+_CURRENT_SESSION_ID: Optional[str] = None
 
 
 def initialize_workers(config_path: Path):
@@ -109,6 +103,32 @@ def initialize_workers(config_path: Path):
         worker = WorkerAgent(config)
         _WORKER_AGENTS[config.name] = worker
         logger.info(f"✅ Worker Agent 초기화: {config.name} ({config.role})")
+
+
+def set_metrics_collector(collector: MetricsCollector, session_id: str) -> None:
+    """
+    메트릭 컬렉터 설정 (TUI/CLI에서 호출)
+
+    Args:
+        collector: 메트릭 수집기
+        session_id: 현재 세션 ID
+    """
+    global _METRICS_COLLECTOR, _CURRENT_SESSION_ID
+    _METRICS_COLLECTOR = collector
+    _CURRENT_SESSION_ID = session_id
+    logger.info(f"✅ 메트릭 컬렉터 설정 완료 (Session: {session_id})")
+
+
+def update_session_id(session_id: str) -> None:
+    """
+    현재 세션 ID 업데이트
+
+    Args:
+        session_id: 새 세션 ID
+    """
+    global _CURRENT_SESSION_ID
+    _CURRENT_SESSION_ID = session_id
+    logger.info(f"✅ 세션 ID 업데이트: {session_id}")
 
 
 async def _execute_worker_task(
@@ -137,26 +157,55 @@ async def _execute_worker_task(
             ]
         }
 
+    # 메트릭 수집 시작
+    start_time = datetime.now()
+    success = False
+    error_message = None
+
     async def execute():
         result = ""
         async for chunk in worker.execute_task(task_description):
             result += chunk
         return {"content": [{"type": "text", "text": result}]}
 
-    if use_retry:
-        return await retry_with_backoff(execute, worker_name)
-    else:
-        try:
+    try:
+        if use_retry:
+            result = await retry_with_backoff(execute, worker_name)
+        else:
             _ERROR_STATS[worker_name]["attempts"] += 1
-            return await execute()
-        except Exception as e:
-            _ERROR_STATS[worker_name]["failures"] += 1
-            logger.error(f"[{worker_name.capitalize()} Tool] 실행 실패: {e}")
-            return {
-                "content": [
-                    {"type": "text", "text": f"❌ {worker_name.capitalize()} 실행 실패: {e}"}
-                ]
-            }
+            result = await execute()
+
+        success = True
+        return result
+
+    except Exception as e:
+        _ERROR_STATS[worker_name]["failures"] += 1
+        error_message = str(e)
+        logger.error(f"[{worker_name.capitalize()} Tool] 실행 실패: {e}")
+        return {
+            "content": [
+                {"type": "text", "text": f"❌ {worker_name.capitalize()} 실행 실패: {e}"}
+            ]
+        }
+
+    finally:
+        # 메트릭 기록 (컬렉터가 설정되어 있으면)
+        if _METRICS_COLLECTOR and _CURRENT_SESSION_ID:
+            end_time = datetime.now()
+            try:
+                _METRICS_COLLECTOR.record_worker_execution(
+                    session_id=_CURRENT_SESSION_ID,
+                    worker_name=worker_name,
+                    task_description=task_description[:100],  # 너무 길면 잘라냄
+                    start_time=start_time,
+                    end_time=end_time,
+                    success=success,
+                    tokens_used=None,  # 추후 Claude SDK에서 토큰 정보 가져오면 추가
+                    error_message=error_message,
+                )
+            except Exception as metrics_error:
+                # 메트릭 기록 실패는 로그만 남기고 무시
+                logger.warning(f"메트릭 기록 실패: {metrics_error}")
 
 
 @tool(

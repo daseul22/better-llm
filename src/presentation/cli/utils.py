@@ -257,3 +257,40 @@ def load_system_config(config_path: Optional[Path] = None):
     project_root = get_project_root()
     loader = JsonConfigLoader(project_root)
     return loader.load_system_config()
+
+
+def save_metrics_report(
+    session_id: str,
+    metrics_collector,  # MetricsCollector object
+    output_dir: Path,
+    format: str = "text"
+) -> Optional[Path]:
+    """
+    세션 메트릭 리포트를 파일로 저장
+
+    Args:
+        session_id: 세션 ID
+        metrics_collector: 메트릭 수집기 (MetricsCollector 객체)
+        output_dir: 출력 디렉토리
+        format: 리포트 형식 ("text", "json", "markdown")
+
+    Returns:
+        저장된 파일 경로 또는 None (메트릭이 없는 경우)
+    """
+    from ...domain.services import MetricsReporter
+
+    # 세션 메트릭 조회
+    session_metrics = metrics_collector.get_session_summary(session_id)
+
+    if not session_metrics or not session_metrics.workers_metrics:
+        # 메트릭이 없으면 저장하지 않음
+        return None
+
+    # 리포트 저장
+    filepath = MetricsReporter.save_report(
+        session_metrics=session_metrics,
+        output_path=output_dir,
+        format=format
+    )
+
+    return filepath
