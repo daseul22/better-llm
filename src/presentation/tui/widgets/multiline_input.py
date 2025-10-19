@@ -19,6 +19,7 @@ class MultilineInput(TextArea):
         - Enter: 제출 (Submitted 메시지 발생)
         - Shift+Enter: 줄바꿈
         - Up/Down: 입력 히스토리 탐색 (외부에서 처리)
+        - Tab: 자동 완성 (AutocompleteRequested 메시지 발생)
     """
 
     class Submitted(Message):
@@ -55,6 +56,24 @@ class MultilineInput(TextArea):
         """
         pass
 
+    class AutocompleteRequested(Message):
+        """
+        Tab 키로 자동 완성이 요청되었을 때 발생하는 메시지.
+
+        Attributes:
+            current_text (str): 현재 입력 텍스트
+        """
+
+        def __init__(self, current_text: str) -> None:
+            """
+            AutocompleteRequested 메시지 초기화.
+
+            Args:
+                current_text: 현재 입력 텍스트
+            """
+            super().__init__()
+            self.current_text = current_text
+
     def __init__(
         self,
         *,
@@ -88,6 +107,7 @@ class MultilineInput(TextArea):
         Enter: 제출 (일반 Enter만)
         Shift+Enter: 줄바꿈 (TextArea 기본 동작)
         Up/Down: 히스토리 탐색 (첫/마지막 줄에서만)
+        Tab: 자동 완성
 
         Args:
             event: 키 입력 이벤트
@@ -95,6 +115,12 @@ class MultilineInput(TextArea):
         # Enter 키 단독 (Shift 없이) - 제출
         if event.key == "enter":
             self.post_message(self.Submitted(self.text))
+            event.prevent_default()
+            event.stop()
+            return
+        # Tab 키 - 자동 완성
+        elif event.key == "tab":
+            self.post_message(self.AutocompleteRequested(self.text))
             event.prevent_default()
             event.stop()
             return

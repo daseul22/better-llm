@@ -86,6 +86,9 @@ _WORKER_AGENTS: Dict[str, WorkerAgent] = {}
 _METRICS_COLLECTOR: Optional[MetricsCollector] = None
 _CURRENT_SESSION_ID: Optional[str] = None
 
+# 워크플로우 콜백 (TUI에서 설정)
+_WORKFLOW_CALLBACK: Optional[Callable] = None
+
 
 def initialize_workers(config_path: Path):
     """
@@ -131,6 +134,19 @@ def update_session_id(session_id: str) -> None:
     logger.info(f"✅ 세션 ID 업데이트: {session_id}")
 
 
+def set_workflow_callback(callback: Optional[Callable]) -> None:
+    """
+    워크플로우 상태 업데이트 콜백 설정
+
+    Args:
+        callback: 워크플로우 상태 업데이트 함수
+                  시그니처: callback(worker_name: str, status: str, error: Optional[str])
+    """
+    global _WORKFLOW_CALLBACK
+    _WORKFLOW_CALLBACK = callback
+    logger.info("✅ 워크플로우 콜백 설정 완료")
+
+
 async def _execute_worker_task(
     worker_name: str,
     task_description: str,
@@ -162,6 +178,13 @@ async def _execute_worker_task(
     success = False
     error_message = None
 
+    # 워크플로우 콜백: RUNNING 상태
+    if _WORKFLOW_CALLBACK:
+        try:
+            _WORKFLOW_CALLBACK(worker_name, "running", None)
+        except Exception as e:
+            logger.warning(f"워크플로우 콜백 실행 실패 (running): {e}")
+
     async def execute():
         result = ""
         async for chunk in worker.execute_task(task_description):
@@ -176,12 +199,28 @@ async def _execute_worker_task(
             result = await execute()
 
         success = True
+
+        # 워크플로우 콜백: COMPLETED 상태
+        if _WORKFLOW_CALLBACK:
+            try:
+                _WORKFLOW_CALLBACK(worker_name, "completed", None)
+            except Exception as e:
+                logger.warning(f"워크플로우 콜백 실행 실패 (completed): {e}")
+
         return result
 
     except Exception as e:
         _ERROR_STATS[worker_name]["failures"] += 1
         error_message = str(e)
         logger.error(f"[{worker_name.capitalize()} Tool] 실행 실패: {e}")
+
+        # 워크플로우 콜백: FAILED 상태
+        if _WORKFLOW_CALLBACK:
+            try:
+                _WORKFLOW_CALLBACK(worker_name, "failed", str(e))
+            except Exception as callback_error:
+                logger.warning(f"워크플로우 콜백 실행 실패 (failed): {callback_error}")
+
         return {
             "content": [
                 {"type": "text", "text": f"❌ {worker_name.capitalize()} 실행 실패: {e}"}

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional, Dict
 
 import click
+from rich.traceback import install as install_rich_traceback
 
 from src.domain.models import SessionResult
 from src.domain.models.session import SessionStatus
@@ -43,9 +44,14 @@ from .utils import (
     sanitize_user_input,
     load_system_config,
 )
+from .feedback import FeedbackMessage
+from .cli_ui import get_renderer, get_progress_tracker, WorkflowTree, get_error_display
 from .session_commands import session_commands
 from .template_commands import template_commands
 from .approval_commands import approval_cli
+
+# Rich Traceback 설치 (에러 메시지 개선)
+install_rich_traceback(show_locals=False)
 
 
 class Orchestrator:
@@ -94,6 +100,15 @@ class Orchestrator:
         self.session_id = generate_session_id()
         self.start_time = time.time()
 
+        # 피드백 시스템
+        self.feedback = FeedbackMessage()
+
+        # CLI UI 렌더러
+        self.renderer = get_renderer()
+
+        # Workflow Tree (Worker Tool 호출 추적)
+        self.workflow_tree = WorkflowTree(title="Worker Tools Workflow")
+
     async def run(self, user_request: str) -> SessionResult:
         """
         작업 실행 - Manager가 Worker Tool들을 호출하여 작업 수행
@@ -107,18 +122,27 @@ class Orchestrator:
         # 입력 검증
         is_valid, error_msg = validate_user_input(user_request)
         if not is_valid:
-            print(f"\n❌ 입력 검증 실패: {error_msg}")
+            # 피드백 시스템 사용
+            self.feedback.error(
+                "입력 검증에 실패했습니다",
+                details=error_msg
+            )
             return SessionResult(status=SessionStatus.INVALID_INPUT)
 
         # 입력 정제
         user_request = sanitize_user_input(user_request)
 
-        # 헤더 출력
-        print_header(f"Group Chat Orchestration v3.0 (Worker Tools) - Session {self.session_id}")
-        print(f"📝 작업: {user_request}")
-        print(f"👔 매니저: ManagerAgent (Claude Agent SDK + Worker Tools)")
-        print(f"🛠️  도구: execute_planner_task, execute_coder_task, execute_tester_task, read")
-        print()
+        # 헤더 출력 (Rich 사용)
+        self.renderer.print_header(
+            "Group Chat Orchestration v3.0",
+            f"Worker Tools Architecture - Session {self.session_id}"
+        )
+        self.renderer.print_task_info(
+            task=user_request,
+            session_id=self.session_id,
+            manager="ManagerAgent (Claude Agent SDK)",
+            tools=["execute_planner_task", "execute_coder_task", "execute_tester_task", "read"]
+        )
 
         # 사용자 요청을 히스토리에 추가
         self.history.add_message("user", user_request)
@@ -130,31 +154,38 @@ class Orchestrator:
             while turn < max_turns:
                 turn += 1
 
-                # Manager가 Worker Tool들을 호출하여 작업 수행 (스트리밍)
-                print(f"\n[Turn {turn}] 👔 ManagerAgent:")
-                print("─" * 60)
+                # 턴 헤더 출력 (Rich 사용)
+                self.renderer.print_turn_header(turn, "ManagerAgent")
 
                 manager_response = ""
                 async for chunk in self.manager.analyze_and_plan_stream(
                     self.history.get_history()
                 ):
                     manager_response += chunk
-                    print(chunk, end="", flush=True)
+                    self.renderer.console.print(chunk, end="", highlight=False)
 
-                print()
-                print()
+                self.renderer.console.print()
+                self.renderer.console.print()
 
                 # Manager 응답을 히스토리에 추가
                 self.history.add_message("manager", manager_response)
 
                 # 종료 조건 확인
                 if "작업이 완료되었습니다" in manager_response or "작업 완료" in manager_response:
-                    print("\n✅ Manager가 작업 완료를 보고했습니다.")
+                    # 피드백 시스템 사용
+                    self.feedback.success(
+                        "Manager가 작업 완료를 보고했습니다",
+                        use_panel=False
+                    )
                     break
 
             # 최대 턴 수 도달
             if turn >= max_turns:
-                print(f"\n⚠️  최대 턴 수({max_turns})에 도달했습니다.")
+                # 피드백 시스템 사용
+                self.feedback.warning(
+                    f"최대 턴 수({max_turns})에 도달했습니다",
+                    use_panel=False
+                )
                 return SessionResult(status=SessionStatus.MAX_TURNS_REACHED)
 
             # 정상 완료
@@ -166,9 +197,9 @@ class Orchestrator:
 
         finally:
             # 에러 통계 출력
-            print()
+            self.renderer.console.print()
             log_error_summary()
-            print()
+            self.renderer.console.print()
 
             # 세션 히스토리 저장
             duration = time.time() - self.start_time
@@ -183,7 +214,8 @@ class Orchestrator:
                 sessions_dir
             )
 
-            print_footer(
+            # 푸터 출력 (Rich 사용)
+            self.renderer.print_footer(
                 self.session_id,
                 sum(1 for msg in self.history.get_history() if msg.role == "manager"),
                 duration,
@@ -240,13 +272,25 @@ def main(ctx: click.Context, request: Optional[str], config: str, verbose: bool)
         # asyncio로 실행
         asyncio.run(orchestrator.run(request))
     except KeyboardInterrupt:
-        print("\n\n🛑 사용자가 작업을 중단했습니다.")
+        # 피드백 시스템 사용
+        feedback = FeedbackMessage()
+        feedback.warning("사용자가 작업을 중단했습니다", use_panel=False)
         sys.exit(0)
     except Exception as e:
-        print(f"\n❌ 오류 발생: {e}")
+        # Rich ErrorDisplay 사용
+        error_display = get_error_display()
         if verbose:
             import traceback
-            traceback.print_exc()
+            error_display.show_error(
+                error_type=type(e).__name__,
+                message=str(e),
+                traceback=traceback.format_exc()
+            )
+        else:
+            error_display.show_error(
+                error_type=type(e).__name__,
+                message=str(e)
+            )
         sys.exit(1)
 
 

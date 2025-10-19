@@ -9,12 +9,14 @@ import asyncio
 import time
 import logging
 from pathlib import Path
-from typing import Optional, List, Tuple, Any
+from typing import Optional, List, Tuple, Union
+from enum import Enum
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, ScrollableContainer, Horizontal
 from textual.widgets import Footer, Input, Static, RichLog, Header
 from textual.binding import Binding
+from textual import events
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
@@ -29,7 +31,8 @@ from src.infrastructure.mcp import (
     create_worker_tools_server,
     get_error_statistics,
     set_metrics_collector,
-    update_session_id
+    update_session_id,
+    set_workflow_callback,
 )
 from src.infrastructure.config import (
     validate_environment,
@@ -43,12 +46,27 @@ from ..cli.utils import (
     sanitize_user_input,
     save_metrics_report,
 )
-from .widgets import HelpModal, SearchModal, MultilineInput
+from ..cli.feedback import TUIFeedbackWidget, FeedbackType
+from .widgets import (
+    HelpModal,
+    SearchModal,
+    MultilineInput,
+    SessionBrowserModal,
+    WorkflowVisualizer,
+    WorkerStatus,
+)
 from .widgets.settings_modal import SettingsModal
 from .widgets.search_input import SearchHighlighter
 from .utils import InputHistory, LogExporter, AutocompleteEngine, TUIConfig, TUISettings
 
 logger = logging.getLogger(__name__)
+
+
+class LayoutMode(Enum):
+    """레이아웃 모드 정의"""
+    LARGE = "Large"  # width >= 120, height >= 30 (모든 패널 표시)
+    MEDIUM = "Medium"  # width >= 80, height >= 24 (메트릭 패널 토글 가능)
+    SMALL = "Small"  # width < 80 or height < 24 (메트릭 패널 자동 숨김)
 
 
 class OrchestratorTUI(App):
@@ -112,6 +130,21 @@ class OrchestratorTUI(App):
         height: auto;
     }
 
+    /* 워크플로우 비주얼라이저 */
+    #workflow-container {
+        height: auto;
+        max-height: 20;
+        margin: 1 1 0 1;
+        background: transparent;
+        border: round #21262d;
+        padding: 1 2;
+    }
+
+    WorkflowVisualizer {
+        background: transparent;
+        height: auto;
+    }
+
     /* 입력 영역 */
     #input-container {
         height: auto;
@@ -162,6 +195,19 @@ class OrchestratorTUI(App):
         background: #388bfd40;
     }
 
+    /* 자동 완성 미리보기 */
+    #autocomplete-preview {
+        height: auto;
+        background: transparent;
+        color: #6e7681;
+        padding: 0;
+        margin-top: 1;
+    }
+
+    #autocomplete-preview.hidden {
+        display: none;
+    }
+
     /* 하단 정보바 */
     #info-bar {
         dock: bottom;
@@ -196,6 +242,20 @@ class OrchestratorTUI(App):
     Footer > .footer--description {
         color: #8b949e;
     }
+
+    /* 반응형 레이아웃 클래스 */
+    .layout-warning {
+        background: #4d1d00;
+        border: tall #ff8800;
+    }
+
+    .layout-small #metrics-container {
+        display: none;
+    }
+
+    .layout-small #input-container {
+        margin: 1 1 0 1;
+    }
     """
 
     BINDINGS = [
@@ -203,6 +263,7 @@ class OrchestratorTUI(App):
         Binding("ctrl+c", "interrupt_or_quit", "중단/종료"),
         Binding("ctrl+n", "new_session", "새 세션"),
         Binding("ctrl+s", "save_log", "로그 저장"),
+        Binding("ctrl+l", "show_session_browser", "세션"),
 
         # 검색 (수정됨!)
         Binding("/", "search_log", "검색"),
@@ -220,6 +281,9 @@ class OrchestratorTUI(App):
         # 메트릭 (수정됨!)
         Binding("ctrl+m", "toggle_metrics_panel", "메트릭"),
         Binding("f3", "toggle_metrics_panel", "메트릭", show=False),
+
+        # 워크플로우
+        Binding("f4", "toggle_workflow_panel", "워크플로우", show=False),
 
         # 히스토리
         Binding("up", "history_up", "이전 입력", show=False),
@@ -249,6 +313,17 @@ class OrchestratorTUI(App):
         self.log_lines: List[str] = []  # 로그 버퍼 (검색 및 저장용)
         self.search_query: Optional[str] = None  # 현재 검색어
         self.show_metrics_panel: bool = self.settings.show_metrics_panel  # 메트릭 패널 표시 여부
+        self.show_workflow_panel: bool = self.settings.show_workflow_panel  # 워크플로우 패널 표시 여부
+
+        # 레이아웃 반응성
+        self.current_layout_mode: LayoutMode = LayoutMode.LARGE
+        self.terminal_width: int = 120
+        self.terminal_height: int = 30
+        self.metrics_panel_hidden_by_layout: bool = False  # 레이아웃에 의해 강제로 숨겨졌는지 여부
+
+        # 자동 완성 엔진
+        project_root = get_project_root()
+        self.autocomplete_engine = AutocompleteEngine(working_dir=project_root)
 
     def compose(self) -> ComposeResult:
         """UI 구성"""
@@ -264,11 +339,16 @@ class OrchestratorTUI(App):
         with Container(id="metrics-container"):
             yield Static("📊 메트릭 없음", id="metrics-panel")
 
+        # 워크플로우 비주얼라이저
+        with Container(id="workflow-container"):
+            yield WorkflowVisualizer(id="workflow-visualizer")
+
         # 입력 영역
         with Container(id="input-container"):
             yield MultilineInput(
                 id="task-input"
             )
+            yield Static("", id="autocomplete-preview", classes="hidden")
 
         # 하단 정보바
         with Horizontal(id="info-bar"):
@@ -286,6 +366,10 @@ class OrchestratorTUI(App):
         self.set_interval(1.0, self.update_metrics_panel)
         # 메트릭 패널 초기 상태 적용
         self.apply_metrics_panel_visibility()
+        # 워크플로우 패널 초기 상태 적용
+        self.apply_workflow_panel_visibility()
+        # 초기 레이아웃 업데이트
+        self.update_layout_for_size(self.size.width, self.size.height)
         # 자동 포커스: task-input 위젯에 포커스 설정
         task_input = self.query_one("#task-input", MultilineInput)
         task_input.focus()
@@ -333,6 +417,10 @@ class OrchestratorTUI(App):
             set_metrics_collector(self.metrics_collector, self.session_id)
             self.write_log("✅ [green]메트릭 수집기 준비 완료[/green]")
 
+            # 워크플로우 콜백 설정
+            set_workflow_callback(self.on_workflow_update)
+            self.write_log("✅ [green]워크플로우 비주얼라이저 준비 완료[/green]")
+
             self.initialized = True
             worker_status.update("✅ 준비 완료")
             status_info.update("Ready")
@@ -351,7 +439,13 @@ class OrchestratorTUI(App):
             self.write_log("")
 
         except Exception as e:
-            self.write_log(f"[red]❌ 초기화 실패: {e}[/red]")
+            # 피드백 시스템 사용
+            error_panel = TUIFeedbackWidget.create_panel(
+                "초기화에 실패했습니다",
+                FeedbackType.ERROR,
+                details=str(e)
+            )
+            self.write_log(error_panel)
             worker_status.update(f"❌ 오류: {e}")
             status_info.update("Error")
 
@@ -403,6 +497,23 @@ class OrchestratorTUI(App):
         except Exception:
             pass  # 위젯이 없으면 무시
 
+    async def on_text_area_changed(self, event) -> None:
+        """
+        TextArea (MultilineInput) 입력 변경 이벤트
+
+        자동 완성 상태를 리셋합니다 (Tab 키 외의 입력 시).
+        """
+        try:
+            # 자동 완성 미리보기 숨기기
+            autocomplete_preview = self.query_one("#autocomplete-preview", Static)
+            autocomplete_preview.add_class("hidden")
+
+            # 자동 완성 엔진 리셋
+            self.autocomplete_engine.reset()
+
+        except Exception:
+            pass  # 위젯이 없으면 무시
+
     async def run_task(self, user_request: str) -> None:
         """작업 실행 - Manager가 Worker Tools를 자동으로 호출"""
         task_input = self.query_one("#task-input", MultilineInput)
@@ -414,11 +525,14 @@ class OrchestratorTUI(App):
             # 입력 검증
             is_valid, error_msg = validate_user_input(user_request)
             if not is_valid:
+                # 피드백 시스템 사용
+                error_panel = TUIFeedbackWidget.create_panel(
+                    "입력 검증 실패",
+                    FeedbackType.ERROR,
+                    details=error_msg
+                )
                 self.write_log("")
-                self.write_log(Panel(
-                    f"[bold red]❌ 입력 검증 실패[/bold red]\n\n{error_msg}",
-                    border_style="red"
-                ))
+                self.write_log(error_panel)
                 self.write_log("")
                 task_input.clear()
                 return
@@ -548,16 +662,18 @@ class OrchestratorTUI(App):
             status_info.update(f"Completed • {filepath.name}")
 
         except Exception as e:
+            # 피드백 시스템 사용
+            import traceback
+            error_panel = TUIFeedbackWidget.create_panel(
+                "작업 실행 중 오류가 발생했습니다",
+                FeedbackType.ERROR,
+                details=f"{str(e)}\n\n{traceback.format_exc()}"
+            )
             self.write_log("")
-            self.write_log(Panel(
-                f"[bold red]❌ 오류 발생[/bold red]\n\n{str(e)}",
-                border_style="red"
-            ))
+            self.write_log(error_panel)
             self.write_log("")
             worker_status.update(f"❌ 오류")
             status_info.update("Error")
-            import traceback
-            self.write_log(f"[dim]{traceback.format_exc()}[/dim]")
 
     async def handle_slash_command(self, command: str) -> None:
         """
@@ -600,21 +716,25 @@ class OrchestratorTUI(App):
             # 로그 화면 지우기
             output_log.clear()
             self.log_lines.clear()
+            # 피드백 시스템 사용
+            success_panel = TUIFeedbackWidget.create_panel(
+                "로그 화면이 지워졌습니다",
+                FeedbackType.SUCCESS
+            )
             self.write_log("")
-            self.write_log(Panel(
-                "[bold green]✅ 로그 화면이 지워졌습니다[/bold green]",
-                border_style="green"
-            ))
+            self.write_log(success_panel)
             self.write_log("")
 
         elif cmd == '/load':
             # 세션 불러오기 (Phase 3.1)
             if not args:
+                # 피드백 시스템 사용
+                warning_panel = TUIFeedbackWidget.create_panel(
+                    "사용법: /load <session_id>",
+                    FeedbackType.WARNING
+                )
                 self.write_log("")
-                self.write_log(Panel(
-                    "[bold yellow]⚠️  사용법: /load <session_id>[/bold yellow]",
-                    border_style="yellow"
-                ))
+                self.write_log(warning_panel)
                 self.write_log("")
             else:
                 session_id_to_load = args[0]
@@ -686,8 +806,7 @@ class OrchestratorTUI(App):
                 update_session_id(self.session_id)
 
                 # UI 업데이트
-                session_info = self.query_one("#session-info", Static)
-                session_info.update(f"Session: {self.session_id}")
+                self._update_status_bar()  # 터미널 크기 및 레이아웃 모드 포함
 
                 self.write_log("")
                 self.write_log(Panel(
@@ -702,31 +821,37 @@ class OrchestratorTUI(App):
                 status_info.update("Ready")
 
             except Exception as e:
+                # 피드백 시스템 사용
+                import traceback
+                error_panel = TUIFeedbackWidget.create_panel(
+                    "프로젝트 초기화 실패",
+                    FeedbackType.ERROR,
+                    details=f"{str(e)}\n\n{traceback.format_exc()}"
+                )
                 self.write_log("")
-                self.write_log(Panel(
-                    f"[bold red]❌ 초기화 실패[/bold red]\n\n{str(e)}",
-                    border_style="red"
-                ))
+                self.write_log(error_panel)
                 self.write_log("")
                 worker_status.update(f"❌ 오류")
                 status_info.update("Error")
-                import traceback
-                self.write_log(f"[dim]{traceback.format_exc()}[/dim]")
 
         else:
-            # 알 수 없는 커맨드
+            # 알 수 없는 커맨드 - 피드백 시스템 사용
+            available_commands = (
+                "사용 가능한 커맨드:\n"
+                "  /help - 도움말 표시\n"
+                "  /metrics - 메트릭 패널 토글\n"
+                "  /search - 로그 검색\n"
+                "  /init - 프로젝트 분석 및 context 초기화\n"
+                "  /load <session_id> - 이전 세션 불러오기\n"
+                "  /clear - 로그 화면 지우기"
+            )
+            warning_panel = TUIFeedbackWidget.create_panel(
+                f"알 수 없는 커맨드: {cmd}",
+                FeedbackType.WARNING,
+                details=available_commands
+            )
             self.write_log("")
-            self.write_log(Panel(
-                f"[bold yellow]⚠️  알 수 없는 커맨드: {cmd}[/bold yellow]\n\n"
-                f"사용 가능한 커맨드:\n"
-                f"  /help - 도움말 표시\n"
-                f"  /metrics - 메트릭 패널 토글\n"
-                f"  /search - 로그 검색\n"
-                f"  /init - 프로젝트 분석 및 context 초기화\n"
-                f"  /load <session_id> - 이전 세션 불러오기\n"
-                f"  /clear - 로그 화면 지우기",
-                border_style="yellow"
-            ))
+            self.write_log(warning_panel)
             self.write_log("")
 
     async def action_new_session(self) -> None:
@@ -739,9 +864,8 @@ class OrchestratorTUI(App):
         update_session_id(self.session_id)
 
         # UI 업데이트
-        session_info = self.query_one("#session-info", Static)
         status_info = self.query_one("#status-info", Static)
-        session_info.update(f"Session: {self.session_id}")
+        self._update_status_bar()  # 터미널 크기 및 레이아웃 모드 포함
 
         output_log = self.query_one("#output-log", RichLog)
         output_log.clear()
@@ -756,6 +880,121 @@ class OrchestratorTUI(App):
         worker_status = self.query_one("#worker-status", Static)
         worker_status.update("✅ 준비 완료")
         status_info.update("Ready")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """
+        터미널 크기 변경 이벤트 핸들러
+
+        터미널 크기가 변경될 때마다 호출되며, 레이아웃을 동적으로 조정합니다.
+
+        Args:
+            event: Resize 이벤트 (width, height 포함)
+        """
+        self.update_layout_for_size(event.size.width, event.size.height)
+
+    def update_layout_for_size(self, width: int, height: int) -> None:
+        """
+        화면 크기에 따라 레이아웃 동적 조정
+
+        반응형 브레이크포인트:
+        - Large: width >= 120, height >= 30 (모든 패널 표시)
+        - Medium: width >= 80, height >= 24 (메트릭 패널 토글 가능)
+        - Small: width < 80 or height < 24 (메트릭 패널 자동 숨김, 경고)
+
+        Args:
+            width: 터미널 너비
+            height: 터미널 높이
+        """
+        self.terminal_width = width
+        self.terminal_height = height
+
+        # 레이아웃 모드 결정
+        old_mode = self.current_layout_mode
+
+        if width >= 120 and height >= 30:
+            self.current_layout_mode = LayoutMode.LARGE
+        elif width >= 80 and height >= 24:
+            self.current_layout_mode = LayoutMode.MEDIUM
+        else:
+            self.current_layout_mode = LayoutMode.SMALL
+
+        # 레이아웃 모드가 변경된 경우에만 UI 업데이트
+        if old_mode != self.current_layout_mode:
+            self._apply_layout_mode()
+            self._update_status_bar()
+
+            # 레이아웃 변경 알림
+            if self.settings.enable_notifications:
+                self.notify(
+                    f"레이아웃: {self.current_layout_mode.value} ({width}x{height})",
+                    severity="information"
+                )
+        else:
+            # 모드는 동일하지만 크기만 업데이트
+            self._update_status_bar()
+
+    def _apply_layout_mode(self) -> None:
+        """
+        현재 레이아웃 모드에 따라 UI 요소 조정
+
+        - LARGE: 모든 패널 표시, 사용자 메트릭 설정 존중
+        - MEDIUM: 메트릭 패널 토글 가능, 사용자 메트릭 설정 존중
+        - SMALL: 메트릭 패널 강제 숨김, 경고 표시
+        """
+        try:
+            # CSS 클래스 업데이트
+            screen = self.screen
+            screen.remove_class("layout-large")
+            screen.remove_class("layout-medium")
+            screen.remove_class("layout-small")
+
+            if self.current_layout_mode == LayoutMode.LARGE:
+                screen.add_class("layout-large")
+                # 사용자 설정에 따라 메트릭 패널 표시
+                if self.metrics_panel_hidden_by_layout:
+                    self.metrics_panel_hidden_by_layout = False
+                self.apply_metrics_panel_visibility()
+
+            elif self.current_layout_mode == LayoutMode.MEDIUM:
+                screen.add_class("layout-medium")
+                # 사용자 설정에 따라 메트릭 패널 표시
+                if self.metrics_panel_hidden_by_layout:
+                    self.metrics_panel_hidden_by_layout = False
+                self.apply_metrics_panel_visibility()
+
+            elif self.current_layout_mode == LayoutMode.SMALL:
+                screen.add_class("layout-small")
+                # 메트릭 패널 강제 숨김
+                metrics_container = self.query_one("#metrics-container", Container)
+                if not metrics_container.has_class("hidden"):
+                    self.metrics_panel_hidden_by_layout = True
+                metrics_container.add_class("hidden")
+
+                # 경고 메시지 표시 (최소 크기 미달)
+                if self.terminal_width < 60 or self.terminal_height < 20:
+                    worker_status = self.query_one("#worker-status", Static)
+                    worker_status.update(
+                        f"⚠️  터미널 크기가 너무 작습니다 ({self.terminal_width}x{self.terminal_height}). "
+                        f"권장: 80x24 이상"
+                    )
+
+        except Exception as e:
+            logger.warning(f"레이아웃 모드 적용 실패: {e}")
+
+    def _update_status_bar(self) -> None:
+        """
+        상태바에 터미널 크기 및 레이아웃 모드 표시
+
+        형식: "Session: {session_id} • Layout: {mode} ({width}x{height})"
+        """
+        try:
+            session_info = self.query_one("#session-info", Static)
+            session_info.update(
+                f"Session: {self.session_id} • "
+                f"Layout: {self.current_layout_mode.value} ({self.terminal_width}x{self.terminal_height})"
+            )
+        except Exception as e:
+            logger.warning(f"상태바 업데이트 실패: {e}")
 
     def update_worker_status(self, message: str) -> None:
         """Worker Tool 상태 메시지 업데이트"""
@@ -775,6 +1014,50 @@ class OrchestratorTUI(App):
                 metrics_container.add_class("hidden")
         except Exception:
             pass  # 위젯이 아직 없으면 무시
+
+    def apply_workflow_panel_visibility(self) -> None:
+        """워크플로우 패널 표시/숨김 상태 적용"""
+        try:
+            workflow_container = self.query_one("#workflow-container", Container)
+            if self.show_workflow_panel:
+                workflow_container.remove_class("hidden")
+            else:
+                workflow_container.add_class("hidden")
+        except Exception:
+            pass  # 위젯이 아직 없으면 무시
+
+    def on_workflow_update(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
+        """
+        워크플로우 상태 업데이트 콜백
+
+        Worker Tool 실행 시 호출되어 워크플로우 비주얼라이저를 업데이트합니다.
+
+        Args:
+            worker_name: Worker 이름 (예: "planner", "coder")
+            status: 상태 ("running", "completed", "failed")
+            error: 에러 메시지 (실패 시)
+        """
+        try:
+            workflow_visualizer = self.query_one("#workflow-visualizer", WorkflowVisualizer)
+
+            # 상태 문자열을 WorkerStatus enum으로 변환
+            status_map = {
+                "pending": WorkerStatus.PENDING,
+                "running": WorkerStatus.RUNNING,
+                "completed": WorkerStatus.COMPLETED,
+                "failed": WorkerStatus.FAILED,
+            }
+            worker_status_enum = status_map.get(status, WorkerStatus.PENDING)
+
+            # 워크플로우 비주얼라이저 업데이트
+            workflow_visualizer.update_worker_status(
+                worker_name=worker_name,
+                status=worker_status_enum,
+                error_message=error
+            )
+
+        except Exception as e:
+            logger.warning(f"워크플로우 업데이트 실패: {e}")
 
     def update_worker_status_timer(self) -> None:
         """타이머: Worker Tool 실행 시간 업데이트 (0.5초마다 호출)"""
@@ -973,6 +1256,52 @@ class OrchestratorTUI(App):
         """
         await self.action_history_down()
 
+    async def on_multiline_input_autocomplete_requested(
+        self, message: MultilineInput.AutocompleteRequested
+    ) -> None:
+        """
+        MultilineInput에서 발생한 AutocompleteRequested 메시지 처리.
+
+        Tab 키를 누르면 자동 완성을 수행하고, 여러 후보가 있으면 순환합니다.
+
+        Args:
+            message: AutocompleteRequested 메시지
+        """
+        try:
+            task_input = self.query_one("#task-input", MultilineInput)
+            autocomplete_preview = self.query_one("#autocomplete-preview", Static)
+
+            current_text = message.current_text.strip()
+
+            # 빈 입력이면 자동 완성 비활성화
+            if not current_text:
+                autocomplete_preview.add_class("hidden")
+                self.autocomplete_engine.reset()
+                return
+
+            # 자동 완성 수행 (순환 모드)
+            completed_text = self.autocomplete_engine.complete(current_text, cycle=True)
+
+            if completed_text:
+                # 입력 텍스트 업데이트
+                task_input.load_text(completed_text)
+                # 커서를 텍스트 끝으로 이동
+                task_input.move_cursor_relative(rows=1000, columns=1000)
+
+                # 미리보기 업데이트
+                preview_text = self.autocomplete_engine.get_preview()
+                if preview_text:
+                    autocomplete_preview.update(f"[dim]{preview_text}[/dim]")
+                    autocomplete_preview.remove_class("hidden")
+                else:
+                    autocomplete_preview.add_class("hidden")
+            else:
+                # 자동 완성 후보가 없으면 미리보기 숨김
+                autocomplete_preview.add_class("hidden")
+
+        except Exception as e:
+            logger.warning(f"자동 완성 처리 실패: {e}")
+
     async def action_show_help(self) -> None:
         """F1 키: 도움말 모달 표시"""
         try:
@@ -1030,6 +1359,40 @@ class OrchestratorTUI(App):
         except Exception as e:
             logger.error(f"메트릭 패널 토글 실패: {e}")
 
+    async def action_toggle_workflow_panel(self) -> None:
+        """
+        F4 키: 워크플로우 패널 표시/숨김 토글
+
+        워크플로우 패널의 표시 상태를 토글하고, 변경된 설정을 파일에 저장합니다.
+
+        Raises:
+            Exception: 워크플로우 패널 토글 중 예상치 못한 오류 발생 시
+        """
+        try:
+            # 상태 토글
+            self.show_workflow_panel = not self.show_workflow_panel
+
+            # UI 업데이트
+            self.apply_workflow_panel_visibility()
+
+            # 설정 저장
+            self.settings.show_workflow_panel = self.show_workflow_panel
+            save_success = TUIConfig.save(self.settings)
+
+            # 저장 실패 시 경고
+            if not save_success:
+                logger.warning("워크플로우 패널 설정 저장 실패")
+                if self.settings.notify_on_error:
+                    self.notify("설정 저장 실패", severity="warning")
+
+            # 알림 표시
+            if self.settings.enable_notifications:
+                status_msg = "표시" if self.show_workflow_panel else "숨김"
+                self.notify(f"워크플로우 패널: {status_msg}", severity="information")
+
+        except Exception as e:
+            logger.error(f"워크플로우 패널 토글 실패: {e}")
+
     async def action_save_log(self) -> None:
         """Ctrl+S: 로그 저장"""
         try:
@@ -1076,6 +1439,24 @@ class OrchestratorTUI(App):
             logger.error(f"로그 저장 실패: {e}")
             if self.settings.enable_notifications and self.settings.notify_on_error:
                 self.notify(f"로그 저장 실패: {e}", severity="error")
+
+    async def action_show_session_browser(self) -> None:
+        """Ctrl+L: 세션 브라우저 표시"""
+        try:
+            sessions_dir = Path("sessions")
+            result = await self.push_screen(SessionBrowserModal(sessions_dir))
+
+            if result and isinstance(result, tuple):
+                action, session_id = result
+
+                if action == "load":
+                    # 세션 로드
+                    await self.load_session(session_id)
+
+        except Exception as e:
+            logger.error(f"세션 브라우저 표시 실패: {e}")
+            if self.settings.enable_notifications and self.settings.notify_on_error:
+                self.notify(f"세션 브라우저 오류: {e}", severity="error")
 
     async def action_search_log(self) -> None:
         """Ctrl+F: 로그 검색"""
@@ -1157,11 +1538,14 @@ class OrchestratorTUI(App):
             session_files = list(sessions_dir.glob(f"{session_id}_*.json"))
 
             if not session_files:
-                self.write_log(Panel(
-                    f"[bold red]❌ 세션을 찾을 수 없습니다[/bold red]\n\n"
-                    f"Session ID: {session_id}",
-                    border_style="red"
-                ))
+                # 피드백 시스템 사용
+                error_panel = TUIFeedbackWidget.create_panel(
+                    "세션을 찾을 수 없습니다",
+                    FeedbackType.ERROR,
+                    details=f"Session ID: {session_id}"
+                )
+                self.write_log("")
+                self.write_log(error_panel)
                 self.write_log("")
                 return
 
@@ -1183,8 +1567,7 @@ class OrchestratorTUI(App):
             update_session_id(session_id)
 
             # UI 업데이트
-            session_info = self.query_one("#session-info", Static)
-            session_info.update(f"Session: {session_id}")
+            self._update_status_bar()  # 터미널 크기 및 레이아웃 모드 포함
 
             self.write_log(Panel(
                 f"[bold green]✅ 세션 불러오기 완료[/bold green]\n\n"
@@ -1198,11 +1581,14 @@ class OrchestratorTUI(App):
             status_info.update("Ready")
 
         except Exception as e:
+            # 피드백 시스템 사용
+            error_panel = TUIFeedbackWidget.create_panel(
+                "세션 불러오기 실패",
+                FeedbackType.ERROR,
+                details=str(e)
+            )
             self.write_log("")
-            self.write_log(Panel(
-                f"[bold red]❌ 세션 불러오기 실패[/bold red]\n\n{str(e)}",
-                border_style="red"
-            ))
+            self.write_log(error_panel)
             self.write_log("")
             logger.error(f"세션 불러오기 실패: {e}")
 
@@ -1227,12 +1613,14 @@ class OrchestratorTUI(App):
             # 오래된 라인 제거
             self.log_lines = self.log_lines[-max_lines:]
 
-    def write_log(self, content: Any, widget_id: str = "output-log") -> None:
+    def write_log(
+        self, content: Union[str, Panel, Text], widget_id: str = "output-log"
+    ) -> None:
         """
         로그 출력 및 추적 헬퍼 메서드
 
         Args:
-            content: 출력할 내용 (Any 타입)
+            content: 출력할 내용 (str, Panel, Text 중 하나)
             widget_id: RichLog 위젯 ID
         """
         try:

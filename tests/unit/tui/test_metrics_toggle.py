@@ -43,10 +43,12 @@ class TestMetricsToggle:
 
     def test_initial_metrics_panel_state(self):
         """초기 메트릭 패널 상태 확인"""
-        app = OrchestratorTUI()
+        # 설정 파일이 없을 때는 기본값 사용
+        with patch.object(TUIConfig, "load", return_value=TUISettings()):
+            app = OrchestratorTUI()
 
-        # 기본 설정에서는 메트릭 패널이 표시됨
-        assert app.show_metrics_panel is True
+            # 기본 설정에서는 메트릭 패널이 표시됨
+            assert app.show_metrics_panel is True
 
     def test_metrics_panel_state_from_settings(self, temp_config_path):
         """설정 파일에서 메트릭 패널 상태 로드"""

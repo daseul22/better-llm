@@ -51,6 +51,7 @@ class TUISettings:
 
     # UI 패널 표시 설정
     show_metrics_panel: bool = True
+    show_workflow_panel: bool = True
 
 
 class TUIConfig:
