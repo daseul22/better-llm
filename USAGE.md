@@ -261,15 +261,16 @@ TUI는 Claude Code 스타일의 터미널 인터페이스를 제공합니다:
 | 단축키 | 기능 |
 |--------|------|
 | `Enter` | 작업 실행 |
+| `F1` | 도움말 표시 |
+| `F2` | 설정 열기 |
+| `F3` | 메트릭 패널 토글 |
+| `Ctrl+S` | 로그 저장 |
+| `Ctrl+F` | 로그 검색 |
 | `Ctrl+N` | 새 세션 시작 |
-| `Ctrl+L` | 화면 지우기 |
-| `Ctrl+H` | 도움말 표시 |
-| `Ctrl+S` | 설정 열기 |
-| `Ctrl+E` | 로그 내보내기 |
-| `Ctrl+/` | 검색 모드 |
-| `Ctrl+Q` 또는 `Ctrl+C` | 종료 |
+| `Ctrl+C` | 중단/종료 |
 | `Up/Down` | 입력 히스토리 탐색 |
-| `Tab` | 자동완성 (Agent 멘션) |
+
+**참고**: 화면 지우기는 `/clear` 슬래시 커맨드를 사용하세요.
 
 ### 3.4. 기본 사용법
 
@@ -302,8 +303,6 @@ Manager Agent가 자동으로 작업을 분석하고 적절한 Worker를 호출�
 ```
 @tester 테스트 실행하고 결과 보고해줘
 ```
-
-**Tab 자동완성**: `@`를 입력하고 Tab을 누르면 Agent 목록이 표시됩니다.
 
 ### 3.5. TUI 고급 기능
 
@@ -398,7 +397,6 @@ python orchestrator.py "작업 설명"
 | `--verbose` | 상세 로깅 활성화 | `python orchestrator.py --verbose "작업"` |
 | `--config` | 커스텀 설정 파일 | `python orchestrator.py --config custom.json "작업"` |
 | `--help` | 도움말 표시 | `python orchestrator.py --help` |
-| `--version` | 버전 정보 | `python orchestrator.py --version` |
 
 ### 4.3. 세션 관리 명령어
 
@@ -409,8 +407,8 @@ python orchestrator.py session list
 # 세션 상세 조회
 python orchestrator.py session show <session_id>
 
-# 세션 삭제
-python orchestrator.py session delete <session_id>
+# 여러 세션 일괄 삭제 (조건: 생성일, 상태)
+python orchestrator.py session cleanup --older-than 7 --status failed
 
 # 세션 내보내기
 python orchestrator.py session export <session_id> --format markdown
@@ -425,27 +423,11 @@ python orchestrator.py template list
 # 템플릿 사용
 python orchestrator.py template use <template_name> --vars key=value
 
-# 템플릿 생성
-python orchestrator.py template create <template_name> --file template.txt
-
-# 템플릿 삭제
-python orchestrator.py template delete <template_name>
+# 내장 템플릿 초기화
+python orchestrator.py template init
 ```
 
-### 4.5. 사용자 개입
-
-CLI 모드에서는 각 Agent 응답 후 5초 대기하며, 다음 옵션을 선택할 수 있습니다:
-
-- **Enter**: 다음 Agent로 자동 진행
-- **/pause**: 일시정지하고 메시지 입력
-- **/stop**: 즉시 종료
-
-```
-[Planner] 계획 수립 완료
-
-다음 단계로 진행하시겠습니까? (Enter: 계속, /pause: 일시정지, /stop: 종료)
->
-```
+**참고**: 템플릿 생성/삭제는 직접 `templates/` 디렉토리에서 JSON 파일을 편집하세요.
 
 ---
 
@@ -1081,7 +1063,7 @@ python orchestrator.py template use my_api_template --vars \
 
 ```bash
 python orchestrator.py approval list
-python orchestrator.py approval show <approval_id>
+python orchestrator.py approval history --session <session_id>
 ```
 
 ### 6.3. Circuit Breaker 패턴
