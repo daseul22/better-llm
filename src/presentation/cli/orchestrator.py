@@ -20,6 +20,7 @@ from typing import Optional, Dict
 import click
 
 from src.domain.models import SessionResult
+from src.domain.models.session import SessionStatus
 from src.domain.services import ConversationHistory
 from src.infrastructure.claude import ManagerAgent
 from src.infrastructure.mcp import (
@@ -107,7 +108,7 @@ class Orchestrator:
         is_valid, error_msg = validate_user_input(user_request)
         if not is_valid:
             print(f"\n❌ 입력 검증 실패: {error_msg}")
-            return SessionResult(status="invalid_input")
+            return SessionResult(status=SessionStatus.INVALID_INPUT)
 
         # 입력 정제
         user_request = sanitize_user_input(user_request)
@@ -154,11 +155,11 @@ class Orchestrator:
             # 최대 턴 수 도달
             if turn >= max_turns:
                 print(f"\n⚠️  최대 턴 수({max_turns})에 도달했습니다.")
-                return SessionResult(status="max_turns_reached")
+                return SessionResult(status=SessionStatus.MAX_TURNS_REACHED)
 
             # 정상 완료
             return SessionResult(
-                status="completed",
+                status=SessionStatus.COMPLETED,
                 files_modified=[],
                 tests_passed=True
             )
@@ -171,7 +172,7 @@ class Orchestrator:
 
             # 세션 히스토리 저장
             duration = time.time() - self.start_time
-            result = SessionResult(status="completed")
+            result = SessionResult(status=SessionStatus.COMPLETED)
 
             sessions_dir = Path("sessions")
             filepath = save_session_history(

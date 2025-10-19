@@ -21,6 +21,7 @@ from rich.text import Text
 from rich.table import Table
 
 from src.domain.models import SessionResult
+from src.domain.models.session import SessionStatus
 from src.domain.services import ConversationHistory, ProjectContextAnalyzer, MetricsCollector
 from src.infrastructure.claude import ManagerAgent
 from src.infrastructure.mcp import (
@@ -430,7 +431,7 @@ class OrchestratorTUI(App):
                 output_log.write("")
 
             # 세션 저장
-            result = SessionResult(status="completed")
+            result = SessionResult(status=SessionStatus.COMPLETED)
             sessions_dir = Path("sessions")
             filepath = save_session_history(
                 self.session_id,
