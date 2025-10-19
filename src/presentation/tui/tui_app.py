@@ -43,7 +43,7 @@ from ..cli.utils import (
     sanitize_user_input,
     save_metrics_report,
 )
-from .widgets import HelpModal, SearchModal
+from .widgets import HelpModal, SearchModal, MultilineInput
 from .widgets.settings_modal import SettingsModal
 from .widgets.search_input import SearchHighlighter
 from .utils import InputHistory, LogExporter, AutocompleteEngine, TUIConfig, TUISettings
@@ -115,7 +115,7 @@ class OrchestratorTUI(App):
     /* 입력 영역 */
     #input-container {
         height: auto;
-        background: transparent;
+        background: #0d1117;
         border: round #388bfd;
         margin: 1 1 0 1;
         padding: 1 2;
@@ -136,6 +136,30 @@ class OrchestratorTUI(App):
 
     Input.-placeholder {
         color: #6e7681;
+    }
+
+    /* MultilineInput 스타일 (TextArea 기반) */
+    MultilineInput {
+        background: #0d1117;
+        border: none;
+        color: #c9d1d9;
+        padding: 0;
+        margin: 0;
+        height: auto;
+        max-height: 10;
+    }
+
+    MultilineInput:focus {
+        border: none;
+        background: #0d1117;
+    }
+
+    MultilineInput > .text-area--cursor {
+        background: #c9d1d9;
+    }
+
+    MultilineInput > .text-area--selection {
+        background: #388bfd40;
     }
 
     /* 하단 정보바 */
@@ -175,13 +199,29 @@ class OrchestratorTUI(App):
     """
 
     BINDINGS = [
+        # 기본 동작
         Binding("ctrl+c", "interrupt_or_quit", "중단/종료"),
         Binding("ctrl+n", "new_session", "새 세션"),
         Binding("ctrl+s", "save_log", "로그 저장"),
-        Binding("ctrl+f", "search_log", "로그 검색"),
-        Binding("f1", "show_help", "도움말"),
-        Binding("f2", "show_settings", "설정"),
-        Binding("f3", "toggle_metrics_panel", "메트릭"),
+
+        # 검색 (수정됨!)
+        Binding("/", "search_log", "검색"),
+        Binding("ctrl+f", "search_log", "검색", show=False),
+
+        # 도움말 (수정됨!)
+        Binding("?", "show_help", "도움말"),
+        Binding("ctrl+h", "show_help", "도움말", show=False),
+        Binding("f1", "show_help", "도움말", show=False),
+
+        # 설정
+        Binding("f2", "show_settings", "설정", show=False),
+        Binding("ctrl+comma", "show_settings", "설정", show=False),
+
+        # 메트릭 (수정됨!)
+        Binding("ctrl+m", "toggle_metrics_panel", "메트릭"),
+        Binding("f3", "toggle_metrics_panel", "메트릭", show=False),
+
+        # 히스토리
         Binding("up", "history_up", "이전 입력", show=False),
         Binding("down", "history_down", "다음 입력", show=False),
     ]
@@ -196,6 +236,7 @@ class OrchestratorTUI(App):
         self.current_task = None  # 현재 실행 중인 asyncio Task
         self.task_start_time = None  # 작업 시작 시간
         self.timer_active = False  # 타이머 활성화 여부
+        self.ctrl_c_count = 0  # Ctrl+C 누른 횟수
         self.last_ctrl_c_time = 0  # 마지막 Ctrl+C 누른 시간
 
         # 메트릭 수집
@@ -225,8 +266,7 @@ class OrchestratorTUI(App):
 
         # 입력 영역
         with Container(id="input-container"):
-            yield Input(
-                placeholder="작업을 입력하세요...",
+            yield MultilineInput(
                 id="task-input"
             )
 
@@ -246,6 +286,9 @@ class OrchestratorTUI(App):
         self.set_interval(1.0, self.update_metrics_panel)
         # 메트릭 패널 초기 상태 적용
         self.apply_metrics_panel_visibility()
+        # 자동 포커스: task-input 위젯에 포커스 설정
+        task_input = self.query_one("#task-input", MultilineInput)
+        task_input.focus()
 
     async def initialize_orchestrator(self) -> None:
         """오케스트레이터 초기화"""
@@ -312,7 +355,7 @@ class OrchestratorTUI(App):
             worker_status.update(f"❌ 오류: {e}")
             status_info.update("Error")
 
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
+    async def on_multiline_input_submitted(self, event: MultilineInput.Submitted) -> None:
         """Enter 키 입력 시 작업 실행"""
         if not self.initialized:
             return
@@ -362,7 +405,7 @@ class OrchestratorTUI(App):
 
     async def run_task(self, user_request: str) -> None:
         """작업 실행 - Manager가 Worker Tools를 자동으로 호출"""
-        task_input = self.query_one("#task-input", Input)
+        task_input = self.query_one("#task-input", MultilineInput)
         output_log = self.query_one("#output-log", RichLog)
         worker_status = self.query_one("#worker-status", Static)
         status_info = self.query_one("#status-info", Static)
@@ -377,14 +420,14 @@ class OrchestratorTUI(App):
                     border_style="red"
                 ))
                 self.write_log("")
-                task_input.value = ""
+                task_input.clear()
                 return
 
             # 입력 정제
             user_request = sanitize_user_input(user_request)
 
             # 입력 필드 비우기
-            task_input.value = ""
+            task_input.clear()
 
             # 사용자 요청 표시
             self.write_log("")
@@ -525,14 +568,16 @@ class OrchestratorTUI(App):
         - /help: 도움말 표시
         - /clear: 로그 화면 지우기
         - /load <session_id>: 이전 세션 불러오기
+        - /metrics: 메트릭 패널 토글
+        - /search: 로그 검색
         """
-        task_input = self.query_one("#task-input", Input)
+        task_input = self.query_one("#task-input", MultilineInput)
         output_log = self.query_one("#output-log", RichLog)
         worker_status = self.query_one("#worker-status", Static)
         status_info = self.query_one("#status-info", Static)
 
         # 입력 필드 비우기
-        task_input.value = ""
+        task_input.clear()
 
         # 커맨드 파싱 (공백으로 분리)
         parts = command.strip().split()
@@ -542,6 +587,14 @@ class OrchestratorTUI(App):
         if cmd == '/help':
             # 도움말 표시
             await self.action_show_help()
+
+        elif cmd == '/metrics':
+            # 메트릭 패널 토글
+            await self.action_toggle_metrics_panel()
+
+        elif cmd == '/search':
+            # 로그 검색
+            await self.action_search_log()
 
         elif cmd == '/clear':
             # 로그 화면 지우기
@@ -667,6 +720,8 @@ class OrchestratorTUI(App):
                 f"[bold yellow]⚠️  알 수 없는 커맨드: {cmd}[/bold yellow]\n\n"
                 f"사용 가능한 커맨드:\n"
                 f"  /help - 도움말 표시\n"
+                f"  /metrics - 메트릭 패널 토글\n"
+                f"  /search - 로그 검색\n"
                 f"  /init - 프로젝트 분석 및 context 초기화\n"
                 f"  /load <session_id> - 이전 세션 불러오기\n"
                 f"  /clear - 로그 화면 지우기",
@@ -809,16 +864,59 @@ class OrchestratorTUI(App):
             logger.warning(f"메트릭 패널 업데이트 실패: {e}")
 
     async def action_interrupt_or_quit(self) -> None:
-        """Ctrl+C: 1번 누르면 작업 중단, 2초 내 2번 누르면 프로세스 종료"""
+        """
+        Ctrl+C: 3단계 로직
+        1회: 입력 초기화
+        2회: 작업 중단
+        3회: 프로그램 종료
+        """
         current_time = time.time()
         time_since_last_ctrl_c = current_time - self.last_ctrl_c_time
 
+        task_input = self.query_one("#task-input", MultilineInput)
         output_log = self.query_one("#output-log", RichLog)
         worker_status = self.query_one("#worker-status", Static)
         status_info = self.query_one("#status-info", Static)
 
-        # 2초 이내에 다시 누르면 종료
-        if time_since_last_ctrl_c < 2.0:
+        # 2초 이상 지나면 카운터 리셋
+        if time_since_last_ctrl_c >= 2.0:
+            self.ctrl_c_count = 0
+
+        self.ctrl_c_count += 1
+        self.last_ctrl_c_time = current_time
+
+        if self.ctrl_c_count == 1:
+            # 1회: 입력 초기화
+            task_input.clear()
+            self.write_log("")
+            self.write_log(Panel(
+                "[bold yellow]입력이 초기화되었습니다[/bold yellow]\n\n"
+                "[dim]Ctrl+C를 다시 누르면 작업을 중단합니다[/dim]",
+                border_style="yellow"
+            ))
+            self.write_log("")
+            status_info.update("입력 초기화 • Ctrl+C 다시 누르면 작업 중단")
+
+        elif self.ctrl_c_count == 2:
+            # 2회: 작업 중단
+            if self.current_task and not self.current_task.done():
+                self.current_task.cancel()
+                self.write_log("")
+                self.write_log(Panel(
+                    "[bold yellow]⚠️  작업이 중단되었습니다[/bold yellow]\n\n"
+                    "[dim]Ctrl+C를 다시 누르면 프로그램이 종료됩니다[/dim]",
+                    border_style="yellow"
+                ))
+                self.write_log("")
+                self.timer_active = False
+                worker_status.update("⚠️  작업 중단됨")
+                status_info.update("작업 중단 • Ctrl+C 다시 누르면 종료")
+            else:
+                # 작업이 없으면 즉시 종료 (메시지 없이)
+                self.exit()
+
+        else:  # self.ctrl_c_count >= 3
+            # 3회: 프로그램 종료
             self.write_log("")
             self.write_log(Panel(
                 "[bold]👋 프로그램을 종료합니다...[/bold]",
@@ -826,59 +924,54 @@ class OrchestratorTUI(App):
             ))
             self.write_log("")
             self.exit()
-            return
-
-        # 첫 번째 Ctrl+C: 작업 중단
-        self.last_ctrl_c_time = current_time
-
-        if self.current_task and not self.current_task.done():
-            self.current_task.cancel()
-            self.write_log("")
-            self.write_log(Panel(
-                "[bold yellow]⚠️  작업이 중단되었습니다[/bold yellow]\n\n"
-                "[dim]다시 Ctrl+C를 누르면 프로그램이 종료됩니다[/dim]",
-                border_style="yellow"
-            ))
-            self.write_log("")
-            self.timer_active = False
-            worker_status.update("⚠️  작업 중단됨")
-            status_info.update("Interrupted")
-        else:
-            self.write_log("")
-            self.write_log(Panel(
-                "[bold]ℹ️  실행 중인 작업이 없습니다[/bold]\n\n"
-                "[dim]다시 Ctrl+C를 누르면 프로그램이 종료됩니다[/dim]",
-                border_style="dim"
-            ))
-            self.write_log("")
-            worker_status.update("ℹ️  작업 없음")
-            status_info.update("Idle")
 
     # ==================== 새로운 액션 메서드 (Phase 1-4) ====================
 
     async def action_history_up(self) -> None:
         """↑ 키: 히스토리 이전 항목으로 이동"""
         try:
-            task_input = self.query_one("#task-input", Input)
-            previous = self.input_history.navigate_up(task_input.value)
+            task_input = self.query_one("#task-input", MultilineInput)
+            previous = self.input_history.navigate_up(task_input.text)
             if previous is not None:
-                task_input.value = previous
-                # 커서를 끝으로 이동
-                task_input.cursor_position = len(previous)
+                task_input.load_text(previous)
+                # 커서를 텍스트 끝으로 이동 (충분히 큰 값 사용)
+                task_input.move_cursor_relative(rows=1000, columns=1000)
         except Exception:
             pass
 
     async def action_history_down(self) -> None:
         """↓ 키: 히스토리 다음 항목으로 이동"""
         try:
-            task_input = self.query_one("#task-input", Input)
+            task_input = self.query_one("#task-input", MultilineInput)
             next_item = self.input_history.navigate_down()
             if next_item is not None:
-                task_input.value = next_item
-                # 커서를 끝으로 이동
-                task_input.cursor_position = len(next_item)
+                task_input.load_text(next_item)
+                # 커서를 텍스트 끝으로 이동 (충분히 큰 값 사용)
+                task_input.move_cursor_relative(rows=1000, columns=1000)
         except Exception:
             pass
+
+    async def on_multiline_input_history_up(
+        self, message: MultilineInput.HistoryUp
+    ) -> None:
+        """
+        MultilineInput에서 발생한 HistoryUp 메시지 처리.
+
+        Args:
+            message: HistoryUp 메시지
+        """
+        await self.action_history_up()
+
+    async def on_multiline_input_history_down(
+        self, message: MultilineInput.HistoryDown
+    ) -> None:
+        """
+        MultilineInput에서 발생한 HistoryDown 메시지 처리.
+
+        Args:
+            message: HistoryDown 메시지
+        """
+        await self.action_history_down()
 
     async def action_show_help(self) -> None:
         """F1 키: 도움말 모달 표시"""

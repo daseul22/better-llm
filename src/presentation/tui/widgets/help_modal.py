@@ -8,6 +8,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static, Button
+from textual import events
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -58,13 +59,18 @@ class HelpModal(ModalScreen):
 
         key_bindings = [
             ("↑ / ↓", "히스토리 탐색 (최대 100개)"),
-            ("Enter", "작업 실행"),
-            ("Ctrl+C", "작업 중단 / 프로그램 종료 (2초 내 2번)"),
+            ("Enter", "작업 실행 (제출)"),
+            ("Shift+Enter", "줄바꿈 (멀티라인 입력)"),
+            ("Ctrl+C", "작업 중단 / 프로그램 종료"),
             ("Ctrl+N", "새 세션 시작"),
             ("Ctrl+S", "로그 저장"),
-            ("Ctrl+F", "로그 검색"),
-            ("F1", "도움말 표시 (현재 화면)"),
+            ("/", "로그 검색 (주 단축키)"),
+            ("Ctrl+F", "로그 검색 (보조)"),
+            ("?", "도움말 표시 (주 단축키)"),
+            ("Ctrl+H, F1", "도움말 표시 (대체 키)"),
             ("F2", "설정 패널"),
+            ("Ctrl+M", "메트릭 패널 토글 (주 단축키)"),
+            ("F3", "메트릭 패널 토글 (보조)"),
             ("ESC", "모달 닫기"),
         ]
 
@@ -118,11 +124,23 @@ class HelpModal(ModalScreen):
         return Panel(content, border_style="blue", title="[bold]도움말[/bold]")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """버튼 클릭 이벤트"""
+        """
+        버튼 클릭 이벤트 처리.
+
+        Args:
+            event: 버튼 클릭 이벤트
+        """
         if event.button.id == "help-close-button":
             self.dismiss()
 
-    def on_key(self, event) -> None:
-        """키 입력 이벤트"""
+    def on_key(self, event: events.Key) -> None:
+        """
+        키 입력 이벤트 처리.
+
+        ESC 키를 눌러 모달을 닫습니다.
+
+        Args:
+            event: 키 입력 이벤트
+        """
         if event.key == "escape":
             self.dismiss()
