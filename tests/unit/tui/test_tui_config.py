@@ -59,6 +59,9 @@ class TestTUISettings:
         assert settings.log_export_format == "text"
         assert settings.log_export_dir == "logs"
 
+        # UI 패널 표시 설정
+        assert settings.show_metrics_panel is True
+
     def test_custom_initialization(self):
         """커스텀 값으로 초기화 테스트"""
         settings = TUISettings(
@@ -66,12 +69,14 @@ class TestTUISettings:
             worker_timeout=600,
             max_log_lines=2000,
             enable_notifications=False,
+            show_metrics_panel=False,
         )
 
         assert settings.theme == "light"
         assert settings.worker_timeout == 600
         assert settings.max_log_lines == 2000
         assert settings.enable_notifications is False
+        assert settings.show_metrics_panel is False
 
 
 class TestTUIConfig:
@@ -236,3 +241,34 @@ class TestTUIConfig:
         """기본 설정 파일 경로 확인"""
         expected_path = Path.home() / ".better-llm" / "tui_config.json"
         assert TUIConfig.DEFAULT_CONFIG_PATH == expected_path
+
+    def test_show_metrics_panel_field(self, temp_config_path):
+        """show_metrics_panel 필드 저장 및 로드 테스트"""
+        # 메트릭 패널을 숨긴 설정 생성
+        settings_hidden = TUISettings(show_metrics_panel=False)
+        TUIConfig.save(settings_hidden, config_path=temp_config_path)
+
+        # 로드 및 검증
+        loaded_hidden = TUIConfig.load(config_path=temp_config_path)
+        assert loaded_hidden.show_metrics_panel is False
+
+        # 메트릭 패널을 표시하는 설정으로 변경
+        settings_visible = TUISettings(show_metrics_panel=True)
+        TUIConfig.save(settings_visible, config_path=temp_config_path)
+
+        # 로드 및 검증
+        loaded_visible = TUIConfig.load(config_path=temp_config_path)
+        assert loaded_visible.show_metrics_panel is True
+
+    def test_show_metrics_panel_in_json(self, temp_config_path):
+        """show_metrics_panel이 JSON 파일에 올바르게 저장되는지 검증"""
+        settings = TUISettings(show_metrics_panel=False)
+        TUIConfig.save(settings, config_path=temp_config_path)
+
+        # JSON 파일 읽기
+        with open(temp_config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # show_metrics_panel 필드 확인
+        assert "show_metrics_panel" in data
+        assert data["show_metrics_panel"] is False

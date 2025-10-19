@@ -59,6 +59,11 @@ class OrchestratorTUI(App):
         background: #0d1117;
     }
 
+    /* 숨김 클래스 */
+    .hidden {
+        display: none;
+    }
+
     /* 출력 영역 */
     #output-container {
         border: tall #21262d;
@@ -176,6 +181,7 @@ class OrchestratorTUI(App):
         Binding("ctrl+f", "search_log", "로그 검색"),
         Binding("f1", "show_help", "도움말"),
         Binding("f2", "show_settings", "설정"),
+        Binding("f3", "toggle_metrics_panel", "메트릭"),
         Binding("up", "history_up", "이전 입력", show=False),
         Binding("down", "history_down", "다음 입력", show=False),
     ]
@@ -201,6 +207,7 @@ class OrchestratorTUI(App):
         self.settings = TUIConfig.load()  # 설정 로드
         self.log_lines: List[str] = []  # 로그 버퍼 (검색 및 저장용)
         self.search_query: Optional[str] = None  # 현재 검색어
+        self.show_metrics_panel: bool = self.settings.show_metrics_panel  # 메트릭 패널 표시 여부
 
     def compose(self) -> ComposeResult:
         """UI 구성"""
@@ -237,6 +244,8 @@ class OrchestratorTUI(App):
         self.set_interval(0.5, self.update_worker_status_timer)
         # 타이머: 1초마다 메트릭 대시보드 업데이트
         self.set_interval(1.0, self.update_metrics_panel)
+        # 메트릭 패널 초기 상태 적용
+        self.apply_metrics_panel_visibility()
 
     async def initialize_orchestrator(self) -> None:
         """오케스트레이터 초기화"""
@@ -701,6 +710,17 @@ class OrchestratorTUI(App):
         except Exception:
             pass  # 위젯이 아직 없으면 무시
 
+    def apply_metrics_panel_visibility(self) -> None:
+        """메트릭 패널 표시/숨김 상태 적용"""
+        try:
+            metrics_container = self.query_one("#metrics-container", Container)
+            if self.show_metrics_panel:
+                metrics_container.remove_class("hidden")
+            else:
+                metrics_container.add_class("hidden")
+        except Exception:
+            pass  # 위젯이 아직 없으면 무시
+
     def update_worker_status_timer(self) -> None:
         """타이머: Worker Tool 실행 시간 업데이트 (0.5초마다 호출)"""
         if not self.timer_active or self.task_start_time is None:
@@ -881,6 +901,41 @@ class OrchestratorTUI(App):
                     self.notify("설정이 저장되었습니다", severity="information")
         except Exception as e:
             logger.error(f"설정 표시 실패: {e}")
+
+    async def action_toggle_metrics_panel(self) -> None:
+        """
+        F3 키: 메트릭 패널 표시/숨김 토글
+
+        메트릭 패널의 표시 상태를 토글하고, 변경된 설정을 파일에 저장합니다.
+        설정 저장에 실패하면 경고 로그를 남기고 사용자에게 알림을 표시합니다.
+
+        Raises:
+            Exception: 메트릭 패널 토글 중 예상치 못한 오류 발생 시
+        """
+        try:
+            # 상태 토글
+            self.show_metrics_panel = not self.show_metrics_panel
+
+            # UI 업데이트
+            self.apply_metrics_panel_visibility()
+
+            # 설정 저장
+            self.settings.show_metrics_panel = self.show_metrics_panel
+            save_success = TUIConfig.save(self.settings)
+
+            # 저장 실패 시 경고
+            if not save_success:
+                logger.warning("메트릭 패널 설정 저장 실패")
+                if self.settings.notify_on_error:
+                    self.notify("설정 저장 실패", severity="warning")
+
+            # 알림 표시
+            if self.settings.enable_notifications:
+                status_msg = "표시" if self.show_metrics_panel else "숨김"
+                self.notify(f"메트릭 패널: {status_msg}", severity="information")
+
+        except Exception as e:
+            logger.error(f"메트릭 패널 토글 실패: {e}")
 
     async def action_save_log(self) -> None:
         """Ctrl+S: 로그 저장"""

@@ -49,6 +49,9 @@ class TUISettings:
     log_export_format: str = "text"  # "text" 또는 "markdown"
     log_export_dir: str = "logs"
 
+    # UI 패널 표시 설정
+    show_metrics_panel: bool = True
+
 
 class TUIConfig:
     """
