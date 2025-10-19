@@ -17,19 +17,53 @@
 
 ## 설치
 
-### 1. 저장소 클론 및 이동
+### 방법 1: 자동 설치 (권장) 🚀
+
+**한 번의 스크립트 실행으로 글로벌 설치:**
 
 ```bash
-cd /path/to/better-llm
+git clone https://github.com/simdaseul/better-llm.git
+cd better-llm
+./install.sh
 ```
 
-### 2. 의존성 설치
+설치 스크립트가 자동으로 다음을 수행합니다:
+- Python 버전 체크 (3.10+)
+- 설치 방법 선택 (pipx 또는 pip)
+- 의존성 설치
+- 환경변수 설정 가이드
+- 설치 검증
+
+**설치 후 사용:**
 
 ```bash
-pip install -r requirements.txt
+# TUI 모드
+better-llm
+
+# CLI 모드
+better-llm-cli "작업 설명"
 ```
 
-### 3. 환경 변수 설정
+### 방법 2: 수동 설치 (개발자용)
+
+**1. 저장소 클론 및 이동**
+
+```bash
+git clone https://github.com/simdaseul/better-llm.git
+cd better-llm
+```
+
+**2. 의존성 설치**
+
+```bash
+# pipx 사용 (권장)
+pipx install -e .
+
+# 또는 pip 사용
+pip install -e .
+```
+
+**3. 환경 변수 설정**
 
 ```bash
 export ANTHROPIC_API_KEY='your-api-key-here'
@@ -41,11 +75,27 @@ export ANTHROPIC_API_KEY='your-api-key-here'
 echo "ANTHROPIC_API_KEY=your-api-key-here" > .env
 ```
 
+또는 셸 설정 파일에 영구 추가:
+
+```bash
+# bash 사용자
+echo "export ANTHROPIC_API_KEY='your-api-key-here'" >> ~/.bashrc
+source ~/.bashrc
+
+# zsh 사용자
+echo "export ANTHROPIC_API_KEY='your-api-key-here'" >> ~/.zshrc
+source ~/.zshrc
+```
+
 ## 사용법
 
 ### 방법 1: TUI (Terminal User Interface) - Claude Code 스타일 💻 (권장)
 
 ```bash
+# 글로벌 설치 후
+better-llm
+
+# 또는 저장소에서 직접 실행
 python tui.py
 ```
 
@@ -65,6 +115,10 @@ python tui.py
 ### 방법 2: CLI (Command Line Interface)
 
 ```bash
+# 글로벌 설치 후
+better-llm-cli "작업 설명"
+
+# 또는 저장소에서 직접 실행
 python orchestrator.py "작업 설명"
 ```
 
@@ -72,26 +126,30 @@ python orchestrator.py "작업 설명"
 
 ```bash
 # 신규 기능 개발
-python orchestrator.py "FastAPI로 /users CRUD 엔드포인트 구현해줘"
+better-llm-cli "FastAPI로 /users CRUD 엔드포인트 구현해줘"
 
 # 버그 수정
-python orchestrator.py "로그인 API에서 500 에러 나는 버그 수정해줘"
+better-llm-cli "로그인 API에서 500 에러 나는 버그 수정해줘"
 
 # 리팩토링
-python orchestrator.py "payment.py 모듈을 클래스 기반으로 리팩토링해줘"
+better-llm-cli "payment.py 모듈을 클래스 기반으로 리팩토링해줘"
+
+# 저장소에서 직접 실행
+python orchestrator.py "FastAPI로 /users CRUD 엔드포인트 구현해줘"
 ```
 
 ### 옵션
 
 ```bash
 # 상세 로깅 활성화
-python orchestrator.py --verbose "작업 설명"
+better-llm-cli --verbose "작업 설명"
 
 # 커스텀 설정 파일 사용
-python orchestrator.py --config custom_config.json "작업 설명"
+better-llm-cli --config custom_config.json "작업 설명"
 
 # 도움말
-python orchestrator.py --help
+better-llm --help
+better-llm-cli --help
 ```
 
 ## 사용자 개입
