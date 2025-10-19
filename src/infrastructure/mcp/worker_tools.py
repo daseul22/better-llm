@@ -5,10 +5,11 @@ Worker Agent Tools - Worker Agent들을 Custom Tool로 래핑
 Manager Agent가 필요할 때 호출할 수 있도록 합니다.
 """
 
-from typing import Any, Dict, Callable, Optional
+from typing import Any, Dict, Callable, Optional, Tuple
 from pathlib import Path
 import logging
 import asyncio
+import re
 from functools import wraps
 from datetime import datetime
 
@@ -23,12 +24,38 @@ from ..config import JsonConfigLoader, get_project_root
 logger = logging.getLogger(__name__)
 
 
+# 민감 정보 검증을 위한 패턴 정의
+SENSITIVE_FILE_PATTERNS = [
+    r"\.env.*",                     # .env, .env.local, .env.production 등
+    r".*credentials.*",             # credentials.json, aws-credentials 등
+    r".*secret.*",                  # secret.txt, secrets.yaml 등
+    r".*\.pem$",                    # SSL 인증서
+    r".*\.p12$",                    # PKCS#12 인증서
+    r".*api[_-]?keys?.*",           # api_key.txt, api-keys.json 등
+    r".*\.key$",                    # 개인 키 파일
+    r".*private[_-]?key.*",         # private-key.pem 등
+]
+
+SENSITIVE_CONTENT_PATTERNS = [
+    r"api[_-]?key\s*[:=]\s*['\"]?[\w-]{20,}",              # API 키
+    r"password\s*[:=]\s*['\"][\w@#$%^&*]+['\"]",          # 비밀번호
+    r"secret[_-]?key\s*[:=]",                             # Secret 키
+    r"aws[_-]?access[_-]?key",                            # AWS Access Key
+    r"anthropic[_-]?api[_-]?key",                         # Anthropic API Key
+    r"openai[_-]?api[_-]?key",                            # OpenAI API Key
+    r"private[_-]?key\s*[:=]",                            # Private Key
+    r"bearer\s+[a-zA-Z0-9\-._~+/]+=*",                    # Bearer 토큰
+    r"token\s*[:=]\s*['\"]?[\w-]{20,}",                   # 일반 토큰
+]
+
+
 # 에러 통계
 _ERROR_STATS = {
     "planner": {"attempts": 0, "failures": 0},
     "coder": {"attempts": 0, "failures": 0},
     "reviewer": {"attempts": 0, "failures": 0},
-    "tester": {"attempts": 0, "failures": 0}
+    "tester": {"attempts": 0, "failures": 0},
+    "committer": {"attempts": 0, "failures": 0}
 }
 
 
@@ -88,6 +115,161 @@ _CURRENT_SESSION_ID: Optional[str] = None
 
 # 워크플로우 콜백 (TUI에서 설정)
 _WORKFLOW_CALLBACK: Optional[Callable] = None
+
+
+async def _verify_git_environment() -> Tuple[bool, Optional[str]]:
+    """
+    Git 설치 및 저장소 확인
+
+    Returns:
+        (성공 여부, 에러 메시지)
+    """
+    try:
+        # Git이 설치되어 있는지 확인
+        proc = await asyncio.create_subprocess_shell(
+            "git --version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            return False, "Git이 설치되어 있지 않습니다."
+
+        # Git 저장소인지 확인
+        proc = await asyncio.create_subprocess_shell(
+            "git rev-parse --is-inside-work-tree",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            return False, "현재 디렉토리가 Git 저장소가 아닙니다."
+
+        return True, None
+
+    except Exception as e:
+        logger.error(f"Git 환경 검증 실패: {e}")
+        return False, f"Git 환경 검증 중 오류 발생: {str(e)}"
+
+
+async def _validate_commit_safety() -> Tuple[bool, Optional[str]]:
+    """
+    커밋 안전성 검증 (민감 정보 포함 여부)
+
+    Returns:
+        (안전 여부, 에러 메시지)
+    """
+    try:
+        # git status --porcelain으로 변경된 파일 목록 가져오기
+        proc = await asyncio.create_subprocess_shell(
+            "git status --porcelain",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            return False, f"Git status 실행 실패: {stderr.decode('utf-8', errors='ignore')}"
+
+        # 변경된 파일 목록 파싱
+        status_output = stdout.decode("utf-8", errors="ignore")
+        changed_files = []
+
+        for line in status_output.splitlines():
+            if len(line) < 4:
+                continue
+            # 상태 코드(2자) + 공백 + 파일명
+            file_path = line[3:].strip()
+            # -> 로 리네임된 경우 처리
+            if " -> " in file_path:
+                file_path = file_path.split(" -> ")[1]
+            changed_files.append(file_path)
+
+        if not changed_files:
+            return False, "커밋할 변경 사항이 없습니다."
+
+        # 1단계: 파일명 패턴 검증
+        sensitive_files = []
+        for file_path in changed_files:
+            file_name = Path(file_path).name
+            for pattern in SENSITIVE_FILE_PATTERNS:
+                if re.match(pattern, file_name, re.IGNORECASE):
+                    sensitive_files.append(file_path)
+                    break
+
+        if sensitive_files:
+            files_str = "\n  - ".join(sensitive_files)
+            return False, (
+                f"민감한 파일명이 감지되었습니다:\n  - {files_str}\n\n"
+                "이러한 파일은 일반적으로 커밋하지 않아야 합니다. "
+                "정말 커밋하려면 .gitignore에 추가하거나 수동으로 커밋하세요."
+            )
+
+        # 2단계: 파일 내용 스캔 (정규식)
+        sensitive_content = []
+        for file_path in changed_files:
+            # 바이너리 파일이나 큰 파일은 스킵
+            try:
+                path_obj = Path(file_path)
+                if not path_obj.exists():
+                    continue
+
+                # 파일 크기 체크 (10MB 이상은 스킵)
+                if path_obj.stat().st_size > 10 * 1024 * 1024:
+                    logger.debug(f"파일이 너무 큼, 스캔 스킵: {file_path}")
+                    continue
+
+                # 텍스트 파일인지 확인
+                with open(path_obj, "rb") as f:
+                    chunk = f.read(8192)
+                    if b"\x00" in chunk:
+                        # 바이너리 파일은 스킵
+                        logger.debug(f"바이너리 파일, 스캔 스킵: {file_path}")
+                        continue
+
+                # 파일 내용 읽기
+                with open(path_obj, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+
+                # 민감 패턴 검색
+                for pattern in SENSITIVE_CONTENT_PATTERNS:
+                    matches = re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE)
+                    for match in matches:
+                        sensitive_content.append({
+                            "file": file_path,
+                            "pattern": pattern,
+                            "match": match.group()[:50] + "..." if len(match.group()) > 50 else match.group()
+                        })
+                        break  # 파일당 한 번만 경고
+
+            except Exception as e:
+                logger.warning(f"파일 스캔 중 오류 (무시하고 계속): {file_path} - {e}")
+                continue
+
+        if sensitive_content:
+            findings = []
+            for item in sensitive_content[:5]:  # 최대 5개만 표시
+                findings.append(f"  - {item['file']}: {item['match']}")
+            findings_str = "\n".join(findings)
+
+            if len(sensitive_content) > 5:
+                findings_str += f"\n  ... 외 {len(sensitive_content) - 5}개"
+
+            return False, (
+                f"민감한 정보가 파일 내용에서 감지되었습니다:\n{findings_str}\n\n"
+                "API 키, 비밀번호, 토큰 등은 커밋하지 않아야 합니다. "
+                "환경 변수나 설정 파일(.env)을 사용하고 .gitignore에 추가하세요."
+            )
+
+        # 모든 검증 통과
+        return True, None
+
+    except Exception as e:
+        logger.error(f"커밋 안전성 검증 실패: {e}")
+        # 검증 실패 시 False Positive 방지를 위해 경고만 표시
+        return True, None
 
 
 def initialize_workers(config_path: Path):
@@ -319,6 +501,48 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     return await _execute_worker_task("reviewer", args["task_description"], use_retry=False)
 
 
+@tool(
+    "execute_committer_task",
+    "Committer Agent에게 작업을 할당합니다. Git 커밋 생성을 담당합니다.",
+    {"task_description": str}
+)
+async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Committer Agent 실행 (보안 검증 포함)
+
+    Args:
+        args: {"task_description": "작업 설명"}
+
+    Returns:
+        Agent 실행 결과
+    """
+    logger.debug(f"[Committer Tool] 작업 실행 시작: {args['task_description'][:50]}...")
+
+    # 1단계: Git 환경 검증
+    is_valid, error_msg = await _verify_git_environment()
+    if not is_valid:
+        logger.error(f"[Committer Tool] Git 환경 오류: {error_msg}")
+        return {
+            "content": [
+                {"type": "text", "text": f"❌ Git 환경 오류: {error_msg}"}
+            ]
+        }
+
+    # 2단계: 민감 정보 검증
+    is_safe, error_msg = await _validate_commit_safety()
+    if not is_safe:
+        logger.warning(f"[Committer Tool] 커밋 거부 (민감 정보 감지): {error_msg}")
+        return {
+            "content": [
+                {"type": "text", "text": f"❌ 커밋 거부 (보안 검증 실패):\n\n{error_msg}"}
+            ]
+        }
+
+    # 3단계: 모든 검증 통과 - Committer Agent 실행
+    logger.info("[Committer Tool] 보안 검증 통과 - Committer Agent 실행")
+    return await _execute_worker_task("committer", args["task_description"], use_retry=False)
+
+
 def get_error_statistics() -> Dict[str, Any]:
     """
     에러 통계 조회
@@ -388,7 +612,8 @@ def create_worker_tools_server():
             execute_planner_task,
             execute_coder_task,
             execute_reviewer_task,
-            execute_tester_task
+            execute_tester_task,
+            execute_committer_task
         ]
     )
 

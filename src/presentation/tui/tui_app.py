@@ -37,6 +37,7 @@ from src.infrastructure.mcp import (
 from src.infrastructure.config import (
     validate_environment,
     get_project_root,
+    JsonConfigLoader,
 )
 from src.infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
 from ..cli.utils import (
@@ -406,9 +407,18 @@ class OrchestratorTUI(App):
             worker_tools_server = create_worker_tools_server()
             self.write_log("✅ [green]Worker Tools MCP Server 생성[/green]")
 
-            # Manager Agent 초기화
-            self.manager = ManagerAgent(worker_tools_server)
-            self.write_log("✅ [green]Manager Agent 준비 완료[/green]")
+            # system_config 로드 (auto_commit_enabled 설정 확인)
+            config_loader = JsonConfigLoader(get_project_root())
+            system_config = config_loader.load_system_config()
+            auto_commit_enabled = system_config.get("workflow", {}).get("auto_commit_enabled", False)
+
+            # Manager Agent 초기화 (auto_commit_enabled 전달)
+            self.manager = ManagerAgent(
+                worker_tools_server,
+                auto_commit_enabled=auto_commit_enabled
+            )
+            commit_status = "활성화" if auto_commit_enabled else "비활성화"
+            self.write_log(f"✅ [green]Manager Agent 준비 완료[/green] [dim](자동 커밋: {commit_status})[/dim]")
 
             # 대화 히스토리
             self.history = ConversationHistory()
@@ -1169,16 +1179,8 @@ class OrchestratorTUI(App):
         self.last_ctrl_c_time = current_time
 
         if self.ctrl_c_count == 1:
-            # 1회: 입력 초기화
+            # 1회: 입력 초기화 (로그 없이)
             task_input.clear()
-            self.write_log("")
-            self.write_log(Panel(
-                "[bold yellow]입력이 초기화되었습니다[/bold yellow]\n\n"
-                "[dim]Ctrl+C를 다시 누르면 작업을 중단합니다[/dim]",
-                border_style="yellow"
-            ))
-            self.write_log("")
-            status_info.update("입력 초기화 • Ctrl+C 다시 누르면 작업 중단")
 
         elif self.ctrl_c_count == 2:
             # 2회: 작업 중단

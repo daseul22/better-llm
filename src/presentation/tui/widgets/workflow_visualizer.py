@@ -106,6 +106,7 @@ class WorkflowVisualizer(ScrollableContainer):
         "coder": "💻",
         "reviewer": "🔍",
         "tester": "🧪",
+        "committer": "📝",
     }
 
     def __init__(self, **kwargs):

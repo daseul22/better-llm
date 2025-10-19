@@ -45,6 +45,16 @@
         "write"
       ],
       "model": "claude-sonnet-4-5-20250929"
+    },
+    {
+      "name": "committer",
+      "role": "Git 커밋",
+      "system_prompt_file": "prompts/committer.txt",
+      "tools": [
+        "bash",
+        "read"
+      ],
+      "model": "claude-sonnet-4-5-20250929"
     }
   ]
 }

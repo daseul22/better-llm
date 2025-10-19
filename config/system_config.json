@@ -55,5 +55,8 @@
     },
     "max_feedback_length": 2000,
     "auto_approve_on_timeout": false
+  },
+  "workflow": {
+    "auto_commit_enabled": false
   }
 }

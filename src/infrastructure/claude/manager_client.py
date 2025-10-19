@@ -27,9 +27,19 @@ class ManagerAgent:
     Attributes:
         model: 사용할 Claude 모델
         worker_tools_server: Worker Tools MCP 서버
+        auto_commit_enabled: Git 커밋 자동 생성 활성화 여부
     """
 
-    SYSTEM_PROMPT = """당신은 소프트웨어 개발 프로젝트를 관리하는 매니저입니다.
+    @property
+    def SYSTEM_PROMPT(self) -> str:
+        """
+        시스템 프롬프트 생성 (auto_commit_enabled 설정 반영)
+
+        Returns:
+            시스템 프롬프트 문자열
+        """
+        # 기본 프롬프트
+        base_prompt = """당신은 소프트웨어 개발 프로젝트를 관리하는 매니저입니다.
 
 ## 역할
 - 사용자 요청을 분석하고 이해합니다
@@ -42,7 +52,14 @@ class ManagerAgent:
 - **execute_planner_task**: 요구사항 분석 및 계획 수립
 - **execute_coder_task**: 코드 작성, 수정, 리팩토링
 - **execute_reviewer_task**: 코드 리뷰 및 품질 검증
-- **execute_tester_task**: 테스트 작성 및 실행
+- **execute_tester_task**: 테스트 작성 및 실행"""
+
+        # auto_commit_enabled에 따라 committer 관련 내용 추가
+        if self.auto_commit_enabled:
+            base_prompt += """
+- **execute_committer_task**: Git 커밋 생성 (테스트 성공 후)"""
+
+        base_prompt += """
 - **read**: 파일 읽기 (필요 시)
 
 ## 작업 수행 방법
@@ -55,9 +72,23 @@ class ManagerAgent:
 1. execute_planner_task → 요구사항 분석 및 계획
 2. execute_coder_task → 코드 작성
 3. execute_reviewer_task → 코드 리뷰 (품질 검증)
-4. execute_tester_task → 테스트 작성 및 실행
+4. execute_tester_task → 테스트 작성 및 실행"""
 
-**중요**: Reviewer가 Critical 이슈를 발견하면 Coder에게 수정 요청 후 다시 Review
+        if self.auto_commit_enabled:
+            base_prompt += """
+5. execute_committer_task → Git 커밋 생성 (테스트 성공 시)"""
+
+        base_prompt += """
+
+**중요**:
+- Reviewer가 Critical 이슈를 발견하면 Coder에게 수정 요청 후 다시 Review"""
+
+        if self.auto_commit_enabled:
+            base_prompt += """
+- Committer는 Tester가 성공한 경우에만 실행하세요
+- Committer 실행 여부는 작업 성격에 따라 판단하세요 (새 기능, 버그 수정 등은 커밋 권장)"""
+
+        base_prompt += """
 
 ## 예시
 사용자: "FastAPI로 /users CRUD API를 작성해줘"
@@ -67,8 +98,17 @@ class ManagerAgent:
 3단계: execute_reviewer_task 호출 → 코드 리뷰
   - Critical 이슈 발견 시 → execute_coder_task로 수정 → 다시 execute_reviewer_task
   - 승인 시 → 다음 단계 진행
-4단계: execute_tester_task 호출 → 테스트 작성 및 실행
-5단계: 사용자에게 완료 보고
+4단계: execute_tester_task 호출 → 테스트 작성 및 실행"""
+
+        if self.auto_commit_enabled:
+            base_prompt += """
+5단계: execute_committer_task 호출 → Git 커밋 (테스트 성공 시)
+6단계: 사용자에게 완료 보고"""
+        else:
+            base_prompt += """
+5단계: 사용자에게 완료 보고"""
+
+        base_prompt += """
 
 ## 규칙
 - Tool을 직접 호출하세요 (@ 표기 불필요)
@@ -78,21 +118,26 @@ class ManagerAgent:
 - 모든 작업이 완료되면 "작업이 완료되었습니다"라고 명시하세요
 """
 
+        return base_prompt
+
     def __init__(
         self,
         worker_tools_server,
         model: str = "claude-sonnet-4-5-20250929",
-        max_history_messages: int = 20
+        max_history_messages: int = 20,
+        auto_commit_enabled: bool = False
     ):
         """
         Args:
             worker_tools_server: Worker Tools MCP 서버
             model: 사용할 Claude 모델
             max_history_messages: 프롬프트에 포함할 최대 히스토리 메시지 수 (슬라이딩 윈도우)
+            auto_commit_enabled: Git 커밋 자동 생성 활성화 여부
         """
         self.model = model
         self.worker_tools_server = worker_tools_server
         self.max_history_messages = max_history_messages
+        self.auto_commit_enabled = auto_commit_enabled
 
     def _build_prompt_from_history(self, history: List[Message]) -> str:
         """
@@ -162,16 +207,24 @@ class ManagerAgent:
             # ClaudeSDKClient를 사용 (query()는 툴을 지원하지 않음)
             # Worker Tools MCP Server를 등록하고, read 툴도 허용
             # Note: working_dir는 ClaudeAgentOptions에서 지원하지 않음 (os.getcwd()가 기본값)
+
+            # allowed_tools 리스트 생성 (auto_commit_enabled에 따라 조건부)
+            allowed_tools = [
+                "mcp__workers__execute_planner_task",
+                "mcp__workers__execute_coder_task",
+                "mcp__workers__execute_reviewer_task",
+                "mcp__workers__execute_tester_task",
+                "read"  # 파일 읽기 툴
+            ]
+
+            # auto_commit_enabled가 True일 때만 committer tool 추가
+            if self.auto_commit_enabled:
+                allowed_tools.append("mcp__workers__execute_committer_task")
+
             options = ClaudeAgentOptions(
                 model=self.model,
                 mcp_servers={"workers": self.worker_tools_server},
-                allowed_tools=[
-                    "mcp__workers__execute_planner_task",
-                    "mcp__workers__execute_coder_task",
-                    "mcp__workers__execute_reviewer_task",
-                    "mcp__workers__execute_tester_task",
-                    "read"  # 파일 읽기 툴
-                ],
+                allowed_tools=allowed_tools,
                 cli_path=get_claude_cli_path(),
                 permission_mode="bypassPermissions"
             )
