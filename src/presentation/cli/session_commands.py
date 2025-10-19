@@ -5,8 +5,9 @@
 """
 
 import json
+import os
 import click
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -484,6 +485,105 @@ def show_agent_stats(agent_name: str, days: int):
         raise click.Abort()
 
 
+@session_commands.command(name="clean")
+@click.option("--days", "-d", default=90, help="보존 기간 (일)")
+@click.option("--dry-run", "-n", is_flag=True, help="실제 삭제하지 않고 미리보기만")
+def clean_metric_files(days: int, dry_run: bool):
+    """
+    세션 메트릭 파일 정리
+
+    지정된 기간보다 오래된 세션 메트릭 파일 (*_metrics.txt)을 삭제합니다.
+
+    Args:
+        days: 보존 기간 (일 단위, 기본값: 90)
+        dry_run: True면 삭제하지 않고 미리보기만 표시
+
+    Examples:
+        session clean --dry-run
+        session clean --days 180
+        session clean --days 30
+    """
+    try:
+        sessions_dir = Path("sessions")
+        if not sessions_dir.exists():
+            console.print("[yellow]sessions 디렉토리가 없습니다.[/yellow]")
+            return
+
+        # 메트릭 파일 찾기
+        metric_files = list(sessions_dir.glob("*_metrics.txt"))
+
+        if not metric_files:
+            console.print("[yellow]삭제할 메트릭 파일이 없습니다.[/yellow]")
+            return
+
+        # 오래된 파일 필터링
+        cutoff_time = datetime.now() - timedelta(days=days)
+        old_files = []
+
+        for file_path in metric_files:
+            # 파일 수정 시간 확인
+            file_mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
+            if file_mtime < cutoff_time:
+                old_files.append((file_path, file_mtime))
+
+        if not old_files:
+            console.print(f"[yellow]삭제할 메트릭 파일이 없습니다 ({days}일 이전).[/yellow]")
+            return
+
+        # 미리보기
+        console.print(f"\n[yellow]삭제 대상: {len(old_files)}개 메트릭 파일 ({days}일 이전)[/yellow]\n")
+
+        table = Table()
+        table.add_column("파일명", style="cyan")
+        table.add_column("수정 시각", style="green")
+        table.add_column("크기 (KB)", style="magenta", justify="right")
+
+        total_size = 0
+        for file_path, file_mtime in old_files[:20]:  # 최대 20개만 표시
+            file_size = file_path.stat().st_size / 1024  # KB
+            total_size += file_size
+            table.add_row(
+                file_path.name,
+                file_mtime.strftime("%Y-%m-%d %H:%M"),
+                f"{file_size:.2f}"
+            )
+
+        console.print(table)
+
+        if len(old_files) > 20:
+            console.print(f"\n... 외 {len(old_files) - 20}건")
+
+        # 총 크기 표시
+        console.print(f"\n[cyan]총 크기: {total_size:.2f} KB ({total_size / 1024:.2f} MB)[/cyan]")
+
+        if dry_run:
+            console.print("\n[yellow]Dry run 모드: 실제 삭제하지 않았습니다.[/yellow]")
+            return
+
+        # 확인
+        if not click.confirm(f"\n정말로 {len(old_files)}개 메트릭 파일을 삭제하시겠습니까?"):
+            console.print("[yellow]취소되었습니다.[/yellow]")
+            return
+
+        # 삭제 실행
+        deleted = 0
+        deleted_size = 0.0
+        for file_path, _ in old_files:
+            try:
+                file_size = file_path.stat().st_size / 1024  # KB
+                file_path.unlink()
+                deleted += 1
+                deleted_size += file_size
+            except Exception as e:
+                console.print(f"[red]파일 삭제 실패 ({file_path.name}): {e}[/red]")
+
+        console.print(f"[green]✓ {deleted}개 메트릭 파일 삭제 완료 ({deleted_size:.2f} KB 확보)[/green]")
+
+    except Exception as e:
+        console.print(f"[red]메트릭 파일 정리 실패: {e}[/red]")
+        raise click.Abort()
+
+
 @session_commands.command(name="cleanup")
 @click.option("--days", "-d", default=90, help="보존 기간 (일)")
 @click.option("--dry-run", "-n", is_flag=True, help="실제 삭제하지 않고 미리보기만")
@@ -503,8 +603,6 @@ def cleanup_sessions(days: int, dry_run: bool):
         session cleanup --days 30
     """
     try:
-        from datetime import timedelta
-
         # 리포지토리 생성
         repo = create_session_repository()
         use_case = SessionSearchUseCase(repo)

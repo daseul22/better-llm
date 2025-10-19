@@ -43,6 +43,7 @@ Thumbs.db
 
 # Session History
 sessions/*.json
+sessions/*.txt
 
 # Logs
 *.log

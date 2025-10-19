@@ -329,6 +329,97 @@ def set_workflow_callback(callback: Optional[Callable]) -> None:
     logger.info("✅ 워크플로우 콜백 설정 완료")
 
 
+def worker_tool(
+    worker_name: str,
+    description: str,
+    retry: bool = False,
+    security_check: bool = False
+) -> Callable:
+    """
+    Worker Tool 데코레이터 팩토리
+
+    공통 로직을 데코레이터로 추출하여 코드 중복을 제거합니다.
+
+    Args:
+        worker_name: Worker 이름 (예: "planner", "coder")
+        description: Tool 설명
+        retry: 재시도 로직 사용 여부
+        security_check: 보안 검증 수행 여부 (Committer 전용)
+
+    Returns:
+        데코레이터 함수
+
+    Example:
+        @worker_tool("planner", "요구사항 분석 및 계획 수립", retry=True)
+        async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
+            pass
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(args: Dict[str, Any]) -> Dict[str, Any]:
+            """
+            Worker Tool 래퍼 함수
+
+            Args:
+                args: {"task_description": "작업 설명"}
+
+            Returns:
+                Agent 실행 결과
+            """
+            # Committer의 경우 보안 검증 수행
+            if security_check:
+                logger.debug(
+                    f"[{worker_name.capitalize()} Tool] 작업 실행 시작: "
+                    f"{args['task_description'][:50]}..."
+                )
+
+                # 1단계: Git 환경 검증
+                is_valid, error_msg = await _verify_git_environment()
+                if not is_valid:
+                    logger.error(f"[{worker_name.capitalize()} Tool] Git 환경 오류: {error_msg}")
+                    return {
+                        "content": [
+                            {"type": "text", "text": f"❌ Git 환경 오류: {error_msg}"}
+                        ]
+                    }
+
+                # 2단계: 민감 정보 검증
+                is_safe, error_msg = await _validate_commit_safety()
+                if not is_safe:
+                    logger.warning(
+                        f"[{worker_name.capitalize()} Tool] 커밋 거부 (민감 정보 감지): {error_msg}"
+                    )
+                    return {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"❌ 커밋 거부 (보안 검증 실패):\n\n{error_msg}"
+                            }
+                        ]
+                    }
+
+                logger.info(
+                    f"[{worker_name.capitalize()} Tool] 보안 검증 통과 - "
+                    f"{worker_name.capitalize()} Agent 실행"
+                )
+
+            # 공통 실행 로직
+            return await _execute_worker_task(
+                worker_name,
+                args["task_description"],
+                use_retry=retry
+            )
+
+        # @tool 데코레이터 적용
+        return tool(
+            f"execute_{worker_name}_task",
+            f"{worker_name.capitalize()} Agent에게 작업을 할당합니다. {description}",
+            {"task_description": str}
+        )(wrapper)
+
+    return decorator
+
+
 async def _execute_worker_task(
     worker_name: str,
     task_description: str,
@@ -429,11 +520,7 @@ async def _execute_worker_task(
                 logger.warning(f"메트릭 기록 실패: {metrics_error}")
 
 
-@tool(
-    "execute_planner_task",
-    "Planner Agent에게 작업을 할당합니다. 요구사항 분석 및 계획 수립을 담당합니다.",
-    {"task_description": str}
-)
+@worker_tool("planner", "요구사항 분석 및 계획 수립을 담당합니다.", retry=True)
 async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Planner Agent 실행 (재시도 로직 포함)
@@ -444,14 +531,10 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    return await _execute_worker_task("planner", args["task_description"], use_retry=True)
+    pass  # 데코레이터가 모든 로직을 처리
 
 
-@tool(
-    "execute_coder_task",
-    "Coder Agent에게 작업을 할당합니다. 코드 작성, 수정, 리팩토링을 담당합니다.",
-    {"task_description": str}
-)
+@worker_tool("coder", "코드 작성, 수정, 리팩토링을 담당합니다.", retry=False)
 async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Coder Agent 실행
@@ -462,14 +545,10 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    return await _execute_worker_task("coder", args["task_description"], use_retry=False)
+    pass  # 데코레이터가 모든 로직을 처리
 
 
-@tool(
-    "execute_tester_task",
-    "Tester Agent에게 작업을 할당합니다. 테스트 작성 및 실행을 담당합니다.",
-    {"task_description": str}
-)
+@worker_tool("tester", "테스트 작성 및 실행을 담당합니다.", retry=False)
 async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Tester Agent 실행
@@ -480,14 +559,10 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    return await _execute_worker_task("tester", args["task_description"], use_retry=False)
+    pass  # 데코레이터가 모든 로직을 처리
 
 
-@tool(
-    "execute_reviewer_task",
-    "Reviewer Agent에게 작업을 할당합니다. 코드 리뷰 및 품질 검증을 담당합니다.",
-    {"task_description": str}
-)
+@worker_tool("reviewer", "코드 리뷰 및 품질 검증을 담당합니다.", retry=False)
 async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Reviewer Agent 실행
@@ -498,14 +573,10 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    return await _execute_worker_task("reviewer", args["task_description"], use_retry=False)
+    pass  # 데코레이터가 모든 로직을 처리
 
 
-@tool(
-    "execute_committer_task",
-    "Committer Agent에게 작업을 할당합니다. Git 커밋 생성을 담당합니다.",
-    {"task_description": str}
-)
+@worker_tool("committer", "Git 커밋 생성을 담당합니다.", retry=False, security_check=True)
 async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Committer Agent 실행 (보안 검증 포함)
@@ -516,31 +587,7 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
-    logger.debug(f"[Committer Tool] 작업 실행 시작: {args['task_description'][:50]}...")
-
-    # 1단계: Git 환경 검증
-    is_valid, error_msg = await _verify_git_environment()
-    if not is_valid:
-        logger.error(f"[Committer Tool] Git 환경 오류: {error_msg}")
-        return {
-            "content": [
-                {"type": "text", "text": f"❌ Git 환경 오류: {error_msg}"}
-            ]
-        }
-
-    # 2단계: 민감 정보 검증
-    is_safe, error_msg = await _validate_commit_safety()
-    if not is_safe:
-        logger.warning(f"[Committer Tool] 커밋 거부 (민감 정보 감지): {error_msg}")
-        return {
-            "content": [
-                {"type": "text", "text": f"❌ 커밋 거부 (보안 검증 실패):\n\n{error_msg}"}
-            ]
-        }
-
-    # 3단계: 모든 검증 통과 - Committer Agent 실행
-    logger.info("[Committer Tool] 보안 검증 통과 - Committer Agent 실행")
-    return await _execute_worker_task("committer", args["task_description"], use_retry=False)
+    pass  # 데코레이터가 모든 로직을 처리 (보안 검증 포함)
 
 
 def get_error_statistics() -> Dict[str, Any]:

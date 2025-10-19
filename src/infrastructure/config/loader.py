@@ -20,8 +20,49 @@ class SystemConfig(ISystemConfig):
     시스템 설정 구현
 
     JSON 파일에서 로드된 설정
+    딕셔너리 접근도 지원 (하위 호환성)
     """
-    pass
+
+    def __post_init__(self):
+        """dataclass 초기화 후 처리"""
+        # 원본 데이터 저장 (딕셔너리 접근용)
+        self._raw_data = {}
+
+    def get(self, key: str, default=None):
+        """
+        딕셔너리처럼 get() 메서드 제공
+
+        Args:
+            key: 설정 키
+            default: 기본값
+
+        Returns:
+            설정 값 또는 기본값
+        """
+        # 먼저 dataclass 필드 확인
+        if hasattr(self, key):
+            return getattr(self, key)
+        # _raw_data에서 확인
+        return self._raw_data.get(key, default)
+
+    def __getitem__(self, key: str):
+        """
+        딕셔너리처럼 [] 접근 제공
+
+        Args:
+            key: 설정 키
+
+        Returns:
+            설정 값
+
+        Raises:
+            KeyError: 키가 없을 경우
+        """
+        if hasattr(self, key):
+            return getattr(self, key)
+        if key in self._raw_data:
+            return self._raw_data[key]
+        raise KeyError(f"설정 키를 찾을 수 없습니다: {key}")
 
 
 class JsonConfigLoader(IConfigLoader):
@@ -113,7 +154,7 @@ class JsonConfigLoader(IConfigLoader):
             security = data.get("security", {})
             logging_config = data.get("logging", {})
 
-            return SystemConfig(
+            config = SystemConfig(
                 manager_model=manager.get("model", "claude-sonnet-4-5-20250929"),
                 max_history_messages=manager.get("max_history_messages", 20),
                 max_turns=manager.get("max_turns", 10),
@@ -127,6 +168,11 @@ class JsonConfigLoader(IConfigLoader):
                 log_format=logging_config.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
                 enable_structured_logging=logging_config.get("enable_structured_logging", False)
             )
+
+            # 원본 데이터 저장 (딕셔너리 접근용)
+            config._raw_data = data
+
+            return config
 
         except Exception as e:
             logger.error(f"시스템 설정 로드 실패: {e}. 기본값 사용.")
