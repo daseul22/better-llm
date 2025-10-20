@@ -13,6 +13,7 @@ from .worker_tools import (
     set_metrics_collector,
     update_session_id,
     set_workflow_callback,
+    set_worker_output_callback,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "set_metrics_collector",
     "update_session_id",
     "set_workflow_callback",
+    "set_worker_output_callback",
 ]
