@@ -12,9 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Tuple
 
-from ...application.ports import IApprovalRepository
-from ...domain.models.approval import ApprovalRequest, ApprovalResponse, ApprovalStatus, ApprovalType
-from ...domain.models.feedback import Feedback
+from application.ports import IApprovalRepository
+from domain.models.approval import ApprovalRequest, ApprovalResponse, ApprovalStatus, ApprovalType
+from domain.models.feedback import Feedback
 
 logger = logging.getLogger(__name__)
 

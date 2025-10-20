@@ -12,8 +12,8 @@ import os
 from claude_agent_sdk import query
 from claude_agent_sdk.types import ClaudeAgentOptions
 
-from ...domain.models import AgentConfig
-from ...domain.services import ProjectContext
+from domain.models import AgentConfig
+from domain.services import ProjectContext
 from ..config import get_claude_cli_path, get_project_root
 from ..storage import JsonContextRepository
 from ..logging import get_logger, log_exception_silently

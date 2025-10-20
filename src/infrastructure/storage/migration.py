@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from .sqlite_session_repository import SqliteSessionRepository
-from ...domain.models import SessionResult, SessionStatus
-from ...domain.services import ConversationHistory
+from domain.models import SessionResult, SessionStatus
+from domain.services import ConversationHistory
 
 logger = logging.getLogger(__name__)
 

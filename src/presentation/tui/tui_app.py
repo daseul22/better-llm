@@ -24,11 +24,11 @@ from rich.markdown import Markdown
 from rich.text import Text
 from rich.table import Table
 
-from src.domain.models import SessionResult
-from src.domain.models.session import SessionStatus
-from src.domain.services import ConversationHistory, ProjectContextAnalyzer, MetricsCollector
-from src.infrastructure.claude import ManagerAgent
-from src.infrastructure.mcp import (
+from domain.models import SessionResult
+from domain.models.session import SessionStatus
+from domain.services import ConversationHistory, ProjectContextAnalyzer, MetricsCollector
+from infrastructure.claude import ManagerAgent
+from infrastructure.mcp import (
     initialize_workers,
     create_worker_tools_server,
     get_error_statistics,
@@ -37,13 +37,13 @@ from src.infrastructure.mcp import (
     set_workflow_callback,
     set_worker_output_callback,
 )
-from src.infrastructure.config import (
+from infrastructure.config import (
     validate_environment,
     get_project_root,
     JsonConfigLoader,
 )
-from src.infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
-from src.infrastructure.logging import get_logger, log_exception_silently
+from infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
+from infrastructure.logging import get_logger, log_exception_silently
 from ..cli.utils import (
     generate_session_id,
     save_session_history,
@@ -2394,7 +2394,7 @@ class OrchestratorTUI(App):
 def main():
     """메인 함수"""
     # 구조화된 로깅 설정
-    from src.infrastructure.logging import configure_structlog
+    from infrastructure.logging import configure_structlog
 
     # 환경변수에서 로깅 설정 로드
     log_level = os.getenv("LOG_LEVEL", "INFO")

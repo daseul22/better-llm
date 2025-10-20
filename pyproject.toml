@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "better-llm"
-version = "1.0.0"
-description = "그룹 챗 오케스트레이션 시스템 - Clean Architecture 기반"
+version = "4.0.0"
+description = "그룹 챗 오케스트레이션 시스템 - Manager Agent가 전문화된 Worker Agent들을 조율하여 복잡한 소프트웨어 개발 작업을 자동화"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -33,12 +33,14 @@ dev = [
 ]
 
 [project.scripts]
-better-llm = "src.presentation.tui.tui_app:main"
-better-llm-cli = "src.presentation.cli.orchestrator:main"
+better-llm = "presentation.tui.tui_app:main"
+better-llm-cli = "presentation.cli.orchestrator:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
+where = ["src"]
 
 [tool.black]
 line-length = 100

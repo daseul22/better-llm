@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
-from ...domain.models.template import Template, TemplateCategory
+from domain.models.template import Template, TemplateCategory
 
 
 class ITemplateRepository(ABC):

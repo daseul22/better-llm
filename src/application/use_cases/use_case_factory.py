@@ -15,13 +15,13 @@ from .execute_coder_use_case import ExecuteCoderUseCase
 from .execute_reviewer_use_case import ExecuteReviewerUseCase
 from .execute_tester_use_case import ExecuteTesterUseCase
 from ..resilience import CircuitBreaker, ExponentialBackoffRetryPolicy
-from ...domain.interfaces.use_cases import IExecuteWorkerUseCase
-from ...domain.interfaces.circuit_breaker import ICircuitBreaker
-from ...domain.interfaces.retry_policy import IRetryPolicy
-from ...domain.models import AgentConfig
-from ...domain.exceptions import WorkerNotFoundError
+from domain.interfaces.use_cases import IExecuteWorkerUseCase
+from domain.interfaces.circuit_breaker import ICircuitBreaker
+from domain.interfaces.retry_policy import IRetryPolicy
+from domain.models import AgentConfig
+from domain.exceptions import WorkerNotFoundError
 from ..ports.agent_port import IAgentClient
-from ...infrastructure.config import JsonConfigLoader, get_project_root
+from infrastructure.config import JsonConfigLoader, get_project_root
 
 
 logger = logging.getLogger(__name__)

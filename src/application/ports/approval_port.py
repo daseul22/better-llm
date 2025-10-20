@@ -6,8 +6,8 @@ IApprovalRepository: 승인 요청 및 피드백 저장소 인터페이스
 
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from ...domain.models.approval import ApprovalRequest, ApprovalResponse, ApprovalStatus
-from ...domain.models.feedback import Feedback
+from domain.models.approval import ApprovalRequest, ApprovalResponse, ApprovalStatus
+from domain.models.feedback import Feedback
 
 
 class IApprovalRepository(ABC):

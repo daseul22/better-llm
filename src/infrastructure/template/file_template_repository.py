@@ -9,8 +9,8 @@ import yaml
 from pathlib import Path
 from typing import Optional, List
 
-from ...application.ports.template_port import ITemplateRepository
-from ...domain.models.template import Template, TemplateCategory
+from application.ports.template_port import ITemplateRepository
+from domain.models.template import Template, TemplateCategory
 
 logger = logging.getLogger(__name__)
 

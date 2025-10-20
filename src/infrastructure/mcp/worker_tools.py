@@ -18,8 +18,8 @@ from claude_agent_sdk import tool, create_sdk_mcp_server
 from claude_agent_sdk.types import ClaudeAgentOptions
 
 from ..claude import WorkerAgent
-from ...domain.models import AgentConfig
-from ...domain.services import MetricsCollector
+from domain.models import AgentConfig
+from domain.services import MetricsCollector
 from ..config import JsonConfigLoader, get_project_root
 from ..logging import get_logger, log_exception_silently
 

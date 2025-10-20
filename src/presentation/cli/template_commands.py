@@ -15,13 +15,13 @@ from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 from rich import print as rprint
 
-from ...application.use_cases.template_management import (
+from application.use_cases.template_management import (
     ListTemplatesUseCase,
     ApplyTemplateUseCase,
     CreateTemplateUseCase,
     SearchTemplatesUseCase
 )
-from ...domain.models.template import (
+from domain.models.template import (
     Template,
     TemplateCategory,
     TemplateVariable,
@@ -30,7 +30,7 @@ from ...domain.models.template import (
     TemplateNotFoundError,
     TemplateValidationError
 )
-from ...infrastructure.template import (
+from infrastructure.template import (
     FileBasedTemplateRepository,
     Jinja2TemplateEngine,
     get_builtin_templates

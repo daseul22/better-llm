@@ -10,9 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from ...application.ports import IConfigLoader, ISystemConfig
-from ...domain.models import AgentConfig
-from ..logging import get_logger
+from application.ports import IConfigLoader, ISystemConfig
+from domain.models import AgentConfig
+from infrastructure.logging import get_logger
 
 logger = get_logger(__name__, component="ConfigLoader")
 

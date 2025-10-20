@@ -284,7 +284,7 @@ def save_metrics_report(
     Returns:
         저장된 파일 경로 또는 None (메트릭이 없는 경우)
     """
-    from ...domain.services import MetricsReporter
+    from domain.services import MetricsReporter
 
     # 세션 메트릭 조회
     session_metrics = metrics_collector.get_session_summary(session_id)

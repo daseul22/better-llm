@@ -9,8 +9,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ...application.ports import IContextRepository
-from ...domain.services import ProjectContext
+from application.ports import IContextRepository
+from domain.services import ProjectContext
 
 logger = logging.getLogger(__name__)
 

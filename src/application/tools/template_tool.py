@@ -14,7 +14,7 @@ from ..use_cases.template_management import (
     ListTemplatesUseCase,
     SearchTemplatesUseCase
 )
-from ...domain.models.template import (
+from domain.models.template import (
     TemplateCategory,
     TemplateNotFoundError,
     TemplateValidationError

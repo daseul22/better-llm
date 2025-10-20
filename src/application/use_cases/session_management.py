@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 from collections import Counter
 
 from ..ports import ISessionRepository
-from ...domain.models import SessionMetadata, SessionSearchCriteria, SessionDetail
+from domain.models import SessionMetadata, SessionSearchCriteria, SessionDetail
 
 logger = logging.getLogger(__name__)
 

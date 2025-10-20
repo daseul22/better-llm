@@ -15,9 +15,9 @@ from ..models.parallel_task import (
     TaskExecutionResult,
 )
 from ..models.task import TaskStatus
-from ...infrastructure.logging import get_logger
+import logging
 
-logger = get_logger(__name__, component="ParallelExecutor")
+logger = logging.getLogger(__name__)
 
 
 class ParallelTaskExecutor:
