@@ -199,7 +199,7 @@ def load_system_config() -> dict:
         json.JSONDecodeError: JSON 파싱 실패 시
         OSError: 파일 읽기 실패 시 (권한 문제 등)
     """
-    from .utils import get_project_root
+    from .validator import get_project_root
 
     config_path = get_project_root() / "config" / "system_config.json"
 

@@ -156,6 +156,9 @@ _CURRENT_SESSION_ID: Optional[str] = None
 # 워크플로우 콜백 (TUI에서 설정)
 _WORKFLOW_CALLBACK: Optional[Callable] = None
 
+# Worker 출력 스트리밍 콜백 (TUI에서 설정)
+_WORKER_OUTPUT_CALLBACK: Optional[Callable] = None
+
 # Review cycle 추적 (무한 루프 방지)
 _REVIEW_CYCLE_STATE = {
     "count": 0,
@@ -479,6 +482,19 @@ def set_workflow_callback(callback: Optional[Callable]) -> None:
     logger.info("✅ 워크플로우 콜백 설정 완료")
 
 
+def set_worker_output_callback(callback: Optional[Callable]) -> None:
+    """
+    Worker 출력 스트리밍 콜백 설정
+
+    Args:
+        callback: Worker 출력 스트리밍 함수
+                  시그니처: callback(worker_name: str, chunk: str)
+    """
+    global _WORKER_OUTPUT_CALLBACK
+    _WORKER_OUTPUT_CALLBACK = callback
+    logger.info("✅ Worker 출력 스트리밍 콜백 설정 완료")
+
+
 def worker_tool(
     worker_name: str,
     description: str,
@@ -667,6 +683,12 @@ async def _execute_worker_task(
         result = ""
         async for chunk in worker.execute_task(task_description):
             result += chunk
+            # Worker 출력 스트리밍 콜백 호출
+            if _WORKER_OUTPUT_CALLBACK:
+                try:
+                    _WORKER_OUTPUT_CALLBACK(worker_name, chunk)
+                except Exception as e:
+                    logger.warning(f"Worker 출력 콜백 실행 실패: {e}")
         return {"content": [{"type": "text", "text": result}]}
 
     try:

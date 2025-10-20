@@ -34,6 +34,7 @@ from src.infrastructure.mcp import (
     set_metrics_collector,
     update_session_id,
     set_workflow_callback,
+    set_worker_output_callback,
 )
 from src.infrastructure.config import (
     validate_environment,
@@ -94,6 +95,22 @@ class OrchestratorTUI(App):
     }
 
     #output-log {
+        height: 1fr;
+        background: #0d1117;
+        padding: 1;
+        scrollbar-gutter: stable;
+    }
+
+    /* Worker 출력 영역 */
+    #worker-output-container {
+        border: tall #21262d;
+        background: #0d1117;
+        height: 1fr;
+        margin: 0 1;
+        padding: 0;
+    }
+
+    #worker-output-log {
         height: 1fr;
         background: #0d1117;
         padding: 1;
@@ -293,6 +310,9 @@ class OrchestratorTUI(App):
         # 히스토리
         Binding("up", "history_up", "이전 입력", show=False),
         Binding("down", "history_down", "다음 입력", show=False),
+
+        # 출력 전환
+        Binding("ctrl+o", "toggle_output_mode", "출력 전환"),
     ]
 
     def __init__(self):
@@ -331,11 +351,19 @@ class OrchestratorTUI(App):
         project_root = get_project_root()
         self.autocomplete_engine = AutocompleteEngine(working_dir=project_root)
 
+        # 출력 모드 ("manager" 또는 "worker")
+        self.output_mode: str = "manager"
+        self.current_worker_name: Optional[str] = None  # 현재 실행 중인 Worker 이름
+
     def compose(self) -> ComposeResult:
         """UI 구성"""
-        # 출력 영역
+        # Manager 출력 영역
         with ScrollableContainer(id="output-container"):
             yield RichLog(id="output-log", markup=True, highlight=True)
+
+        # Worker 출력 영역 (기본 숨김)
+        with ScrollableContainer(id="worker-output-container", classes="hidden"):
+            yield RichLog(id="worker-output-log", markup=True, highlight=True)
 
         # Worker 상태 표시
         with Container(id="worker-status-container"):
@@ -401,23 +429,49 @@ class OrchestratorTUI(App):
             ))
             self.write_log("")
 
-            # 환경 검증
+            # 환경 검증 (개선된 메시지)
             validate_environment()
-            self.write_log("✅ [green]환경 검증 완료[/green]")
+            work_dir = os.getcwd()
+            # Warning 2: API 키 검증 강화 (빈 문자열 및 길이 검증)
+            api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+            api_key_status = "설정됨" if (api_key and len(api_key) > 10) else "미설정"
+            self.write_log(
+                f"✅ [green]환경 검증 완료[/green] "
+                f"[dim](작업 디렉토리: {work_dir}, API 키: {api_key_status})[/dim]"
+            )
 
             # Worker Agent들 초기화 (프로젝트 루트 기준)
             config_path = get_project_root() / "config" / "agent_config.json"
             initialize_workers(config_path)
-            self.write_log("✅ [green]Worker Agents 초기화[/green] [dim](Planner, Coder, Reviewer, Tester)[/dim]")
 
-            # Worker Tools MCP Server 생성
+            # agent_config.json에서 Worker 목록 로드
+            config_loader = JsonConfigLoader(get_project_root())
+            agents = config_loader.load_agent_configs()
+
+            # Critical 이슈 1: Worker가 0개인 경우 명시적으로 예외 발생
+            if not agents:
+                raise ValueError(
+                    "agent_config.json에 Worker Agent가 정의되지 않았습니다. "
+                    "config/agent_config.json 파일을 확인해주세요."
+                )
+
+            worker_names = [agent["name"].capitalize() for agent in agents]
+            worker_count = len(worker_names)
+            worker_list = ", ".join(worker_names)
+
+            self.write_log(
+                f"✅ [green]Worker Agents 로드됨[/green] "
+                f"[dim]({worker_count}개: {worker_list})[/dim]"
+            )
+
+            # Worker Tools MCP Server 생성 (개선된 메시지)
             worker_tools_server = create_worker_tools_server()
-            self.write_log("✅ [green]Worker Tools MCP Server 생성[/green]")
+            self.write_log("✅ [green]Worker Tools MCP Server 초기화됨[/green]")
 
             # system_config 로드 (auto_commit_enabled 설정 확인)
-            config_loader = JsonConfigLoader(get_project_root())
             system_config = config_loader.load_system_config()
             auto_commit_enabled = system_config.get("workflow", {}).get("auto_commit_enabled", False)
+            manager_model = system_config.get("manager", {}).get("model", "unknown")
 
             # Manager Agent 초기화 (auto_commit_enabled 전달)
             self.manager = ManagerAgent(
@@ -425,7 +479,10 @@ class OrchestratorTUI(App):
                 auto_commit_enabled=auto_commit_enabled
             )
             commit_status = "활성화" if auto_commit_enabled else "비활성화"
-            self.write_log(f"✅ [green]Manager Agent 준비 완료[/green] [dim](자동 커밋: {commit_status})[/dim]")
+            self.write_log(
+                f"✅ [green]Manager Agent 준비 완료[/green] "
+                f"[dim](모델: {manager_model}, 자동 커밋: {commit_status})[/dim]"
+            )
 
             # 대화 히스토리
             self.history = ConversationHistory()
@@ -438,21 +495,43 @@ class OrchestratorTUI(App):
             set_workflow_callback(self.on_workflow_update)
             self.write_log("✅ [green]워크플로우 비주얼라이저 준비 완료[/green]")
 
+            # Worker 출력 스트리밍 콜백 설정
+            set_worker_output_callback(self.on_worker_output)
+            self.write_log("✅ [green]Worker 출력 스트리밍 준비 완료[/green]")
+
             self.initialized = True
             worker_status.update("✅ 준비 완료")
             status_info.update("Ready")
 
+            # 시스템 준비 완료 배너 (개선됨)
             self.write_log("")
             self.write_log(Panel(
-                "[bold green]✅ 시스템 준비 완료[/bold green]\n\n"
-                "[dim]사용 가능한 Worker Tools:[/dim]\n"
-                "  • execute_planner_task - 요구사항 분석 및 계획 수립\n"
-                "  • execute_coder_task - 코드 작성 및 수정\n"
-                "  • execute_reviewer_task - 코드 리뷰 및 품질 검증\n"
-                "  • execute_tester_task - 테스트 작성 및 실행\n\n"
-                "[dim]작업을 입력하고 Enter를 눌러 시작하세요.[/dim]",
+                "[bold green]🚀 시스템 준비 완료[/bold green]\n\n"
+                f"[dim]세션 ID:[/dim] [cyan]{self.session_id}[/cyan]\n"
+                f"[dim]Workers:[/dim] {worker_count}개\n"
+                f"[dim]Manager:[/dim] {manager_model}",
                 border_style="green"
             ))
+            self.write_log("")
+
+            # 사용 가능한 툴 목록 (역할 설명 포함)
+            # Info: 메시지 텍스트 개선
+            self.write_log("[bold]📊 사용 가능한 Worker 명령어:[/bold]")
+            self.write_log("")
+
+            # agent_config에서 역할 정보 매핑
+            # Warning 1: 딕셔너리 키 안전 접근 (.get() 메서드 사용)
+            # Info: 변수명 개선 (tool_descriptions → worker_roles)
+            worker_roles = {
+                agent.get("name", "unknown"): agent.get("role", "설명 없음")
+                for agent in agents
+                if "name" in agent
+            }
+
+            # 주요 Worker Tools 표시
+            for agent_name, role in worker_roles.items():
+                self.write_log(f"  • [cyan]execute_{agent_name}_task[/cyan] - {role}")
+
             self.write_log("")
 
         except Exception as e:
@@ -1088,8 +1167,46 @@ class OrchestratorTUI(App):
                 error_message=error
             )
 
+            # Worker 실행 시작 시 현재 Worker 이름 저장
+            if status == "running":
+                self.current_worker_name = worker_name
+                # Worker 출력 화면 초기화
+                try:
+                    worker_output_log = self.query_one("#worker-output-log", RichLog)
+                    worker_output_log.clear()
+                    # 헤더 추가
+                    worker_output_log.write(Panel(
+                        f"[bold cyan]🤖 {worker_name.capitalize()} Worker[/bold cyan]",
+                        border_style="cyan"
+                    ))
+                    worker_output_log.write("")
+                except Exception:
+                    pass
+
+            # Worker 실행 완료/실패 시 현재 Worker 이름 초기화
+            elif status in ["completed", "failed"]:
+                self.current_worker_name = None
+
         except Exception as e:
             logger.warning(f"워크플로우 업데이트 실패: {e}")
+
+    def on_worker_output(self, worker_name: str, chunk: str) -> None:
+        """
+        Worker 출력 스트리밍 콜백
+
+        Worker Tool 실행 중 실시간으로 출력을 받아서 Worker 출력 화면에 표시합니다.
+
+        Args:
+            worker_name: Worker 이름 (예: "planner", "coder")
+            chunk: 출력 청크
+        """
+        try:
+            worker_output_log = self.query_one("#worker-output-log", RichLog)
+            # 실시간으로 청크 출력
+            worker_output_log.write(chunk)
+
+        except Exception as e:
+            logger.warning(f"Worker 출력 표시 실패: {e}")
 
     def update_worker_status_timer(self) -> None:
         """타이머: Worker Tool 실행 시간 업데이트 (0.5초마다 호출)"""
@@ -1466,6 +1583,64 @@ class OrchestratorTUI(App):
 
         except Exception as e:
             logger.error(f"Worker 상태 패널 토글 실패: {e}")
+
+    async def action_toggle_output_mode(self) -> None:
+        """
+        Ctrl+O: 출력 모드 전환 (Manager <-> Worker)
+
+        Manager 출력과 Worker 출력을 전환합니다.
+        Worker가 실행 중이지 않으면 경고 메시지를 표시합니다.
+        """
+        try:
+            # 출력 모드 토글
+            if self.output_mode == "manager":
+                # Worker 출력으로 전환
+                if self.current_worker_name:
+                    self.output_mode = "worker"
+                    self.apply_output_mode()
+                    # 알림 표시
+                    if self.settings.enable_notifications:
+                        self.notify(
+                            f"출력 모드: Worker ({self.current_worker_name.capitalize()})",
+                            severity="information"
+                        )
+                else:
+                    # Worker가 실행 중이지 않으면 경고
+                    if self.settings.enable_notifications:
+                        self.notify(
+                            "실행 중인 Worker가 없습니다",
+                            severity="warning"
+                        )
+            else:
+                # Manager 출력으로 전환
+                self.output_mode = "manager"
+                self.apply_output_mode()
+                # 알림 표시
+                if self.settings.enable_notifications:
+                    self.notify("출력 모드: Manager", severity="information")
+
+        except Exception as e:
+            logger.error(f"출력 모드 토글 실패: {e}")
+
+    def apply_output_mode(self) -> None:
+        """
+        현재 출력 모드에 따라 출력 화면 표시/숨김 적용
+        """
+        try:
+            output_container = self.query_one("#output-container", ScrollableContainer)
+            worker_output_container = self.query_one("#worker-output-container", ScrollableContainer)
+
+            if self.output_mode == "manager":
+                # Manager 출력 표시, Worker 출력 숨김
+                output_container.remove_class("hidden")
+                worker_output_container.add_class("hidden")
+            else:
+                # Worker 출력 표시, Manager 출력 숨김
+                output_container.add_class("hidden")
+                worker_output_container.remove_class("hidden")
+
+        except Exception as e:
+            logger.warning(f"출력 모드 적용 실패: {e}")
 
     async def action_save_log(self) -> None:
         """Ctrl+S: 로그 저장"""
