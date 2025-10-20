@@ -421,6 +421,34 @@ ls -la prompts/
 
 ---
 
+## 최근 개선 사항
+
+### fix. Worker Agent 타임아웃 문제 해결
+- 날짜: 2025-10-20
+- 컨텍스트: Worker Agent가 작업 완료 후에도 타임아웃까지 대기하는 문제 발생
+- 근본 원인: Worker Agent 프롬프트에 다른 Worker를 호출하는 지시문(@coder, @tester 등)이 포함되어 있었음
+  - Worker Agent는 Tool 호출 권한이 없어서 다른 Agent를 호출할 수 없음
+  - 호출 시도 실패 후 타임아웃까지 계속 대기
+- 변경사항:
+  - **프롬프트 수정** (주요 해결책):
+    - `prompts/planner.txt`: "@coder please implement this plan" 제거 → "계획 수립이 완료되었습니다."
+    - `prompts/coder.txt`: "@tester please verify this implementation" 제거 → "구현이 완료되었습니다."
+    - `prompts/tester.txt`: "@coder please fix" 제거 → "테스트가 성공적으로 완료되었습니다." / "테스트 실패: ..."
+    - `prompts/committer.txt`: "TERMINATE - ..." 제거 → "커밋이 성공적으로 완료되었습니다." / "커밋 실패: ..."
+  - **코드 레벨 개선** (방어 로직):
+    - `src/infrastructure/claude/worker_client.py`: 조기 종료 감지 로직 추가
+      - Worker Agent 응답에서 "완료되었습니다" 키워드 감지 시 즉시 스트리밍 종료
+      - 최근 10개 청크를 버퍼링하여 완료 키워드 검색
+      - `query()` 함수가 불필요하게 대기하지 않도록 방어
+- 영향범위:
+  - **성능**: Worker Agent 실행 시간이 타임아웃 시간(300-600초)에서 실제 작업 시간으로 단축
+  - **사용자 경험**: 작업 완료 후 즉시 다음 단계로 진행되어 전체 작업 속도 대폭 개선
+  - **아키텍처**: Manager Agent가 Worker 간 조율을 전담하도록 명확히 함
+- 테스트: 수동 테스트 필요 (orchestrator.py 실행)
+- 후속 조치: 실제 사용 시 Worker Agent 응답 시간 모니터링
+
+---
+
 ## 참고 자료
 
 - [Claude Agent SDK 공식 문서](https://docs.anthropic.com/en/docs/agent-sdk/python)
@@ -432,4 +460,4 @@ ls -la prompts/
 
 **개발 히스토리**: 상세한 개발 히스토리는 `CLAUDE_HISTORY.md` 참조
 
-**최종 업데이트**: 2025-10-18
+**최종 업데이트**: 2025-10-20

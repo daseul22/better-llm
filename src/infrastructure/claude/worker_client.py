@@ -118,6 +118,16 @@ class WorkerAgent:
             logger.debug(f"[{self.config.name}] Claude Agent SDK 실행 시작")
             logger.debug(f"[{self.config.name}] Working Directory: {os.getcwd()}")
 
+            # 조기 종료 감지를 위한 버퍼 (마지막 N 청크 저장)
+            recent_chunks = []
+            completion_keywords = [
+                "완료되었습니다",
+                "완료했습니다",
+                "완료하였습니다",
+                "작업 완료",
+                "실행 완료"
+            ]
+
             # Claude Agent SDK의 query() 함수 사용
             # 이 함수는 Claude Code의 agentic harness를 사용하여
             # 파일 시스템 접근, bash 실행 등을 수행합니다
@@ -133,15 +143,36 @@ class WorkerAgent:
             ):
                 # response는 SDK에서 반환하는 응답 객체
                 # 텍스트 콘텐츠 추출
+                chunk_text = None
                 if hasattr(response, 'content'):
                     for content in response.content:
                         if hasattr(content, 'text'):
-                            yield content.text
+                            chunk_text = content.text
+                            yield chunk_text
                 elif hasattr(response, 'text'):
-                    yield response.text
+                    chunk_text = response.text
+                    yield chunk_text
                 else:
                     # 응답 형식이 예상과 다를 경우
-                    yield str(response)
+                    chunk_text = str(response)
+                    yield chunk_text
+
+                # 조기 종료 감지: 최근 청크들을 버퍼에 저장
+                if chunk_text:
+                    recent_chunks.append(chunk_text)
+                    # 최근 10개 청크만 유지
+                    if len(recent_chunks) > 10:
+                        recent_chunks.pop(0)
+
+                    # 최근 청크들을 합쳐서 완료 키워드 검색
+                    recent_text = "".join(recent_chunks)
+                    if any(keyword in recent_text for keyword in completion_keywords):
+                        logger.debug(
+                            f"[{self.config.name}] 조기 종료 감지: "
+                            f"완료 키워드 발견. 스트리밍 종료."
+                        )
+                        # 스트리밍 종료 (더 이상 응답을 기다리지 않음)
+                        break
 
             logger.debug(f"[{self.config.name}] Claude Agent SDK 실행 완료")
 
