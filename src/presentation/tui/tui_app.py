@@ -391,6 +391,9 @@ class OrchestratorTUI(App):
         self.output_mode: str = "manager"
         self.current_worker_name: Optional[str] = None  # 현재 실행 중인 Worker 이름
 
+        # MessageRenderer 인스턴스 (상태 유지용)
+        self.message_renderer = MessageRenderer()
+
     @property
     def current_session(self) -> SessionData:
         """현재 활성 세션 데이터 반환"""
@@ -425,11 +428,11 @@ class OrchestratorTUI(App):
         """UI 구성"""
         # Manager 출력 영역
         with ScrollableContainer(id="output-container"):
-            yield RichLog(id="output-log", markup=True, highlight=True)
+            yield RichLog(id="output-log", markup=True, highlight=True, wrap=True)
 
         # Worker 출력 영역 (기본 숨김)
         with ScrollableContainer(id="worker-output-container", classes="hidden"):
-            yield RichLog(id="worker-output-log", markup=True, highlight=True)
+            yield RichLog(id="worker-output-log", markup=True, highlight=True, wrap=True)
 
         # Worker 상태 표시
         with Container(id="worker-status-container"):
@@ -646,7 +649,7 @@ class OrchestratorTUI(App):
             # 입력 필드 비우기
             task_input.clear()
 
-            # 사용자 요청 표시 (MessageRenderer 사용)
+            # 사용자 요청 표시 (MessageRenderer 정적 메서드 사용)
             self.write_log("")
             user_panel = MessageRenderer.render_user_message(user_request)
             self.write_log(user_panel)
@@ -667,18 +670,35 @@ class OrchestratorTUI(App):
             task_start_time = time.time()
             manager_response = ""
 
-            # 스트리밍으로 실시간 출력 (MessageRenderer 사용)
+            # 스트리밍으로 실시간 출력 (MessageRenderer 인스턴스 사용)
             try:
+                # MessageRenderer 상태 초기화
+                self.message_renderer.reset_state()
+
                 # AI 응답 시작 헤더 표시
                 self.write_log(MessageRenderer.render_ai_response_start())
                 self.write_log("")
+
+                # output_log의 실제 너비 계산 (줄바꿈용)
+                try:
+                    output_log_widget = self.query_one("#output-log", RichLog)
+                    available_width = output_log_widget.size.width
+                    # OUTPUT_LOG_PADDING 사용 (매직 넘버 제거)
+                    effective_width = max(
+                        available_width - MessageRenderer.OUTPUT_LOG_PADDING,
+                        MessageRenderer.MIN_OUTPUT_WIDTH
+                    )
+                except Exception:
+                    effective_width = None  # 계산 실패 시 줄바꿈 비활성화
 
                 async for chunk in self.manager.analyze_and_plan_stream(
                     self.history.get_history()
                 ):
                     manager_response += chunk
-                    # 모든 청크에 일관된 인덴트 적용
-                    formatted_chunk = MessageRenderer.render_ai_response_chunk(chunk)
+                    # 모든 청크에 일관된 인덴트 적용 및 줄바꿈 (인스턴스 메서드 사용)
+                    formatted_chunk = self.message_renderer.render_ai_response_chunk(
+                        chunk, max_width=effective_width
+                    )
                     self.write_log(formatted_chunk)
 
                 # AI 응답 종료 구분선 표시
@@ -1934,11 +1954,41 @@ class OrchestratorTUI(App):
         """
         try:
             output_log = self.query_one(f"#{widget_id}", RichLog)
+
+            # RichLog의 실제 너비 계산
+            # (컨테이너 너비 - 패딩 - 스크롤바 - 보더)
+            try:
+                # output_log의 실제 표시 너비
+                available_width = output_log.size.width
+                # PANEL_PADDING 상수 사용 (padding(1)*2 + scrollbar(1) + border(2))
+                PANEL_PADDING = 5
+                effective_width = max(
+                    available_width - PANEL_PADDING,
+                    MessageRenderer.MIN_OUTPUT_WIDTH
+                )
+
+                # Rich Console 객체를 동적으로 생성하여 width 설정
+                from rich.console import Console
+                from io import StringIO
+
+                # Panel이나 복잡한 객체의 경우, width를 고려하여 렌더링
+                if isinstance(content, Panel):
+                    # Panel의 경우 width 옵션 적용
+                    content.width = effective_width
+
+            except (AttributeError, ValueError) as e:
+                # 크기 계산 실패 시 로깅 후 기본 동작
+                logger.warning(f"로그 너비 계산 실패: {e}, 기본 동작 사용")
+            except Exception as e:
+                # 기타 예외 시 로깅 후 기본 동작
+                logger.warning(f"로그 렌더링 중 예외: {e}, 기본 동작 사용")
+
             output_log.write(content)
             # 로그 버퍼에도 추가
             self._track_log_output(str(content))
-        except Exception:
-            pass
+        except Exception as e:
+            # write_log 자체가 실패하면 로깅만 하고 넘어감
+            logger.error(f"로그 출력 실패: {e}")
 
     def _display_error_statistics(self) -> None:
         """에러 통계를 로그에 표시"""

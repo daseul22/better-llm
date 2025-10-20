@@ -100,16 +100,18 @@ class TestMessageRendererAIResponseChunk:
 
     def test_render_ai_response_chunk_simple_text(self):
         """단순 텍스트에 인덴트 프리픽스가 적용되어야 함"""
+        renderer = MessageRenderer()
         chunk = "This is a simple response."
-        result = MessageRenderer.render_ai_response_chunk(chunk)
+        result = renderer.render_ai_response_chunk(chunk)
 
         expected = f"{MessageRenderer.INDENT_PREFIX}{chunk}"
         assert result == expected
 
     def test_render_ai_response_chunk_with_newline(self):
         """줄바꿈 포함 텍스트의 각 줄에 인덴트가 적용되어야 함"""
+        renderer = MessageRenderer()
         chunk = "Line 1\nLine 2\nLine 3"
-        result = MessageRenderer.render_ai_response_chunk(chunk)
+        result = renderer.render_ai_response_chunk(chunk)
 
         lines = result.split("\n")
         assert len(lines) == 3
@@ -119,8 +121,9 @@ class TestMessageRendererAIResponseChunk:
 
     def test_render_ai_response_chunk_with_empty_lines(self):
         """빈 줄은 인덴트 프리픽스가 제외되어야 함 (Warning #2 수정 검증)"""
+        renderer = MessageRenderer()
         chunk = "Line 1\n\nLine 3"
-        result = MessageRenderer.render_ai_response_chunk(chunk)
+        result = renderer.render_ai_response_chunk(chunk)
 
         lines = result.split("\n")
         assert len(lines) == 3
@@ -130,8 +133,9 @@ class TestMessageRendererAIResponseChunk:
 
     def test_render_ai_response_chunk_with_multiple_empty_lines(self):
         """여러 빈 줄이 연속으로 있을 때 처리 확인"""
+        renderer = MessageRenderer()
         chunk = "Line 1\n\n\nLine 4"
-        result = MessageRenderer.render_ai_response_chunk(chunk)
+        result = renderer.render_ai_response_chunk(chunk)
 
         lines = result.split("\n")
         assert len(lines) == 4
@@ -142,8 +146,9 @@ class TestMessageRendererAIResponseChunk:
 
     def test_render_ai_response_chunk_with_whitespace_only_line(self):
         """공백만 있는 줄은 빈 줄로 처리되어야 함"""
+        renderer = MessageRenderer()
         chunk = "Line 1\n   \nLine 3"
-        result = MessageRenderer.render_ai_response_chunk(chunk)
+        result = renderer.render_ai_response_chunk(chunk)
 
         lines = result.split("\n")
         assert len(lines) == 3
@@ -153,16 +158,18 @@ class TestMessageRendererAIResponseChunk:
 
     def test_render_ai_response_chunk_empty_string(self):
         """빈 문자열 처리 확인"""
+        renderer = MessageRenderer()
         chunk = ""
-        result = MessageRenderer.render_ai_response_chunk(chunk)
+        result = renderer.render_ai_response_chunk(chunk)
 
         # 빈 문자열은 인덴트 프리픽스만 반환
         assert result == f"{MessageRenderer.INDENT_PREFIX}"
 
     def test_render_ai_response_chunk_preserves_leading_spaces(self):
         """줄의 앞쪽 공백은 보존되어야 함 (코드 블록 등)"""
+        renderer = MessageRenderer()
         chunk = "def foo():\n    print('hello')"
-        result = MessageRenderer.render_ai_response_chunk(chunk)
+        result = renderer.render_ai_response_chunk(chunk)
 
         lines = result.split("\n")
         assert len(lines) == 2
@@ -305,6 +312,8 @@ class TestMessageRendererIntegration:
 
     def test_full_conversation_flow(self):
         """전체 대화 흐름 시뮬레이션"""
+        renderer = MessageRenderer()
+
         # 1. 사용자 메시지
         user_msg = MessageRenderer.render_user_message("Hello, AI!")
         assert isinstance(user_msg, Panel)
@@ -314,8 +323,8 @@ class TestMessageRendererIntegration:
         assert isinstance(ai_start, str)
 
         # 3. AI 응답 청크들
-        chunk1 = MessageRenderer.render_ai_response_chunk("Hello!")
-        chunk2 = MessageRenderer.render_ai_response_chunk("How can I help you?")
+        chunk1 = renderer.render_ai_response_chunk("Hello!")
+        chunk2 = renderer.render_ai_response_chunk("How can I help you?")
         assert MessageRenderer.INDENT_PREFIX in chunk1
         assert MessageRenderer.INDENT_PREFIX in chunk2
 
@@ -325,9 +334,11 @@ class TestMessageRendererIntegration:
 
     def test_streaming_response_with_code_block(self):
         """코드 블록을 포함한 스트리밍 응답 시뮬레이션 (Warning #1 수정 검증)"""
+        renderer = MessageRenderer()
+
         # 코드 블록 형태의 청크
         code_chunk = "Here's a Python example:\n\ndef hello():\n    print('world')\n\nThat's it!"
-        result = MessageRenderer.render_ai_response_chunk(code_chunk)
+        result = renderer.render_ai_response_chunk(code_chunk)
 
         lines = result.split("\n")
 
@@ -341,13 +352,14 @@ class TestMessageRendererIntegration:
 
     def test_consistent_indentation_across_chunks(self):
         """여러 청크에 걸쳐 일관된 인덴트 적용 확인 (Warning #1 수정 검증)"""
+        renderer = MessageRenderer()
         chunks = [
             "First line",
             "\nSecond line",
             "\n\nThird line after empty",
         ]
 
-        results = [MessageRenderer.render_ai_response_chunk(chunk) for chunk in chunks]
+        results = [renderer.render_ai_response_chunk(chunk) for chunk in chunks]
 
         # 각 청크의 결과 확인
         assert results[0] == f"{MessageRenderer.INDENT_PREFIX}First line"
@@ -399,3 +411,260 @@ class TestMessageRendererConstants:
         # "└" + "─" * n 형태여야 함
         assert MessageRenderer.SEPARATOR.startswith("└")
         assert "─" in MessageRenderer.SEPARATOR
+
+
+class TestMessageRendererTextWrapping:
+    """텍스트 자동 줄바꿈 기능 테스트"""
+
+    def test_wrap_text_stateful_code_block_across_chunks(self):
+        """스트리밍 청크 간 코드 블록 상태 유지 테스트 (최우선)"""
+        renderer = MessageRenderer()
+
+        # 첫 번째 청크: 코드 블록 시작
+        chunk1 = "```python\ndef foo():"
+        result1 = renderer._wrap_text_stateful(chunk1, max_width=80)
+        assert renderer.in_code_block is True
+        # 코드 블록 시작 라인과 코드 내용이 올바르게 처리됨
+        assert "```python" in result1
+        assert "def foo():" in result1
+
+        # 두 번째 청크: 코드 블록 내부
+        chunk2 = "    return 42"
+        result2 = renderer._wrap_text_stateful(chunk2, max_width=80)
+        assert renderer.in_code_block is True
+        # 코드 블록 내부는 줄바꿈 없이 인덴트 유지
+        assert "    return 42" in result2
+
+        # 세 번째 청크: 코드 블록 종료
+        chunk3 = "```"
+        result3 = renderer._wrap_text_stateful(chunk3, max_width=80)
+        assert renderer.in_code_block is False
+        assert "```" in result3
+
+    def test_wrap_text_stateful_multiple_code_blocks(self):
+        """여러 코드 블록 간 상태 전환 테스트"""
+        renderer = MessageRenderer()
+
+        # 첫 번째 코드 블록
+        chunk1 = "```python\nprint('hello')\n```"
+        result1 = renderer._wrap_text_stateful(chunk1, max_width=80)
+        assert renderer.in_code_block is False
+
+        # 일반 텍스트
+        chunk2 = "Some text"
+        result2 = renderer._wrap_text_stateful(chunk2, max_width=80)
+        assert renderer.in_code_block is False
+
+        # 두 번째 코드 블록 시작
+        chunk3 = "```javascript\nconst x = 1;"
+        result3 = renderer._wrap_text_stateful(chunk3, max_width=80)
+        assert renderer.in_code_block is True
+
+        # 두 번째 코드 블록 종료
+        chunk4 = "```"
+        result4 = renderer._wrap_text_stateful(chunk4, max_width=80)
+        assert renderer.in_code_block is False
+
+    def test_reset_state(self):
+        """reset_state() 호출 시 상태가 초기화되는지 검증"""
+        renderer = MessageRenderer()
+
+        # 코드 블록 상태로 변경
+        chunk = "```python\ndef foo():"
+        renderer._wrap_text_stateful(chunk, max_width=80)
+        assert renderer.in_code_block is True
+
+        # 상태 리셋
+        renderer.reset_state()
+        assert renderer.in_code_block is False
+
+    def test_long_text_wrapping(self):
+        """긴 텍스트가 올바르게 줄바꿈되는지 검증"""
+        renderer = MessageRenderer()
+
+        # 80자를 초과하는 긴 텍스트
+        long_text = "This is a very long line of text that should be wrapped because it exceeds the maximum width specified for the output area in the TUI application."
+        result = renderer._wrap_text_stateful(long_text, max_width=80)
+
+        lines = result.split("\n")
+        # 여러 줄로 분할되어야 함
+        assert len(lines) > 1
+
+        # 각 줄이 max_width를 초과하지 않아야 함
+        for line in lines:
+            assert len(line) <= 80
+
+    def test_long_text_wrapping_with_indent_prefix(self):
+        """인덴트 프리픽스가 각 줄에 추가되는지 확인"""
+        renderer = MessageRenderer()
+
+        # 긴 텍스트
+        long_text = "This is a very long line of text that should be wrapped and each wrapped line should have the indent prefix added."
+        result = renderer._wrap_text_stateful(long_text, max_width=50)
+
+        lines = result.split("\n")
+        # 모든 줄이 인덴트 프리픽스로 시작해야 함
+        for line in lines:
+            if line:  # 빈 줄이 아닌 경우
+                assert line.startswith(MessageRenderer.INDENT_PREFIX)
+
+    def test_wrap_text_empty_string(self):
+        """빈 문자열 처리"""
+        renderer = MessageRenderer()
+
+        result = renderer._wrap_text_stateful("", max_width=80)
+        # 빈 문자열은 빈 줄로 처리
+        assert result == ""
+
+    def test_wrap_text_max_width_none(self):
+        """max_width가 None인 경우 (정적 메서드 테스트)"""
+        text = "This is a long text that should not be wrapped when max_width is None."
+        result = MessageRenderer.wrap_text(text, max_width=None)
+
+        # 줄바꿈이 일어나지 않아야 함
+        assert result == text
+
+    def test_wrap_text_max_width_zero(self):
+        """max_width가 0인 경우"""
+        renderer = MessageRenderer()
+
+        text = "Some text"
+        result = renderer._wrap_text_stateful(text, max_width=0)
+
+        # max_width가 0이면 원본 반환
+        assert result == text
+
+    def test_wrap_text_max_width_very_small(self):
+        """max_width가 매우 작은 경우 (인덴트 프리픽스보다 작음)"""
+        renderer = MessageRenderer()
+
+        text = "Short text"
+        # INDENT_PREFIX는 "│ " (2자)이므로 max_width=5면 effective_width=3
+        result = renderer._wrap_text_stateful(text, max_width=5)
+
+        # 에러 없이 처리되어야 함
+        assert result is not None
+        # 인덴트 프리픽스가 포함되어야 함
+        assert MessageRenderer.INDENT_PREFIX in result
+
+    def test_wrap_text_preserves_newlines(self):
+        """텍스트 내의 기존 줄바꿈이 보존되는지 확인"""
+        renderer = MessageRenderer()
+
+        text = "Line 1\nLine 2\nLine 3"
+        result = renderer._wrap_text_stateful(text, max_width=80)
+
+        lines = result.split("\n")
+        assert len(lines) == 3
+        # 각 줄이 인덴트되어야 함
+        assert lines[0].strip().endswith("Line 1")
+        assert lines[1].strip().endswith("Line 2")
+        assert lines[2].strip().endswith("Line 3")
+
+    def test_wrap_text_code_block_no_wrapping(self):
+        """코드 블록 내부는 줄바꿈되지 않는지 확인"""
+        renderer = MessageRenderer()
+
+        # 매우 긴 코드 라인
+        long_code = "```python\nthis_is_a_very_long_line_of_code_that_would_normally_be_wrapped_but_should_not_be_wrapped_inside_code_blocks = 42\n```"
+        result = renderer._wrap_text_stateful(long_code, max_width=50)
+
+        # 코드 블록 상태가 올바르게 종료되었는지 확인
+        assert renderer.in_code_block is False
+
+        # 긴 코드 라인이 그대로 유지되어야 함
+        assert "this_is_a_very_long_line_of_code" in result
+
+    def test_render_ai_response_chunk_with_max_width(self):
+        """render_ai_response_chunk()에서 max_width 사용 테스트"""
+        renderer = MessageRenderer()
+
+        # 긴 텍스트
+        long_text = "This is a very long response from the AI that should be wrapped automatically when max_width is specified."
+        result = renderer.render_ai_response_chunk(long_text, max_width=50)
+
+        lines = result.split("\n")
+        # 여러 줄로 분할되어야 함
+        assert len(lines) > 1
+
+        # 각 줄이 max_width를 초과하지 않아야 함
+        for line in lines:
+            assert len(line) <= 50
+
+    def test_render_ai_response_chunk_code_block_streaming(self):
+        """코드 블록 스트리밍 시나리오 테스트"""
+        renderer = MessageRenderer()
+
+        # 스트리밍 청크 1: 코드 블록 시작
+        chunk1 = "Here is some code:\n```python"
+        result1 = renderer.render_ai_response_chunk(chunk1, max_width=80)
+        assert renderer.in_code_block is True
+
+        # 스트리밍 청크 2: 코드 내용
+        chunk2 = "\ndef calculate_sum(a, b):"
+        result2 = renderer.render_ai_response_chunk(chunk2, max_width=80)
+        assert renderer.in_code_block is True
+
+        # 스트리밍 청크 3: 코드 계속
+        chunk3 = "\n    return a + b"
+        result3 = renderer.render_ai_response_chunk(chunk3, max_width=80)
+        assert renderer.in_code_block is True
+
+        # 스트리밍 청크 4: 코드 블록 종료
+        chunk4 = "\n```"
+        result4 = renderer.render_ai_response_chunk(chunk4, max_width=80)
+        assert renderer.in_code_block is False
+
+        # 스트리밍 청크 5: 일반 텍스트
+        chunk5 = "\nThat's the function!"
+        result5 = renderer.render_ai_response_chunk(chunk5, max_width=80)
+        assert renderer.in_code_block is False
+
+    def test_static_wrap_text_with_indent_prefix(self):
+        """정적 wrap_text 메서드의 indent_prefix 기능 테스트"""
+        text = "This is a long line that needs to be wrapped with a custom indent prefix."
+        custom_prefix = "  > "
+        result = MessageRenderer.wrap_text(text, max_width=40, indent_prefix=custom_prefix)
+
+        lines = result.split("\n")
+        # 모든 줄이 custom_prefix로 시작해야 함
+        for line in lines:
+            if line:
+                assert line.startswith(custom_prefix)
+
+    def test_static_wrap_text_code_block_detection(self):
+        """정적 wrap_text 메서드의 코드 블록 감지 테스트"""
+        text = "Normal text\n```python\nlong_code_line_that_should_not_wrap = 12345678901234567890\n```\nMore text"
+        result = MessageRenderer.wrap_text(text, max_width=40, indent_prefix="")
+
+        # 코드 블록 내용이 줄바꿈되지 않아야 함
+        assert "long_code_line_that_should_not_wrap" in result
+
+
+class TestMessageRendererRichMarkup:
+    """Rich 마크업 보존 테스트"""
+
+    def test_wrap_text_preserves_rich_markup(self):
+        """Rich 마크업이 포함된 텍스트 처리 테스트"""
+        renderer = MessageRenderer()
+
+        # Rich 마크업 포함 텍스트
+        text = "[bold]This is bold text[/bold] and [green]this is green[/green]."
+        result = renderer._wrap_text_stateful(text, max_width=80)
+
+        # 마크업이 보존되어야 함
+        assert "[bold]" in result
+        assert "[/bold]" in result
+        assert "[green]" in result
+        assert "[/green]" in result
+
+    def test_render_ai_response_chunk_preserves_markup(self):
+        """render_ai_response_chunk()가 Rich 마크업을 보존하는지 확인"""
+        renderer = MessageRenderer()
+
+        chunk = "[bold cyan]Important:[/bold cyan] This is a message."
+        result = renderer.render_ai_response_chunk(chunk, max_width=None)
+
+        # 마크업이 보존되어야 함
+        assert "[bold cyan]" in result
+        assert "[/bold cyan]" in result
