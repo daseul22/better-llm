@@ -14,6 +14,7 @@ from .session import (
     SessionDetail
 )
 from .task import Task, TaskResult, TaskStatus
+from .parallel_task import ParallelTask, TaskExecutionPlan, TaskExecutionResult
 from .circuit_breaker import CircuitState, CircuitBreakerState
 from .metrics import WorkerMetrics, SessionMetrics
 from .template import (
@@ -47,6 +48,9 @@ __all__ = [
     "Task",
     "TaskResult",
     "TaskStatus",
+    "ParallelTask",
+    "TaskExecutionPlan",
+    "TaskExecutionResult",
     "CircuitState",
     "CircuitBreakerState",
     "WorkerMetrics",

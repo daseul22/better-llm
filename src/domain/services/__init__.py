@@ -9,6 +9,7 @@ from .context import ProjectContext, CodingStyle
 from .context_analyzer import ProjectContextAnalyzer
 from .metrics_collector import MetricsCollector
 from .metrics_reporter import MetricsReporter
+from .parallel_executor import ParallelTaskExecutor
 
 __all__ = [
     "ConversationHistory",
@@ -17,4 +18,5 @@ __all__ = [
     "ProjectContextAnalyzer",
     "MetricsCollector",
     "MetricsReporter",
+    "ParallelTaskExecutor",
 ]
