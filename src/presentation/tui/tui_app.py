@@ -10,14 +10,15 @@ import time
 import logging
 import os
 from pathlib import Path
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Tuple, Union, Dict
 from enum import Enum
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, ScrollableContainer, Horizontal
-from textual.widgets import Footer, Input, Static, RichLog, Header
+from textual.widgets import Footer, Input, Static, RichLog, Header, TabbedContent, TabPane
 from textual.binding import Binding
 from textual import events
+from textual.css.query import NoMatches
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
@@ -42,6 +43,7 @@ from src.infrastructure.config import (
     JsonConfigLoader,
 )
 from src.infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
+from src.infrastructure.logging import get_logger, log_exception_silently
 from ..cli.utils import (
     generate_session_id,
     save_session_history,
@@ -69,7 +71,35 @@ from .utils import (
     MessageRenderer,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, component="TUI")
+
+
+class WorkerTabPane(TabPane):
+    """
+    Worker 출력을 담는 커스텀 TabPane
+
+    Textual의 공식 API를 사용하여 TabPane에 위젯을 추가합니다.
+    Private API (_add_child)를 사용하지 않고 compose() 메서드를 오버라이드합니다.
+
+    탭 제목 업데이트가 필요한 경우 TabPane.label을 직접 수정하는 대신
+    탭을 재생성하는 방식을 사용합니다 (Textual 공식 권장 방식).
+    """
+
+    def __init__(self, title: str, worker_log: RichLog, **kwargs):
+        """
+        WorkerTabPane 초기화
+
+        Args:
+            title: 탭 제목
+            worker_log: Worker 출력을 표시할 RichLog 위젯
+            **kwargs: TabPane의 추가 인자 (id 등)
+        """
+        super().__init__(title, **kwargs)
+        self._worker_log = worker_log
+
+    def compose(self) -> ComposeResult:
+        """TabPane에 표시할 위젯 구성"""
+        yield self._worker_log
 
 
 class SessionData:
@@ -123,7 +153,7 @@ class OrchestratorTUI(App):
         scrollbar-gutter: stable;
     }
 
-    /* Worker 출력 영역 */
+    /* Worker 출력 영역 (TabbedContent) */
     #worker-output-container {
         border: tall #21262d;
         background: #0d1117;
@@ -132,11 +162,54 @@ class OrchestratorTUI(App):
         padding: 0;
     }
 
-    #worker-output-log {
+    TabbedContent {
+        background: #0d1117;
+        height: 1fr;
+    }
+
+    TabbedContent > ContentSwitcher {
+        background: #0d1117;
+        height: 1fr;
+    }
+
+    TabPane {
+        background: #0d1117;
+        height: 1fr;
+        padding: 1;
+    }
+
+    TabPane > RichLog {
         height: 1fr;
         background: #0d1117;
         padding: 1;
         scrollbar-gutter: stable;
+        max-lines: 1000;
+    }
+
+    TabPane > Static {
+        height: 1fr;
+        background: #0d1117;
+        padding: 1;
+        content-align: center middle;
+    }
+
+    Tabs {
+        background: #0d1117;
+        border-bottom: tall #21262d;
+    }
+
+    Tab {
+        background: #0d1117;
+        color: #8b949e;
+    }
+
+    Tab.-active {
+        background: #1c2128;
+        color: #58a6ff;
+    }
+
+    Tab:hover {
+        background: #1c2128;
     }
 
     /* Worker 상태 표시 */
@@ -345,6 +418,10 @@ class OrchestratorTUI(App):
         # 출력 전환
         Binding("ctrl+o", "toggle_output_mode", "출력 전환"),
 
+        # 워커 탭 전환
+        Binding("ctrl+tab", "next_worker_tab", "다음 워커", show=False),
+        Binding("ctrl+shift+tab", "prev_worker_tab", "이전 워커", show=False),
+
         # 세션 전환
         Binding("ctrl+1", "switch_to_session_1", "세션 1"),
         Binding("ctrl+2", "switch_to_session_2", "세션 2"),
@@ -389,7 +466,8 @@ class OrchestratorTUI(App):
 
         # 출력 모드 ("manager" 또는 "worker")
         self.output_mode: str = "manager"
-        self.current_worker_name: Optional[str] = None  # 현재 실행 중인 Worker 이름
+        self.active_workers: Dict[str, RichLog] = {}  # Worker 이름 -> RichLog 매핑
+        self.current_worker_tab: Optional[str] = None  # 현재 선택된 워커 탭
 
         # MessageRenderer 인스턴스 (상태 유지용)
         self.message_renderer = MessageRenderer()
@@ -430,9 +508,15 @@ class OrchestratorTUI(App):
         with ScrollableContainer(id="output-container"):
             yield RichLog(id="output-log", markup=True, highlight=True, wrap=True)
 
-        # Worker 출력 영역 (기본 숨김)
-        with ScrollableContainer(id="worker-output-container", classes="hidden"):
-            yield RichLog(id="worker-output-log", markup=True, highlight=True, wrap=True)
+        # Worker 출력 영역 (TabbedContent 기반, 기본 숨김)
+        with Container(id="worker-output-container", classes="hidden"):
+            with TabbedContent(id="worker-tabs"):
+                # 기본 상태: "No active workers" 탭 표시
+                with TabPane("No active workers", id="no-workers-tab"):
+                    yield Static(
+                        "[dim]실행 중인 Worker가 없습니다[/dim]",
+                        id="no-workers-message"
+                    )
 
         # Worker 상태 표시
         with Container(id="worker-status-container"):
@@ -1172,11 +1256,24 @@ class OrchestratorTUI(App):
         워크플로우 상태 업데이트 콜백
 
         Worker Tool 실행 시 호출되어 워크플로우 비주얼라이저를 업데이트합니다.
+        워커 스레드에서 호출될 수 있으므로 UI 업데이트는 call_from_thread()를 통해 메인 스레드로 위임합니다.
 
         Args:
             worker_name: Worker 이름 (예: "planner", "coder")
             status: 상태 ("running", "completed", "failed")
             error: 에러 메시지 (실패 시)
+        """
+        # UI 업데이트는 메인 스레드에서 실행되어야 하므로 call_from_thread 사용
+        self.call_from_thread(self._update_workflow_ui, worker_name, status, error)
+
+    def _update_workflow_ui(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
+        """
+        워크플로우 UI 업데이트 (메인 스레드에서 실행)
+
+        Args:
+            worker_name: Worker 이름
+            status: 상태
+            error: 에러 메시지
         """
         try:
             workflow_visualizer = self.query_one("#workflow-visualizer", WorkflowVisualizer)
@@ -1197,43 +1294,165 @@ class OrchestratorTUI(App):
                 error_message=error
             )
 
-            # Worker 실행 시작 시 현재 Worker 이름 저장
+            # Worker 실행 시작 시 새 탭 생성 및 등록
             if status == "running":
-                self.current_worker_name = worker_name
-                # Worker 출력 화면 초기화
-                try:
-                    worker_output_log = self.query_one("#worker-output-log", RichLog)
-                    worker_output_log.clear()
-                    # 헤더 추가
-                    worker_output_log.write(Panel(
-                        f"[bold cyan]🤖 {worker_name.capitalize()} Worker[/bold cyan]",
-                        border_style="cyan"
-                    ))
-                    worker_output_log.write("")
-                except Exception:
-                    pass
+                self._create_worker_tab(worker_name)
+                self.current_worker_tab = worker_name
 
-            # Worker 실행 완료/실패 시 현재 Worker 이름 초기화
+            # Worker 실행 완료/실패 시 탭 업데이트 (히스토리 보존)
             elif status in ["completed", "failed"]:
-                self.current_worker_name = None
+                self._update_worker_tab_status(worker_name, status)
 
         except Exception as e:
             logger.warning(f"워크플로우 업데이트 실패: {e}")
+
+    def _create_worker_tab(self, worker_name: str) -> None:
+        """
+        Worker 탭 생성 (UI 스레드에서 호출)
+
+        Args:
+            worker_name: Worker 이름
+        """
+        try:
+            worker_tabs = self.query_one("#worker-tabs", TabbedContent)
+
+            # "No active workers" 탭 제거
+            try:
+                no_workers_tab = self.query_one("#no-workers-tab")
+                if no_workers_tab:
+                    worker_tabs.remove_pane("no-workers-tab")
+            except NoMatches:
+                # 탭이 이미 제거되었거나 존재하지 않음
+                logger.debug("No workers tab not found, already removed")
+            except Exception as e:
+                logger.warning(f"Failed to remove no-workers tab: {e}")
+
+            # 이미 해당 Worker의 탭이 존재하는지 확인
+            tab_id = f"worker-tab-{worker_name}"
+            if worker_name in self.active_workers:
+                # 기존 탭의 RichLog 초기화
+                worker_log = self.active_workers[worker_name]
+                worker_log.clear()
+                # 헤더 추가
+                worker_log.write(Panel(
+                    f"[bold cyan]🤖 {worker_name.capitalize()} Worker[/bold cyan]",
+                    border_style="cyan"
+                ))
+                worker_log.write("")
+                # 해당 탭으로 전환
+                worker_tabs.active = tab_id
+            else:
+                # 새 탭 생성
+                # RichLog 생성
+                worker_log = RichLog(
+                    id=f"worker-log-{worker_name}",
+                    markup=True,
+                    highlight=True,
+                    wrap=True,
+                    max_lines=1000
+                )
+                # 헤더 추가
+                worker_log.write(Panel(
+                    f"[bold cyan]🤖 {worker_name.capitalize()} Worker[/bold cyan]",
+                    border_style="cyan"
+                ))
+                worker_log.write("")
+
+                # WorkerTabPane을 사용하여 탭 생성 (공식 API 사용)
+                tab_pane = WorkerTabPane(
+                    f"{worker_name.capitalize()} ⏳",
+                    worker_log,
+                    id=tab_id
+                )
+
+                # TabbedContent에 탭 추가
+                worker_tabs.add_pane(tab_pane)
+
+                # active_workers에 등록
+                self.active_workers[worker_name] = worker_log
+
+                # 새로 생성한 탭으로 전환
+                worker_tabs.active = tab_id
+
+        except Exception as e:
+            logger.warning(f"Worker 탭 생성 실패: {e}")
+
+    def _update_worker_tab_status(self, worker_name: str, status: str) -> None:
+        """
+        Worker 탭 상태 업데이트 (탭 재생성 방식)
+
+        TabPane.label을 직접 수정하는 것은 Textual 공식 API가 아니므로,
+        탭을 제거하고 새로운 제목으로 재생성합니다.
+
+        Args:
+            worker_name: Worker 이름
+            status: 상태 ("completed", "failed")
+        """
+        try:
+            worker_tabs = self.query_one("#worker-tabs", TabbedContent)
+            tab_id = f"worker-tab-{worker_name}"
+
+            # 기존 탭의 RichLog 참조 저장
+            worker_log = self.active_workers.get(worker_name)
+            if not worker_log:
+                logger.warning(f"Worker log not found for {worker_name}")
+                return
+
+            # 상태 아이콘 설정
+            if status == "completed":
+                icon = "✓"
+            elif status == "failed":
+                icon = "✗"
+            else:
+                icon = "⏳"
+
+            new_title = f"{worker_name.capitalize()} {icon}"
+
+            # 탭 제거 후 재생성
+            try:
+                worker_tabs.remove_pane(tab_id)
+            except NoMatches:
+                logger.debug(f"Tab {tab_id} not found, skipping removal")
+
+            # 새 탭 생성 및 추가
+            new_tab = WorkerTabPane(new_title, worker_log, id=tab_id)
+            worker_tabs.add_pane(new_tab)
+
+        except NoMatches:
+            logger.debug(f"Worker tabs container not found for {worker_name}")
+        except Exception as e:
+            logger.warning(f"Worker 탭 상태 업데이트 실패: {e}")
 
     def on_worker_output(self, worker_name: str, chunk: str) -> None:
         """
         Worker 출력 스트리밍 콜백
 
         Worker Tool 실행 중 실시간으로 출력을 받아서 Worker 출력 화면에 표시합니다.
+        워커 스레드에서 호출될 수 있으므로 UI 업데이트는 call_from_thread()를 통해 메인 스레드로 위임합니다.
 
         Args:
             worker_name: Worker 이름 (예: "planner", "coder")
             chunk: 출력 청크
         """
+        # UI 업데이트는 메인 스레드에서 실행되어야 하므로 call_from_thread 사용
+        self.call_from_thread(self._write_worker_output, worker_name, chunk)
+
+    def _write_worker_output(self, worker_name: str, chunk: str) -> None:
+        """
+        Worker 출력을 UI에 작성 (메인 스레드에서 실행)
+
+        Args:
+            worker_name: Worker 이름
+            chunk: 출력 청크
+        """
         try:
-            worker_output_log = self.query_one("#worker-output-log", RichLog)
-            # 실시간으로 청크 출력
-            worker_output_log.write(chunk)
+            # active_workers에서 해당 Worker의 RichLog 조회
+            if worker_name in self.active_workers:
+                worker_log = self.active_workers[worker_name]
+                # 실시간으로 청크 출력
+                worker_log.write(chunk)
+            else:
+                logger.warning(f"Worker '{worker_name}'의 탭을 찾을 수 없습니다")
 
         except Exception as e:
             logger.warning(f"Worker 출력 표시 실패: {e}")
@@ -1667,13 +1886,22 @@ class OrchestratorTUI(App):
             # 출력 모드 토글
             if self.output_mode == "manager":
                 # Worker 출력으로 전환
-                if self.current_worker_name:
+                if self.active_workers:
                     self.output_mode = "worker"
+                    # 첫 번째 워커 탭으로 이동
+                    first_worker = list(self.active_workers.keys())[0]
+                    self.current_worker_tab = first_worker
+                    try:
+                        worker_tabs = self.query_one("#worker-tabs", TabbedContent)
+                        worker_tabs.active = f"worker-tab-{first_worker}"
+                    except Exception:
+                        pass
                     self.apply_output_mode()
                     # 알림 표시
                     if self.settings.enable_notifications:
+                        worker_count = len(self.active_workers)
                         self.notify(
-                            f"출력 모드: Worker ({self.current_worker_name.capitalize()})",
+                            f"출력 모드: Worker ({worker_count}개 활성)",
                             severity="information"
                         )
                 else:
@@ -1700,7 +1928,7 @@ class OrchestratorTUI(App):
         """
         try:
             output_container = self.query_one("#output-container", ScrollableContainer)
-            worker_output_container = self.query_one("#worker-output-container", ScrollableContainer)
+            worker_output_container = self.query_one("#worker-output-container", Container)
 
             if self.output_mode == "manager":
                 # Manager 출력 표시, Worker 출력 숨김
@@ -2025,6 +2253,76 @@ class OrchestratorTUI(App):
     async def action_show_error_stats(self) -> None:
         """F6 키: 에러 통계 표시"""
         self._display_error_statistics()
+
+    async def action_next_worker_tab(self) -> None:
+        """Ctrl+Tab: 다음 워커 탭으로 전환"""
+        try:
+            # Worker 모드가 아니거나 활성 워커가 없으면 무시
+            if self.output_mode != "worker" or not self.active_workers:
+                return
+
+            # 현재 워커 탭 인덱스 찾기
+            worker_names = list(self.active_workers.keys())
+            if not worker_names:
+                return
+
+            if self.current_worker_tab and self.current_worker_tab in worker_names:
+                current_index = worker_names.index(self.current_worker_tab)
+                next_index = (current_index + 1) % len(worker_names)
+            else:
+                next_index = 0
+
+            # 다음 워커 탭으로 전환
+            next_worker = worker_names[next_index]
+            self.current_worker_tab = next_worker
+
+            worker_tabs = self.query_one("#worker-tabs", TabbedContent)
+            worker_tabs.active = f"worker-tab-{next_worker}"
+
+            # 알림 표시
+            if self.settings.enable_notifications:
+                self.notify(
+                    f"Worker 탭: {next_worker.capitalize()}",
+                    severity="information"
+                )
+
+        except Exception as e:
+            logger.error(f"다음 워커 탭 전환 실패: {e}")
+
+    async def action_prev_worker_tab(self) -> None:
+        """Ctrl+Shift+Tab: 이전 워커 탭으로 전환"""
+        try:
+            # Worker 모드가 아니거나 활성 워커가 없으면 무시
+            if self.output_mode != "worker" or not self.active_workers:
+                return
+
+            # 현재 워커 탭 인덱스 찾기
+            worker_names = list(self.active_workers.keys())
+            if not worker_names:
+                return
+
+            if self.current_worker_tab and self.current_worker_tab in worker_names:
+                current_index = worker_names.index(self.current_worker_tab)
+                prev_index = (current_index - 1) % len(worker_names)
+            else:
+                prev_index = 0
+
+            # 이전 워커 탭으로 전환
+            prev_worker = worker_names[prev_index]
+            self.current_worker_tab = prev_worker
+
+            worker_tabs = self.query_one("#worker-tabs", TabbedContent)
+            worker_tabs.active = f"worker-tab-{prev_worker}"
+
+            # 알림 표시
+            if self.settings.enable_notifications:
+                self.notify(
+                    f"Worker 탭: {prev_worker.capitalize()}",
+                    severity="information"
+                )
+
+        except Exception as e:
+            logger.error(f"이전 워커 탭 전환 실패: {e}")
 
     async def action_switch_to_session_1(self) -> None:
         """Ctrl+1: 세션 1로 전환"""

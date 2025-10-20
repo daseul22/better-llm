@@ -21,7 +21,7 @@ from ..claude import WorkerAgent
 from ...domain.models import AgentConfig
 from ...domain.services import MetricsCollector
 from ..config import JsonConfigLoader, get_project_root
-from ..logging import get_logger
+from ..logging import get_logger, log_exception_silently
 
 logger = get_logger(__name__, component="WorkerTools")
 
@@ -746,10 +746,14 @@ async def _execute_worker_task(
     except Exception as e:
         _ERROR_STATS[worker_name]["failures"] += 1
         error_message = str(e)
-        worker_logger.error(
-            "Task execution failed",
-            error=str(e),
-            exc_info=True
+
+        # 런타임 에러를 조용히 로그에 기록 (프로그램 종료하지 않음)
+        log_exception_silently(
+            worker_logger,
+            e,
+            f"Worker Tool ({worker_name}) execution failed",
+            worker_name=worker_name,
+            task_description=task_description[:100]
         )
 
         # 워크플로우 콜백: FAILED 상태
@@ -766,7 +770,7 @@ async def _execute_worker_task(
                     "text": (
                         f"❌ {worker_name.capitalize()} 실행 실패\n\n"
                         f"에러: {e}\n\n"
-                        f"스택 트레이스는 로그를 확인하세요."
+                        f"스택 트레이스는 에러 로그 (~/.better-llm/{{project}}/logs/better-llm-error.log)를 확인하세요."
                     )
                 }
             ]

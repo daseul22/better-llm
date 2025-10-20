@@ -156,3 +156,36 @@ def get_logger(name: str, **context: JSONSerializable) -> structlog.stdlib.Bound
     if context:
         logger = logger.bind(**context)
     return logger
+
+
+def log_exception_silently(
+    logger: structlog.stdlib.BoundLogger,
+    exception: Exception,
+    message: str = "Runtime error occurred",
+    **extra_context: JSONSerializable
+) -> None:
+    """
+    예외를 조용히 로그에 기록합니다 (프로그램 종료하지 않음).
+
+    Args:
+        logger: structlog 로거 인스턴스
+        exception: 발생한 예외
+        message: 에러 메시지
+        **extra_context: 추가 컨텍스트 정보
+
+    Example:
+        >>> try:
+        ...     risky_operation()
+        ... except Exception as e:
+        ...     log_exception_silently(logger, e, "Operation failed", operation="risky_op")
+    """
+    import traceback
+
+    logger.error(
+        message,
+        error_type=type(exception).__name__,
+        error_message=str(exception),
+        traceback=traceback.format_exc(),
+        **extra_context,
+        exc_info=True  # 스택 트레이스 포함
+    )

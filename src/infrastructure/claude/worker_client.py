@@ -16,8 +16,9 @@ from ...domain.models import AgentConfig
 from ...domain.services import ProjectContext
 from ..config import get_claude_cli_path, get_project_root
 from ..storage import JsonContextRepository
+from ..logging import get_logger, log_exception_silently
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class WorkerAgent:
@@ -177,8 +178,17 @@ class WorkerAgent:
             logger.debug(f"[{self.config.name}] Claude Agent SDK 실행 완료")
 
         except Exception as e:
-            logger.error(f"❌ [{self.config.name}] 작업 실행 실패: {e}")
-            raise
+            # 런타임 에러를 조용히 로그에 기록 (프로그램 종료하지 않음)
+            log_exception_silently(
+                logger,
+                e,
+                f"Worker Agent ({self.config.name}) execution failed",
+                worker_name=self.config.name,
+                worker_role=self.config.role,
+                model=self.config.model
+            )
+            # 예외를 재발생시키지 않고 에러 메시지 반환
+            yield f"\n[시스템 오류] {self.config.name} Worker 실행 중 오류가 발생했습니다. 에러 로그를 확인해주세요."
 
     def __repr__(self) -> str:
         return f"WorkerAgent(name={self.config.name}, role={self.config.role})"

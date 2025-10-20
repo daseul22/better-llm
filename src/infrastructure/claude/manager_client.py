@@ -13,7 +13,7 @@ from claude_agent_sdk.types import ClaudeAgentOptions
 
 from ...domain.models import Message
 from ..config import get_claude_cli_path
-from ..logging import get_logger
+from ..logging import get_logger, log_exception_silently
 
 logger = get_logger(__name__)
 
@@ -332,12 +332,16 @@ class ManagerAgent:
             raise
 
         except Exception as e:
-            self.logger.error(
-                "SDK call failed",
-                error=str(e),
-                exc_info=True
+            # 런타임 에러를 조용히 로그에 기록 (프로그램 종료하지 않음)
+            log_exception_silently(
+                self.logger,
+                e,
+                "Manager Agent SDK call failed",
+                session_id=self.session_id,
+                model=self.model
             )
-            raise
+            # 예외를 재발생시키지 않고 빈 응답 반환
+            yield f"\n[시스템 오류] Manager Agent 실행 중 오류가 발생했습니다. 에러 로그를 확인해주세요."
 
         finally:
             # 리소스 정리 (try-finally 보장)
