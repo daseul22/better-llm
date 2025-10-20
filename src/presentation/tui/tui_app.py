@@ -65,6 +65,21 @@ from .utils import InputHistory, LogExporter, AutocompleteEngine, TUIConfig, TUI
 logger = logging.getLogger(__name__)
 
 
+class SessionData:
+    """세션별 데이터 저장 클래스"""
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.history: Optional[ConversationHistory] = ConversationHistory()
+        self.log_lines: List[str] = []
+        self.start_time = time.time()
+        self.metrics_repository = InMemoryMetricsRepository()
+        self.metrics_collector = MetricsCollector(self.metrics_repository)
+
+    def __repr__(self) -> str:
+        return f"SessionData(id={self.session_id})"
+
+
 class LayoutMode(Enum):
     """레이아웃 모드 정의"""
     LARGE = "Large"  # width >= 120, height >= 30 (모든 패널 표시)
@@ -239,12 +254,18 @@ class OrchestratorTUI(App):
 
     #session-info {
         text-align: left;
+        width: 2fr;
+    }
+
+    #token-info {
+        text-align: center;
         width: 1fr;
+        color: #58a6ff;
     }
 
     #status-info {
         text-align: right;
-        width: 1fr;
+        width: 2fr;
     }
 
     /* Footer 스타일 */
@@ -307,35 +328,43 @@ class OrchestratorTUI(App):
         # Worker 상태
         Binding("f5", "toggle_worker_status", "Worker 상태", show=False),
 
+        # 에러 통계
+        Binding("f6", "show_error_stats", "에러 통계", show=False),
+
         # 히스토리
         Binding("up", "history_up", "이전 입력", show=False),
         Binding("down", "history_down", "다음 입력", show=False),
 
         # 출력 전환
         Binding("ctrl+o", "toggle_output_mode", "출력 전환"),
+
+        # 세션 전환
+        Binding("ctrl+1", "switch_to_session_1", "세션 1"),
+        Binding("ctrl+2", "switch_to_session_2", "세션 2"),
+        Binding("ctrl+3", "switch_to_session_3", "세션 3"),
     ]
 
     def __init__(self):
         super().__init__()
-        self.session_id = generate_session_id()
+        # 멀티 세션 관리
+        initial_session_id = generate_session_id()
+        self.sessions: List[SessionData] = [
+            SessionData(initial_session_id)
+        ]
+        self.active_session_index: int = 0  # 현재 활성 세션 인덱스 (0, 1, 2)
+
+        # 현재 세션 참조 (편의를 위한 프로퍼티)
         self.manager: Optional[ManagerAgent] = None
-        self.history: Optional[ConversationHistory] = None
         self.initialized = False
-        self.start_time = time.time()
         self.current_task = None  # 현재 실행 중인 asyncio Task
         self.task_start_time = None  # 작업 시작 시간
         self.timer_active = False  # 타이머 활성화 여부
         self.ctrl_c_count = 0  # Ctrl+C 누른 횟수
         self.last_ctrl_c_time = 0  # 마지막 Ctrl+C 누른 시간
 
-        # 메트릭 수집
-        self.metrics_repository = InMemoryMetricsRepository()
-        self.metrics_collector = MetricsCollector(self.metrics_repository)
-
         # 새로운 기능 - Phase 1~4
         self.input_history = InputHistory(max_size=100)  # 히스토리 네비게이션
         self.settings = TUIConfig.load()  # 설정 로드
-        self.log_lines: List[str] = []  # 로그 버퍼 (검색 및 저장용)
         self.search_query: Optional[str] = None  # 현재 검색어
         self.show_metrics_panel: bool = self.settings.show_metrics_panel  # 메트릭 패널 표시 여부
         self.show_workflow_panel: bool = self.settings.show_workflow_panel  # 워크플로우 패널 표시 여부
@@ -354,6 +383,36 @@ class OrchestratorTUI(App):
         # 출력 모드 ("manager" 또는 "worker")
         self.output_mode: str = "manager"
         self.current_worker_name: Optional[str] = None  # 현재 실행 중인 Worker 이름
+
+    @property
+    def current_session(self) -> SessionData:
+        """현재 활성 세션 데이터 반환"""
+        return self.sessions[self.active_session_index]
+
+    @property
+    def session_id(self) -> str:
+        """현재 세션 ID 반환"""
+        return self.current_session.session_id
+
+    @property
+    def history(self) -> ConversationHistory:
+        """현재 세션 히스토리 반환"""
+        return self.current_session.history
+
+    @property
+    def log_lines(self) -> List[str]:
+        """현재 세션 로그 라인 반환"""
+        return self.current_session.log_lines
+
+    @property
+    def metrics_collector(self) -> MetricsCollector:
+        """현재 세션 메트릭 수집기 반환"""
+        return self.current_session.metrics_collector
+
+    @property
+    def start_time(self) -> float:
+        """현재 세션 시작 시간 반환"""
+        return self.current_session.start_time
 
     def compose(self) -> ComposeResult:
         """UI 구성"""
@@ -387,6 +446,7 @@ class OrchestratorTUI(App):
         # 하단 정보바
         with Horizontal(id="info-bar"):
             yield Static(f"Session: {self.session_id}", id="session-info")
+            yield Static("Tokens: 0K", id="token-info")
             yield Static("Ready", id="status-info")
 
         yield Footer()
@@ -398,6 +458,8 @@ class OrchestratorTUI(App):
         self.set_interval(0.5, self.update_worker_status_timer)
         # 타이머: 1초마다 메트릭 대시보드 업데이트
         self.set_interval(1.0, self.update_metrics_panel)
+        # 타이머: 1초마다 토큰 사용량 업데이트
+        self.set_interval(1.0, self.update_token_info)
         # 메트릭 패널 초기 상태 적용
         self.apply_metrics_panel_visibility()
         # 워크플로우 패널 초기 상태 적용
@@ -420,27 +482,13 @@ class OrchestratorTUI(App):
             worker_status.update("⏳ 초기화 중...")
             status_info.update("Initializing...")
 
-            # Welcome 메시지
-            self.write_log("")
-            self.write_log(Panel(
-                "[bold]AI Orchestration System[/bold]\n\n"
-                "[dim]Manager Agent + Worker Tools Architecture[/dim]",
-                border_style="blue"
-            ))
-            self.write_log("")
-
-            # 환경 검증 (개선된 메시지)
+            # 환경 검증
             validate_environment()
             work_dir = os.getcwd()
-            # Warning 2: API 키 검증 강화 (빈 문자열 및 길이 검증)
             api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
             api_key_status = "설정됨" if (api_key and len(api_key) > 10) else "미설정"
-            self.write_log(
-                f"✅ [green]환경 검증 완료[/green] "
-                f"[dim](작업 디렉토리: {work_dir}, API 키: {api_key_status})[/dim]"
-            )
 
-            # Worker Agent들 초기화 (프로젝트 루트 기준)
+            # Worker Agent들 초기화
             config_path = get_project_root() / "config" / "agent_config.json"
             initialize_workers(config_path)
 
@@ -448,90 +496,42 @@ class OrchestratorTUI(App):
             config_loader = JsonConfigLoader(get_project_root())
             agents = config_loader.load_agent_configs()
 
-            # Critical 이슈 1: Worker가 0개인 경우 명시적으로 예외 발생
             if not agents:
                 raise ValueError(
                     "agent_config.json에 Worker Agent가 정의되지 않았습니다. "
                     "config/agent_config.json 파일을 확인해주세요."
                 )
 
-            worker_names = [agent["name"].capitalize() for agent in agents]
+            worker_names = [agent.name.capitalize() for agent in agents]
             worker_count = len(worker_names)
             worker_list = ", ".join(worker_names)
 
-            self.write_log(
-                f"✅ [green]Worker Agents 로드됨[/green] "
-                f"[dim]({worker_count}개: {worker_list})[/dim]"
-            )
-
-            # Worker Tools MCP Server 생성 (개선된 메시지)
+            # Worker Tools MCP Server 생성
             worker_tools_server = create_worker_tools_server()
-            self.write_log("✅ [green]Worker Tools MCP Server 초기화됨[/green]")
 
-            # system_config 로드 (auto_commit_enabled 설정 확인)
+            # system_config 로드
             system_config = config_loader.load_system_config()
             auto_commit_enabled = system_config.get("workflow", {}).get("auto_commit_enabled", False)
             manager_model = system_config.get("manager", {}).get("model", "unknown")
 
-            # Manager Agent 초기화 (auto_commit_enabled 전달)
+            # Manager Agent 초기화
             self.manager = ManagerAgent(
                 worker_tools_server,
                 auto_commit_enabled=auto_commit_enabled
             )
-            commit_status = "활성화" if auto_commit_enabled else "비활성화"
-            self.write_log(
-                f"✅ [green]Manager Agent 준비 완료[/green] "
-                f"[dim](모델: {manager_model}, 자동 커밋: {commit_status})[/dim]"
-            )
 
-            # 대화 히스토리
-            self.history = ConversationHistory()
-
-            # 메트릭 컬렉터 설정
+            # 메트릭 & 콜백 설정
             set_metrics_collector(self.metrics_collector, self.session_id)
-            self.write_log("✅ [green]메트릭 수집기 준비 완료[/green]")
-
-            # 워크플로우 콜백 설정
             set_workflow_callback(self.on_workflow_update)
-            self.write_log("✅ [green]워크플로우 비주얼라이저 준비 완료[/green]")
-
-            # Worker 출력 스트리밍 콜백 설정
             set_worker_output_callback(self.on_worker_output)
-            self.write_log("✅ [green]Worker 출력 스트리밍 준비 완료[/green]")
 
             self.initialized = True
             worker_status.update("✅ 준비 완료")
             status_info.update("Ready")
 
-            # 시스템 준비 완료 배너 (개선됨)
+            # 컴팩트한 초기화 완료 메시지
             self.write_log("")
-            self.write_log(Panel(
-                "[bold green]🚀 시스템 준비 완료[/bold green]\n\n"
-                f"[dim]세션 ID:[/dim] [cyan]{self.session_id}[/cyan]\n"
-                f"[dim]Workers:[/dim] {worker_count}개\n"
-                f"[dim]Manager:[/dim] {manager_model}",
-                border_style="green"
-            ))
-            self.write_log("")
-
-            # 사용 가능한 툴 목록 (역할 설명 포함)
-            # Info: 메시지 텍스트 개선
-            self.write_log("[bold]📊 사용 가능한 Worker 명령어:[/bold]")
-            self.write_log("")
-
-            # agent_config에서 역할 정보 매핑
-            # Warning 1: 딕셔너리 키 안전 접근 (.get() 메서드 사용)
-            # Info: 변수명 개선 (tool_descriptions → worker_roles)
-            worker_roles = {
-                agent.get("name", "unknown"): agent.get("role", "설명 없음")
-                for agent in agents
-                if "name" in agent
-            }
-
-            # 주요 Worker Tools 표시
-            for agent_name, role in worker_roles.items():
-                self.write_log(f"  • [cyan]execute_{agent_name}_task[/cyan] - {role}")
-
+            self.write_log(f"[bold green]🚀 준비 완료[/bold green] [dim]• Workers: {worker_count}개 • Model: {manager_model}[/dim]")
             self.write_log("")
 
         except Exception as e:
@@ -639,12 +639,9 @@ class OrchestratorTUI(App):
             # 입력 필드 비우기
             task_input.clear()
 
-            # 사용자 요청 표시
+            # 사용자 요청 표시 (컴팩트)
             self.write_log("")
-            self.write_log(Panel(
-                f"[bold]💬 {user_request}[/bold]",
-                border_style="blue"
-            ))
+            self.write_log(f"[bold blue]💬[/bold blue] {user_request}")
             self.write_log("")
 
             # 히스토리에 추가
@@ -652,9 +649,6 @@ class OrchestratorTUI(App):
 
             # Manager Agent 실행
             status_info.update("Running...")
-            self.write_log("[bold yellow]🤖 Manager Agent[/bold yellow]")
-            self.write_log("[dim]" + "─" * 60 + "[/dim]")
-            self.write_log("")
 
             # Worker Tool 상태 업데이트 (시작)
             self.task_start_time = time.time()
@@ -691,51 +685,11 @@ class OrchestratorTUI(App):
             # Worker Tool 상태 업데이트 (종료)
             self.timer_active = False
 
-            # Worker 상태 패널 숨김 (선택사항: 작업 완료 후 자동으로 숨김)
-            # self.show_worker_status = False
-            # self.apply_worker_status_visibility()
-
-            self.write_log("")
-            self.write_log("[dim]" + "─" * 60 + "[/dim]")
-            self.write_log("")
-
             # 히스토리에 추가
             self.history.add_message("manager", manager_response)
 
-            # 작업 완료
+            # 작업 완료 (컴팩트 버전)
             task_duration = time.time() - task_start_time
-            self.write_log(Panel(
-                f"[bold green]✅ 작업 완료[/bold green]\n\n"
-                f"⏱️  소요 시간: {task_duration:.1f}초",
-                border_style="green"
-            ))
-            self.write_log("")
-
-            # 에러 통계 표시
-            error_stats = get_error_statistics()
-            if error_stats:
-                stats_table = Table(show_header=True, header_style="bold cyan", border_style="dim")
-                stats_table.add_column("Worker", style="cyan", width=15)
-                stats_table.add_column("시도", justify="right", width=8)
-                stats_table.add_column("성공", justify="right", width=8, style="green")
-                stats_table.add_column("실패", justify="right", width=8, style="red")
-                stats_table.add_column("에러율", justify="right", width=10)
-
-                for worker_name, data in error_stats.items():
-                    error_rate_style = "red" if data['error_rate'] > 20 else "yellow" if data['error_rate'] > 0 else "green"
-                    stats_table.add_row(
-                        worker_name.upper(),
-                        str(data['attempts']),
-                        str(data['successes']),
-                        str(data['failures']),
-                        f"[{error_rate_style}]{data['error_rate']}%[/{error_rate_style}]"
-                    )
-
-                self.write_log(Panel(
-                    stats_table,
-                    border_style="dim"
-                ))
-                self.write_log("")
 
             # 세션 저장
             result = SessionResult(status=SessionStatus.COMPLETED)
@@ -755,8 +709,25 @@ class OrchestratorTUI(App):
                 sessions_dir,
                 format="text"
             )
+
+            # 컴팩트한 완료 메시지 (한 줄)
+            completion_msg = f"[bold green]✅ 완료[/bold green] [dim]({task_duration:.1f}초)[/dim]"
             if metrics_filepath:
-                self.write_log(f"[dim]메트릭 리포트 저장: {metrics_filepath.name}[/dim]")
+                completion_msg += f" [dim]• 세션: {filepath.name} • 메트릭: {metrics_filepath.name}[/dim]"
+            else:
+                completion_msg += f" [dim]• 세션: {filepath.name}[/dim]"
+
+            self.write_log("")
+            self.write_log(completion_msg)
+
+            # 에러 통계 표시 (설정에 따라)
+            if self.settings.show_error_stats_on_complete:
+                self._display_error_statistics()
+            else:
+                # 에러 통계 안내 (한 번만)
+                self.write_log("[dim]💡 Tip: F6 키로 에러 통계 확인 가능[/dim]")
+
+            self.write_log("")
 
             worker_status.update(f"✅ 완료 ({task_duration:.1f}초)")
             status_info.update(f"Completed • {filepath.name}")
@@ -898,12 +869,15 @@ class OrchestratorTUI(App):
 
                 # 새 세션 시작
                 self.write_log("[dim]새 세션 시작...[/dim]")
-                self.session_id = generate_session_id()
-                self.history = ConversationHistory()
-                self.start_time = time.time()
+                new_session_id = generate_session_id()
+                new_session = SessionData(new_session_id)
+
+                # 현재 세션 교체
+                self.sessions[self.active_session_index] = new_session
 
                 # 세션 ID 업데이트 (메트릭 수집용)
                 update_session_id(self.session_id)
+                set_metrics_collector(self.metrics_collector, self.session_id)
 
                 # UI 업데이트
                 self._update_status_bar()  # 터미널 크기 및 레이아웃 모드 포함
@@ -955,13 +929,20 @@ class OrchestratorTUI(App):
             self.write_log("")
 
     async def action_new_session(self) -> None:
-        """Ctrl+N: 새 세션"""
-        self.session_id = generate_session_id()
-        self.history = ConversationHistory()
-        self.start_time = time.time()
+        """Ctrl+N: 새 세션 (현재 활성 세션을 새로 만듦)"""
+        new_session_id = generate_session_id()
+        new_session = SessionData(new_session_id)
+
+        # 현재 세션 교체
+        self.sessions[self.active_session_index] = new_session
 
         # 세션 ID 업데이트 (메트릭 수집용)
         update_session_id(self.session_id)
+        set_metrics_collector(self.metrics_collector, self.session_id)
+
+        # Manager Agent 토큰 사용량 초기화
+        if self.manager:
+            self.manager.reset_token_usage()
 
         # UI 업데이트
         status_info = self.query_one("#status-info", Static)
@@ -970,11 +951,7 @@ class OrchestratorTUI(App):
         output_log = self.query_one("#output-log", RichLog)
         output_log.clear()
         self.write_log("")
-        self.write_log(Panel(
-            f"[bold green]✅ 새 세션 시작[/bold green]\n\n"
-            f"Session ID: {self.session_id}",
-            border_style="green"
-        ))
+        self.write_log(f"[bold green]✅ 새 세션[/bold green] [dim]• ID: {self.session_id}[/dim]")
         self.write_log("")
 
         worker_status = self.query_one("#worker-status", Static)
@@ -1083,14 +1060,31 @@ class OrchestratorTUI(App):
 
     def _update_status_bar(self) -> None:
         """
-        상태바에 터미널 크기 및 레이아웃 모드 표시
+        상태바에 세션 탭 및 레이아웃 모드 표시
 
-        형식: "Session: {session_id} • Layout: {mode} ({width}x{height})"
+        형식: "[1*] [2] [3] • {session_id} • Layout: {mode} ({width}x{height})"
         """
         try:
             session_info = self.query_one("#session-info", Static)
+
+            # 세션 탭 표시: [1*] [2] [3]
+            session_tabs = []
+            for i in range(3):
+                if i < len(self.sessions):
+                    # 세션이 존재하면
+                    if i == self.active_session_index:
+                        session_tabs.append(f"[bold cyan][{i + 1}*][/bold cyan]")
+                    else:
+                        session_tabs.append(f"[dim][{i + 1}][/dim]")
+                else:
+                    # 세션이 없으면
+                    session_tabs.append(f"[dim][{i + 1}][/dim]")
+
+            session_tabs_str = " ".join(session_tabs)
+
             session_info.update(
-                f"Session: {self.session_id} • "
+                f"{session_tabs_str} • "
+                f"ID: {self.session_id[:8]}... • "
                 f"Layout: {self.current_layout_mode.value} ({self.terminal_width}x{self.terminal_height})"
             )
         except Exception as e:
@@ -1228,6 +1222,48 @@ class OrchestratorTUI(App):
                 self.update_worker_status(f"{spinner} Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
         except Exception:
             pass
+
+    def update_token_info(self) -> None:
+        """타이머: 토큰 사용량 업데이트 (1초마다 호출)"""
+        try:
+            if not self.manager:
+                return
+
+            token_info_widget = self.query_one("#token-info", Static)
+
+            # Manager Agent에서 토큰 사용량 가져오기
+            usage = self.manager.get_token_usage()
+            total_tokens = usage["total_tokens"]
+            input_tokens = usage["input_tokens"]
+            output_tokens = usage["output_tokens"]
+
+            # 모델별 컨텍스트 윈도우 (토큰 수)
+            # Claude Sonnet 4.5: 200K context window
+            context_window = 200_000
+
+            # 사용률 계산
+            usage_percentage = (total_tokens / context_window) * 100 if context_window > 0 else 0
+
+            # 표시 형식: "Tokens: 15K/200K (7.5%)"
+            if total_tokens >= 1000:
+                total_display = f"{total_tokens // 1000}K"
+            else:
+                total_display = str(total_tokens)
+
+            # 색상: 초록(< 50%), 노랑(50-80%), 빨강(>= 80%)
+            if usage_percentage < 50:
+                color = "green"
+            elif usage_percentage < 80:
+                color = "yellow"
+            else:
+                color = "red"
+
+            token_info_widget.update(
+                f"[{color}]Tokens: {total_display}/200K ({usage_percentage:.1f}%)[/{color}]"
+            )
+
+        except Exception as e:
+            logger.warning(f"토큰 정보 업데이트 실패: {e}")
 
     def update_metrics_panel(self) -> None:
         """타이머: 메트릭 대시보드 업데이트 (1초마다 호출)"""
@@ -1806,14 +1842,21 @@ class OrchestratorTUI(App):
             with open(session_file, "r", encoding="utf-8") as f:
                 session_data = json.load(f)
 
-            # 히스토리 복원
-            self.history = ConversationHistory()
+            # 새 세션 생성 및 히스토리 복원
+            loaded_session = SessionData(session_id)
             for msg in session_data.get("history", []):
-                self.history.add_message(msg["role"], msg["content"])
+                loaded_session.history.add_message(msg["role"], msg["content"])
+
+            # 현재 세션 교체
+            self.sessions[self.active_session_index] = loaded_session
 
             # 세션 ID 업데이트
-            self.session_id = session_id
             update_session_id(session_id)
+            set_metrics_collector(self.metrics_collector, self.session_id)
+
+            # Manager Agent 토큰 사용량 초기화
+            if self.manager:
+                self.manager.reset_token_usage()
 
             # UI 업데이트
             self._update_status_bar()  # 터미널 크기 및 레이아웃 모드 포함
@@ -1854,13 +1897,14 @@ class OrchestratorTUI(App):
         else:
             content_str = content
 
-        self.log_lines.append(content_str)
+        # 현재 세션의 log_lines에 추가 (property를 통해 접근)
+        self.current_session.log_lines.append(content_str)
 
         # 최대 라인 수 제한
         max_lines = self.settings.max_log_lines
-        if len(self.log_lines) > max_lines:
+        if len(self.current_session.log_lines) > max_lines:
             # 오래된 라인 제거
-            self.log_lines = self.log_lines[-max_lines:]
+            self.current_session.log_lines = self.current_session.log_lines[-max_lines:]
 
     def write_log(
         self, content: Union[str, Panel, Text], widget_id: str = "output-log"
@@ -1879,6 +1923,108 @@ class OrchestratorTUI(App):
             self._track_log_output(str(content))
         except Exception:
             pass
+
+    def _display_error_statistics(self) -> None:
+        """에러 통계를 로그에 표시"""
+        try:
+            error_stats = get_error_statistics()
+            if not error_stats:
+                self.write_log("[dim]에러 통계가 없습니다[/dim]")
+                return
+
+            stats_table = Table(show_header=True, header_style="bold cyan", border_style="dim", box=None)
+            stats_table.add_column("Worker", style="cyan", width=12)
+            stats_table.add_column("시도", justify="right", width=6)
+            stats_table.add_column("성공", justify="right", width=6, style="green")
+            stats_table.add_column("실패", justify="right", width=6, style="red")
+            stats_table.add_column("에러율", justify="right", width=8)
+
+            for worker_name, data in error_stats.items():
+                error_rate_style = "red" if data['error_rate'] > 20 else "yellow" if data['error_rate'] > 0 else "green"
+                stats_table.add_row(
+                    worker_name.upper(),
+                    str(data['attempts']),
+                    str(data['successes']),
+                    str(data['failures']),
+                    f"[{error_rate_style}]{data['error_rate']}%[/{error_rate_style}]"
+                )
+
+            self.write_log("")
+            self.write_log("[bold cyan]📊 에러 통계[/bold cyan]")
+            self.write_log(stats_table)
+
+        except Exception as e:
+            logger.error(f"에러 통계 표시 실패: {e}")
+
+    async def action_show_error_stats(self) -> None:
+        """F6 키: 에러 통계 표시"""
+        self._display_error_statistics()
+
+    async def action_switch_to_session_1(self) -> None:
+        """Ctrl+1: 세션 1로 전환"""
+        await self.switch_to_session(0)
+
+    async def action_switch_to_session_2(self) -> None:
+        """Ctrl+2: 세션 2로 전환"""
+        await self.switch_to_session(1)
+
+    async def action_switch_to_session_3(self) -> None:
+        """Ctrl+3: 세션 3로 전환"""
+        await self.switch_to_session(2)
+
+    async def switch_to_session(self, index: int) -> None:
+        """
+        세션 전환 (0, 1, 2)
+
+        Args:
+            index: 세션 인덱스 (0=Ctrl+1, 1=Ctrl+2, 2=Ctrl+3)
+        """
+        try:
+            # 세션이 아직 없으면 생성
+            while len(self.sessions) <= index:
+                new_session_id = generate_session_id()
+                self.sessions.append(SessionData(new_session_id))
+
+            # 이미 현재 세션이면 무시
+            if self.active_session_index == index:
+                if self.settings.enable_notifications:
+                    self.notify(f"이미 세션 {index + 1}입니다", severity="information")
+                return
+
+            # 세션 전환
+            old_index = self.active_session_index
+            self.active_session_index = index
+
+            # UI 업데이트: 로그 교체
+            output_log = self.query_one("#output-log", RichLog)
+            output_log.clear()
+
+            # 현재 세션 로그 복원
+            for log_line in self.current_session.log_lines:
+                output_log.write(log_line)
+
+            # 메트릭 수집기 업데이트
+            set_metrics_collector(self.current_session.metrics_collector, self.session_id)
+            update_session_id(self.session_id)
+
+            # Manager Agent 토큰 사용량 초기화 (세션별로 독립적)
+            if self.manager:
+                self.manager.reset_token_usage()
+
+            # 상태바 업데이트
+            self._update_status_bar()
+
+            # 알림 표시
+            if self.settings.enable_notifications:
+                self.notify(
+                    f"세션 {index + 1}로 전환 (ID: {self.session_id[:8]}...)",
+                    severity="information"
+                )
+
+        except Exception as e:
+            logger.error(f"세션 전환 실패: {e}")
+            if self.settings.enable_notifications and self.settings.notify_on_error:
+                self.notify(f"세션 전환 실패: {e}", severity="error")
 
 
 def main():

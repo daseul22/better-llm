@@ -161,6 +161,12 @@ class ManagerAgent:
         # Review cycle 추적 변수 (무한 루프 방지)
         self.review_cycle_count = 0
 
+        # 토큰 사용량 추적
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_cache_read_tokens = 0
+        self.total_cache_creation_tokens = 0
+
         # system_config.json에서 max_review_iterations 로드
         try:
             from ..config import load_system_config
@@ -288,6 +294,27 @@ class ManagerAgent:
 
             # 응답 수신 (스트리밍)
             async for msg in client.receive_response():
+                # usage 정보 추출 (있는 경우)
+                if hasattr(msg, 'usage') and msg.usage:
+                    usage = msg.usage
+                    # 토큰 사용량 업데이트
+                    if hasattr(usage, 'input_tokens'):
+                        self.total_input_tokens += usage.input_tokens
+                    if hasattr(usage, 'output_tokens'):
+                        self.total_output_tokens += usage.output_tokens
+                    if hasattr(usage, 'cache_read_tokens'):
+                        self.total_cache_read_tokens += usage.cache_read_tokens
+                    if hasattr(usage, 'cache_creation_tokens'):
+                        self.total_cache_creation_tokens += usage.cache_creation_tokens
+
+                    self.logger.debug(
+                        "Token usage updated",
+                        input_tokens=self.total_input_tokens,
+                        output_tokens=self.total_output_tokens,
+                        cache_read_tokens=self.total_cache_read_tokens,
+                        cache_creation_tokens=self.total_cache_creation_tokens
+                    )
+
                 # 텍스트 콘텐츠만 추출 (JSON 형태는 제외)
                 if hasattr(msg, 'content') and isinstance(msg.content, list):
                     for content in msg.content:
@@ -322,6 +349,34 @@ class ManagerAgent:
                     self.logger.debug("Client connection closed successfully")
                 except Exception as e:
                     self.logger.debug("Client disconnect failed (ignored)", error=str(e))
+
+    def get_token_usage(self) -> dict:
+        """
+        현재까지의 토큰 사용량 반환
+
+        Returns:
+            dict: {
+                "input_tokens": int,
+                "output_tokens": int,
+                "cache_read_tokens": int,
+                "cache_creation_tokens": int,
+                "total_tokens": int
+            }
+        """
+        return {
+            "input_tokens": self.total_input_tokens,
+            "output_tokens": self.total_output_tokens,
+            "cache_read_tokens": self.total_cache_read_tokens,
+            "cache_creation_tokens": self.total_cache_creation_tokens,
+            "total_tokens": self.total_input_tokens + self.total_output_tokens
+        }
+
+    def reset_token_usage(self) -> None:
+        """토큰 사용량 초기화 (새 세션 시작 시)"""
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_cache_read_tokens = 0
+        self.total_cache_creation_tokens = 0
 
     def __repr__(self) -> str:
         return f"ManagerAgent(model={self.model})"

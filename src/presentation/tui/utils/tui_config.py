@@ -54,6 +54,9 @@ class TUISettings:
     show_workflow_panel: bool = False
     show_worker_status: bool = True
 
+    # 에러 통계 표시 설정
+    show_error_stats_on_complete: bool = False  # 작업 완료 시 자동 표시 여부
+
 
 class TUIConfig:
     """

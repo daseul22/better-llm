@@ -175,6 +175,15 @@ class SettingsModal(ModalScreen):
                         classes="setting-control"
                     )
 
+                # 에러 통계 설정
+                with Horizontal(classes="setting-row"):
+                    yield Static("작업 완료 시 에러 통계 표시:", classes="setting-label")
+                    yield Switch(
+                        self.settings.show_error_stats_on_complete,
+                        id="show-error-stats-on-complete",
+                        classes="setting-control"
+                    )
+
             with Horizontal(id="settings-buttons"):
                 yield Button("저장 (Enter)", id="save-button", variant="primary")
                 yield Button("기본값 복원", id="reset-button", variant="warning")
@@ -220,6 +229,7 @@ class SettingsModal(ModalScreen):
             show_metrics_panel = self.query_one("#show-metrics-panel", Switch).value
             show_workflow_panel = self.query_one("#show-workflow-panel", Switch).value
             show_worker_status = self.query_one("#show-worker-status", Switch).value
+            show_error_stats_on_complete = self.query_one("#show-error-stats-on-complete", Switch).value
 
             # 설정 업데이트
             self.settings.max_log_lines = max_log_lines
@@ -233,6 +243,7 @@ class SettingsModal(ModalScreen):
             self.settings.show_metrics_panel = show_metrics_panel
             self.settings.show_workflow_panel = show_workflow_panel
             self.settings.show_worker_status = show_worker_status
+            self.settings.show_error_stats_on_complete = show_error_stats_on_complete
 
             # 파일에 저장
             TUIConfig.save(self.settings)
