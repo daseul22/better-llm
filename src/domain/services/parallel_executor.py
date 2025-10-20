@@ -95,7 +95,11 @@ class ParallelTaskExecutor:
             results = await self._execute_task_batch(level_tasks)
 
             # 결과 분류
-            for task, success in results.items():
+            for task_id, success in results.items():
+                task = plan.get_task(task_id)
+                if task is None:
+                    continue
+
                 if success:
                     completed_tasks.append(task)
                     completed_task_ids.add(task.id)
@@ -210,7 +214,7 @@ class ParallelTaskExecutor:
     async def _execute_task_batch(
         self,
         tasks: List[ParallelTask]
-    ) -> Dict[ParallelTask, bool]:
+    ) -> Dict[str, bool]:
         """
         한 레벨의 Task들을 병렬 실행
 
@@ -218,10 +222,10 @@ class ParallelTaskExecutor:
             tasks: 실행할 Task 리스트
 
         Returns:
-            {task: success} 딕셔너리
+            {task_id: success} 딕셔너리
         """
         # Task를 max_concurrent_tasks 단위로 나누어 실행
-        results: Dict[ParallelTask, bool] = {}
+        results: Dict[str, bool] = {}
 
         for i in range(0, len(tasks), self.max_concurrent_tasks):
             batch = tasks[i:i + self.max_concurrent_tasks]
@@ -235,12 +239,12 @@ class ParallelTaskExecutor:
                 if isinstance(result, Exception):
                     task.status = TaskStatus.FAILED
                     task.error = str(result)
-                    results[task] = False
+                    results[task.id] = False
                     logger.error(f"Task {task.id} 실패: {result}")
                 else:
                     task.status = TaskStatus.COMPLETED
                     task.result = result
-                    results[task] = True
+                    results[task.id] = True
                     logger.info(f"Task {task.id} 완료")
 
         return results

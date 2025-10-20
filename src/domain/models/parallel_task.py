@@ -43,6 +43,34 @@ class ParallelTask:
     estimated_time: int = 300  # 기본 5분
     priority: int = 1
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ParallelTask":
+        """
+        딕셔너리에서 ParallelTask 생성
+
+        Args:
+            data: Task 데이터 (Planner Agent의 JSON 출력)
+
+        Returns:
+            ParallelTask 인스턴스
+
+        Raises:
+            ValueError: 필수 필드가 없는 경우
+        """
+        required_fields = ["id", "description", "target_files"]
+        for field in required_fields:
+            if field not in data:
+                raise ValueError(f"필수 필드 '{field}'가 없습니다: {data}")
+
+        return cls(
+            id=data["id"],
+            description=data["description"],
+            target_files=data["target_files"],
+            dependencies=data.get("dependencies", []),
+            estimated_time=data.get("estimated_time", 300),
+            priority=data.get("priority", 1),
+        )
+
     def duration_seconds(self) -> Optional[float]:
         """
         실행 시간 계산 (초)
@@ -80,6 +108,59 @@ class TaskExecutionPlan:
     tasks: List[ParallelTask]
     integration_notes: str
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "TaskExecutionPlan":
+        """
+        JSON 문자열에서 TaskExecutionPlan 생성
+
+        Args:
+            json_str: Planner Agent가 생성한 JSON 문자열
+
+        Returns:
+            TaskExecutionPlan 인스턴스
+
+        Raises:
+            ValueError: JSON 파싱 실패 또는 필수 필드가 없는 경우
+        """
+        import json
+
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSON 파싱 실패: {e}")
+
+        # 필수 필드 검증
+        if "tasks" not in data:
+            raise ValueError("'tasks' 필드가 없습니다")
+
+        # ParallelTask 리스트 생성
+        tasks = [ParallelTask.from_dict(task_data) for task_data in data["tasks"]]
+
+        # TaskExecutionPlan 생성
+        return cls(
+            tasks=tasks,
+            integration_notes=data.get("integration_notes", ""),
+            metadata=data.get("metadata", {}),
+        )
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TaskExecutionPlan":
+        """
+        딕셔너리에서 TaskExecutionPlan 생성
+
+        Args:
+            data: 실행 계획 데이터
+
+        Returns:
+            TaskExecutionPlan 인스턴스
+        """
+        tasks = [ParallelTask.from_dict(task_data) for task_data in data["tasks"]]
+        return cls(
+            tasks=tasks,
+            integration_notes=data.get("integration_notes", ""),
+            metadata=data.get("metadata", {}),
+        )
 
     def get_task(self, task_id: str) -> Optional[ParallelTask]:
         """

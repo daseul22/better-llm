@@ -59,7 +59,8 @@ _ERROR_STATS = {
     "tester": {"attempts": 0, "failures": 0},
     "committer": {"attempts": 0, "failures": 0},
     "ideator": {"attempts": 0, "failures": 0},
-    "product_manager": {"attempts": 0, "failures": 0}
+    "product_manager": {"attempts": 0, "failures": 0},
+    "parallel_executor": {"attempts": 0, "failures": 0}
 }
 
 def _get_timeout_from_env(worker_name: str, default: int) -> int:
@@ -909,6 +910,156 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
     pass  # 데코레이터가 모든 로직을 처리
 
 
+async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    병렬 작업 실행 Tool
+
+    Planner가 생성한 병렬 실행 계획 JSON을 받아서
+    ParallelTaskExecutor를 사용하여 Task들을 병렬 실행합니다.
+
+    Args:
+        args: {
+            "plan_json": "Planner가 생성한 병렬 실행 계획 JSON 문자열"
+        }
+
+    Returns:
+        {
+            "content": [{"type": "text", "text": "실행 결과"}],
+            "success": True/False,
+            "metadata": {
+                "completed_tasks": int,
+                "failed_tasks": int,
+                "total_duration": float,
+                "speedup_factor": float
+            }
+        }
+    """
+    from domain.models.parallel_task import TaskExecutionPlan, ParallelTask
+    from domain.services.parallel_executor import ParallelTaskExecutor
+    import json
+    import re
+
+    worker_name = "parallel_executor"
+    _record_attempt(worker_name)
+
+    try:
+        # 인자 검증
+        if "plan_json" not in args:
+            raise ValueError("plan_json 인자가 필요합니다")
+
+        plan_json_raw = args["plan_json"]
+
+        # JSON 추출 (```json ... ``` 마크다운 코드 블록 제거)
+        json_match = re.search(r'```json\s*(.*?)\s*```', plan_json_raw, re.DOTALL)
+        if json_match:
+            plan_json = json_match.group(1).strip()
+        else:
+            plan_json = plan_json_raw.strip()
+
+        logger.info(f"[{worker_name}] 병렬 실행 계획 파싱 시작")
+
+        # TaskExecutionPlan 생성
+        try:
+            plan = TaskExecutionPlan.from_json(plan_json)
+        except ValueError as e:
+            raise ValueError(f"병렬 실행 계획 파싱 실패: {e}")
+
+        logger.info(
+            f"[{worker_name}] {len(plan.tasks)}개 Task 병렬 실행 시작",
+            task_ids=[task.id for task in plan.tasks]
+        )
+
+        # Coder Worker를 task_executor로 래핑
+        async def coder_task_executor(task: ParallelTask) -> str:
+            """단일 Task 실행 (Coder Worker 호출)"""
+            coder_agent = _WORKER_AGENTS.get("coder")
+            if not coder_agent:
+                raise RuntimeError("Coder Agent를 찾을 수 없습니다")
+
+            # Coder에게 전달할 작업 설명
+            # Task description에 target_files 정보 추가
+            task_description = task.description
+            if task.target_files:
+                task_description += f"\n\n**Target Files**: {', '.join(task.target_files)}"
+
+            result = ""
+            async for chunk in coder_agent.execute_task(task_description):
+                result += chunk
+
+            return result
+
+        # ParallelTaskExecutor 생성 및 실행
+        executor = ParallelTaskExecutor(
+            task_executor=coder_task_executor,
+            max_concurrent_tasks=5  # 동시 실행 최대 5개
+        )
+
+        execution_result = await executor.execute(plan)
+
+        # 결과 포맷팅
+        result_lines = []
+        result_lines.append(f"🚀 병렬 실행 완료\n")
+        result_lines.append(f"📊 실행 결과:")
+        result_lines.append(f"   - 성공: {len(execution_result.completed_tasks)}개")
+        result_lines.append(f"   - 실패: {len(execution_result.failed_tasks)}개")
+        result_lines.append(f"   - 실행 시간: {execution_result.total_duration:.1f}초")
+        result_lines.append(f"   - 속도 향상: {execution_result.speedup_factor:.2f}x")
+        result_lines.append(f"   - 성공률: {execution_result.success_rate * 100:.0f}%\n")
+
+        # 완료된 Task 상세
+        if execution_result.completed_tasks:
+            result_lines.append("✅ 완료된 Task:")
+            for task in execution_result.completed_tasks:
+                result_lines.append(f"   - [{task.id}] {task.description}")
+                result_lines.append(f"     파일: {', '.join(task.target_files)}")
+                if task.duration_seconds():
+                    result_lines.append(f"     실행 시간: {task.duration_seconds():.1f}초")
+                result_lines.append("")
+
+        # 실패한 Task 상세
+        if execution_result.failed_tasks:
+            result_lines.append("❌ 실패한 Task:")
+            for task in execution_result.failed_tasks:
+                result_lines.append(f"   - [{task.id}] {task.description}")
+                result_lines.append(f"     에러: {task.error}")
+                result_lines.append("")
+
+        # 통합 주의사항
+        if plan.integration_notes:
+            result_lines.append(f"📝 통합 시 주의사항:")
+            result_lines.append(f"   {plan.integration_notes}\n")
+
+        result_text = "\n".join(result_lines)
+
+        logger.info(
+            f"[{worker_name}] 병렬 실행 완료",
+            completed=len(execution_result.completed_tasks),
+            failed=len(execution_result.failed_tasks),
+            duration=execution_result.total_duration
+        )
+
+        return {
+            "content": [{"type": "text", "text": result_text}],
+            "success": execution_result.all_succeeded,
+            "metadata": {
+                "completed_tasks": len(execution_result.completed_tasks),
+                "failed_tasks": len(execution_result.failed_tasks),
+                "total_duration": execution_result.total_duration,
+                "speedup_factor": execution_result.speedup_factor,
+                "success_rate": execution_result.success_rate
+            }
+        }
+
+    except Exception as e:
+        _record_failure(worker_name)
+        logger.error(f"[{worker_name}] 병렬 실행 실패: {e}", exc_info=True)
+        return {
+            "content": [{"type": "text", "text": f"❌ 병렬 실행 실패: {e}"}],
+            "success": False,
+            "error": str(e)
+        }
+
+
 def get_error_statistics() -> Dict[str, Any]:
     """
     에러 통계 조회
@@ -981,10 +1132,11 @@ def create_worker_tools_server():
             execute_tester_task,
             execute_committer_task,
             execute_ideator_task,
-            execute_product_manager_task
+            execute_product_manager_task,
+            execute_parallel_tasks  # 병렬 실행 Tool
         ]
     )
 
-    logger.info("✅ Worker Tools MCP Server 생성 완료")
+    logger.info("✅ Worker Tools MCP Server 생성 완료 (병렬 실행 포함)")
 
     return server

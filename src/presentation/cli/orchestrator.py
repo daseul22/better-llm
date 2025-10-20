@@ -87,10 +87,14 @@ class Orchestrator:
         worker_tools_server = create_worker_tools_server()
 
         # Manager Agent 초기화 (Worker Tools + 시스템 설정 전달)
+        # auto_commit_enabled는 workflow 섹션에서 가져옴
+        auto_commit_enabled = self.system_config.get("workflow", {}).get("auto_commit_enabled", False)
+
         self.manager = ManagerAgent(
             worker_tools_server,
             model=self.system_config.manager_model,
-            max_history_messages=self.system_config.max_history_messages
+            max_history_messages=self.system_config.max_history_messages,
+            auto_commit_enabled=auto_commit_enabled
         )
 
         # 대화 히스토리

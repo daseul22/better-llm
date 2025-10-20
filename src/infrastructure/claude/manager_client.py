@@ -50,7 +50,10 @@ class ManagerAgent:
 
 ## 사용 가능한 Tool
 다음 Tool들을 사용할 수 있습니다:
-- **execute_planner_task**: 요구사항 분석 및 계획 수립
+- **execute_ideator_task**: 창의적 아이디어 생성 및 브레인스토밍 (기획 초기 단계)
+- **execute_product_manager_task**: 제품 요구사항 정의 및 우선순위 설정 (기획 단계)
+- **execute_planner_task**: 요구사항 분석 및 구현 계획 수립 (설계 단계)
+- **execute_parallel_tasks**: 병렬 작업 실행 (Planner가 병렬 실행 계획 JSON을 생성한 경우)
 - **execute_coder_task**: 코드 작성, 수정, 리팩토링
 - **execute_reviewer_task**: 코드 리뷰 및 품질 검증
 - **execute_tester_task**: 테스트 작성 및 실행"""
@@ -70,10 +73,31 @@ class ManagerAgent:
 4. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
 
 ## 표준 작업 흐름
-1. execute_planner_task → 요구사항 분석 및 계획
+
+### 기본 개발 작업 (순차 실행):
+1. execute_planner_task → 요구사항 분석 및 구현 계획
 2. execute_coder_task → 코드 작성
 3. execute_reviewer_task → 코드 리뷰 (품질 검증)
-4. execute_tester_task → 테스트 작성 및 실행"""
+4. execute_tester_task → 테스트 작성 및 실행
+
+### 병렬 실행 가능한 작업 (3개 이상의 독립적인 파일 생성):
+1. execute_planner_task → 병렬 실행 계획 JSON 생성 (execution_mode: "parallel")
+2. execute_parallel_tasks → Planner의 JSON을 받아서 Task들을 병렬 실행
+   - 의존성 그래프 기반으로 레벨별 병렬 실행
+   - 독립적인 Task들은 동시에 실행되어 속도 향상
+3. execute_reviewer_task → 통합 코드 리뷰
+4. execute_tester_task → 전체 테스트
+
+**병렬 실행 판단 기준**:
+- Planner가 JSON 형식으로 "execution_mode": "parallel"을 출력하면 병렬 실행
+- 그렇지 않으면 기존 방식대로 순차 실행
+
+### 새로운 기능 기획 시 (선택적):
+0. execute_ideator_task → 창의적 아이디어 브레인스토밍 (필요 시)
+0. execute_product_manager_task → 요구사항 정의 및 우선순위 (필요 시)
+1. execute_planner_task → 구현 계획 수립
+2. execute_coder_task 또는 execute_parallel_tasks → 코드 작성
+... (이후 동일)"""
 
         if self.auto_commit_enabled:
             base_prompt += """
@@ -266,9 +290,12 @@ class ManagerAgent:
             # allowed_tools 리스트 생성 (auto_commit_enabled에 따라 조건부)
             allowed_tools = [
                 "mcp__workers__execute_planner_task",
+                "mcp__workers__execute_parallel_tasks",  # 병렬 실행
                 "mcp__workers__execute_coder_task",
                 "mcp__workers__execute_reviewer_task",
                 "mcp__workers__execute_tester_task",
+                "mcp__workers__execute_ideator_task",  # 아이디어 생성
+                "mcp__workers__execute_product_manager_task",  # 제품 기획
                 "read"  # 파일 읽기 툴
             ]
 

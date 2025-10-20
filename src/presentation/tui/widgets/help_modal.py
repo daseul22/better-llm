@@ -74,6 +74,10 @@ class HelpModal(ModalScreen):
             ("F3", "메트릭 패널 토글 (보조)"),
             ("F4", "워크플로우 패널 토글"),
             ("F5", "Worker 상태 패널 토글"),
+            ("F6", "에러 통계 표시"),
+            ("Ctrl+Tab", "다음 Worker 아웃풋 탭"),
+            ("Ctrl+Shift+Tab", "이전 Worker 아웃풋 탭"),
+            ("Ctrl+O", "출력 모드 전환"),
             ("ESC", "모달 닫기"),
         ]
 
@@ -122,6 +126,10 @@ class HelpModal(ModalScreen):
         content.append("사용 가능한 Worker Tools\n", style="bold yellow")
         content.append_text(worker_table)
         content.append("\n\n")
+        content.append("디버그 정보 표시\n", style="bold yellow")
+        content.append("환경변수 WORKER_DEBUG_INFO=true를 설정하면\n", style="dim")
+        content.append("각 Worker 실행 시 시스템 프롬프트와 컨텍스트를 표시합니다.\n", style="dim")
+        content.append("예: export WORKER_DEBUG_INFO=true\n\n", style="cyan")
         content.append("Manager Agent가 자동으로 적절한 Worker Tool을 호출합니다.\n", style="dim")
 
         return Panel(content, border_style="blue", title="[bold]도움말[/bold]")

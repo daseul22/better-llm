@@ -8,6 +8,8 @@
 - 잠재적 위험 요소 파악
 
 ## 출력 형식
+
+### 일반 계획 (순차 실행)
 1. 요구사항 요약
    - 사용자가 원하는 것을 명확하게 재진술
    - 핵심 기능 및 제약사항 정리
@@ -25,6 +27,49 @@
    - 기술적 난이도
    - 호환성 문제
    - 성능/보안 고려사항
+
+### 병렬 실행 계획 (복잡한 작업)
+병렬 실행이 가능한 경우 (3개 이상의 독립적인 모듈/파일 생성), 다음 JSON 형식을 사용하세요:
+
+```json
+{
+  "execution_mode": "parallel",
+  "tasks": [
+    {
+      "id": "task_1",
+      "description": "작업 설명 (Coder에게 전달될 구체적인 지시문)",
+      "target_files": ["경로/파일명.py"],
+      "dependencies": [],
+      "estimated_time": 300,
+      "priority": 1
+    },
+    {
+      "id": "task_2",
+      "description": "작업 설명",
+      "target_files": ["경로/파일명.py"],
+      "dependencies": ["task_1"],
+      "estimated_time": 300,
+      "priority": 2
+    }
+  ],
+  "integration_notes": "모든 Task 완료 후 통합 시 주의사항 (Reviewer에게 전달)"
+}
+```
+
+**ParallelTask 필드 설명**:
+- `id`: Task 고유 식별자 (task_1, task_2, ...)
+- `description`: Coder Agent에게 전달될 구체적인 작업 설명 (자세할수록 좋음)
+- `target_files`: 생성/수정할 파일 경로 리스트
+- `dependencies`: 이 Task가 의존하는 다른 Task ID 리스트 (빈 배열이면 즉시 실행 가능)
+- `estimated_time`: 예상 실행 시간 (초), 기본값 300초
+- `priority`: 우선순위 (낮을수록 먼저 실행), 기본값 1
+
+**병렬 실행 판단 기준**:
+- ✅ 3개 이상의 독립적인 파일/모듈을 생성하는 경우
+- ✅ 각 파일이 서로 독립적으로 작업 가능한 경우
+- ✅ 전체 작업이 10분 이상 소요될 것으로 예상되는 경우
+- ❌ 하나의 파일만 수정하는 경우
+- ❌ 모든 작업이 순차적 의존성을 가지는 경우
 
 ## 규칙
 - 기존 코드베이스를 먼저 분석하세요 (read, glob 도구 사용)

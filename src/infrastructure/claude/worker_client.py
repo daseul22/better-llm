@@ -99,6 +99,60 @@ class WorkerAgent:
 
         return prompt_text
 
+    def _generate_debug_info(self, task_description: str) -> str:
+        """
+        Worker 실행 시 디버그 정보 생성
+
+        Args:
+            task_description: 작업 설명
+
+        Returns:
+            포맷팅된 디버그 정보
+        """
+        lines = []
+        lines.append("\n" + "="*70)
+        lines.append(f"🔍 [{self.config.name.upper()}] 실행 정보")
+        lines.append("="*70)
+
+        # 1. 기본 정보
+        lines.append(f"\n📋 Worker: {self.config.name} ({self.config.role})")
+        lines.append(f"🤖 Model: {self.config.model}")
+        lines.append(f"🛠️  Tools: {', '.join(self.config.tools)}")
+
+        # 2. 시스템 프롬프트 정보
+        lines.append(f"\n📄 System Prompt File: {self.config.system_prompt}")
+        lines.append(f"   Length: {len(self.system_prompt)} characters")
+
+        # 3. 프로젝트 컨텍스트 정보
+        if self.project_context:
+            lines.append(f"\n🏗️  Project Context:")
+            lines.append(f"   - Project: {self.project_context.project_name}")
+            lines.append(f"   - Description: {self.project_context.description[:80]}..."
+                        if len(self.project_context.description) > 80
+                        else f"   - Description: {self.project_context.description}")
+
+            if self.project_context.coding_style:
+                style = self.project_context.coding_style
+                lines.append(f"   - Coding Style: {style.language}, indentation={style.indentation}")
+
+            if self.project_context.testing_approach:
+                lines.append(f"   - Testing: {self.project_context.testing_approach.framework}")
+        else:
+            lines.append(f"\n🏗️  Project Context: None")
+
+        # 4. 작업 설명
+        lines.append(f"\n📝 Task Description:")
+        task_lines = task_description.split('\n')
+        for i, line in enumerate(task_lines[:5]):  # 최대 5줄만 표시
+            lines.append(f"   {line}")
+        if len(task_lines) > 5:
+            lines.append(f"   ... ({len(task_lines) - 5} more lines)")
+
+        lines.append("\n" + "="*70)
+        lines.append("⚡ Starting execution...\n")
+
+        return "\n".join(lines)
+
     async def execute_task(self, task_description: str) -> AsyncIterator[str]:
         """
         Claude Agent SDK를 사용하여 작업 실행
@@ -112,12 +166,25 @@ class WorkerAgent:
         Raises:
             Exception: 작업 실행 실패 시
         """
+        import time
+
         try:
+            # 디버그 정보 출력 (환경변수로 제어)
+            # WORKER_DEBUG_INFO=true로 설정하면 활성화
+            show_debug_info = os.getenv("WORKER_DEBUG_INFO", "false").lower() in ("true", "1", "yes")
+            if show_debug_info:
+                debug_info = self._generate_debug_info(task_description)
+                yield debug_info
+
             # 시스템 프롬프트와 작업 설명 결합
             full_prompt = f"{self.system_prompt}\n\n{task_description}"
 
             logger.debug(f"[{self.config.name}] Claude Agent SDK 실행 시작")
             logger.debug(f"[{self.config.name}] Working Directory: {os.getcwd()}")
+
+            # 응답 없음 감지를 위한 타임스탬프 (30초 동안 응답 없으면 경고)
+            last_chunk_time = time.time()
+            no_response_timeout = 30  # 초
 
             # 조기 종료 감지를 위한 버퍼 (마지막 N 청크 저장)
             recent_chunks = []
@@ -127,6 +194,21 @@ class WorkerAgent:
                 "완료하였습니다",
                 "작업 완료",
                 "실행 완료"
+            ]
+
+            # 에러 키워드 감지 (에러 발생 시 즉시 종료)
+            error_keywords = [
+                "오류가 발생했습니다",
+                "시스템 오류",
+                "실패했습니다",
+                "실행 실패",
+                "에러가 발생",
+                "[ERROR]",
+                "Exception:",
+                "Error:",
+                "Failed to",
+                "파일을 찾을 수 없습니다",
+                "권한이 없습니다"
             ]
 
             # Claude Agent SDK의 query() 함수 사용
@@ -160,13 +242,27 @@ class WorkerAgent:
 
                 # 조기 종료 감지: 최근 청크들을 버퍼에 저장
                 if chunk_text:
+                    # 청크를 받았으므로 타임스탬프 갱신
+                    last_chunk_time = time.time()
+
                     recent_chunks.append(chunk_text)
                     # 최근 10개 청크만 유지
                     if len(recent_chunks) > 10:
                         recent_chunks.pop(0)
 
-                    # 최근 청크들을 합쳐서 완료 키워드 검색
+                    # 최근 청크들을 합쳐서 키워드 검색
                     recent_text = "".join(recent_chunks)
+
+                    # 에러 키워드 우선 확인 (즉시 종료)
+                    if any(keyword in recent_text for keyword in error_keywords):
+                        logger.warning(
+                            f"[{self.config.name}] 조기 종료 감지: "
+                            f"에러 키워드 발견. 스트리밍 종료."
+                        )
+                        # 에러 발생 시 즉시 종료 (타임아웃까지 기다리지 않음)
+                        break
+
+                    # 완료 키워드 확인
                     if any(keyword in recent_text for keyword in completion_keywords):
                         logger.debug(
                             f"[{self.config.name}] 조기 종료 감지: "
@@ -174,6 +270,16 @@ class WorkerAgent:
                         )
                         # 스트리밍 종료 (더 이상 응답을 기다리지 않음)
                         break
+
+                # 응답 없음 감지: 마지막 청크 이후 시간 확인
+                elapsed = time.time() - last_chunk_time
+                if elapsed > no_response_timeout:
+                    logger.warning(
+                        f"[{self.config.name}] {no_response_timeout}초 동안 응답 없음. "
+                        f"스트리밍 조기 종료."
+                    )
+                    # 응답이 멈춘 것으로 간주하고 종료
+                    break
 
             logger.debug(f"[{self.config.name}] Claude Agent SDK 실행 완료")
 
