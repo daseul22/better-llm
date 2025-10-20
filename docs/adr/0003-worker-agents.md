@@ -83,8 +83,8 @@ Accepted
 | Worker | 책임 | 필수 도구 |
 |--------|------|----------|
 | **Planner** | 요구사항 분석, 계획 수립, 파일 탐색 | read, glob, grep |
-| **Coder** | 코드 작성/수정, 파일 생성, 빌드 실행 | read, write, edit, bash |
-| **Tester** | 테스트 실행, 결과 검증 | read, bash |
+| **Coder** | 코드 작성/수정, 파일 생성, 코드베이스 분석 | read, write, edit, glob, grep |
+| **Tester** | 테스트 실행, 결과 검증 | read, bash, glob |
 | **Reviewer** | 코드 품질 검토, 베스트 프랙티스 확인 | read, glob, grep |
 | **Committer** | Git 커밋, PR 생성, 릴리스 관리 | bash |
 
