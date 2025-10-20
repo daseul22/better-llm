@@ -60,7 +60,14 @@ from .widgets import (
 )
 from .widgets.settings_modal import SettingsModal
 from .widgets.search_input import SearchHighlighter
-from .utils import InputHistory, LogExporter, AutocompleteEngine, TUIConfig, TUISettings
+from .utils import (
+    InputHistory,
+    LogExporter,
+    AutocompleteEngine,
+    TUIConfig,
+    TUISettings,
+    MessageRenderer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -639,9 +646,10 @@ class OrchestratorTUI(App):
             # 입력 필드 비우기
             task_input.clear()
 
-            # 사용자 요청 표시 (컴팩트)
+            # 사용자 요청 표시 (MessageRenderer 사용)
             self.write_log("")
-            self.write_log(f"[bold blue]💬[/bold blue] {user_request}")
+            user_panel = MessageRenderer.render_user_message(user_request)
+            self.write_log(user_panel)
             self.write_log("")
 
             # 히스토리에 추가
@@ -659,15 +667,23 @@ class OrchestratorTUI(App):
             task_start_time = time.time()
             manager_response = ""
 
-            # 스트리밍으로 실시간 출력
+            # 스트리밍으로 실시간 출력 (MessageRenderer 사용)
             try:
+                # AI 응답 시작 헤더 표시
+                self.write_log(MessageRenderer.render_ai_response_start())
+                self.write_log("")
+
                 async for chunk in self.manager.analyze_and_plan_stream(
                     self.history.get_history()
                 ):
                     manager_response += chunk
-                    # 실시간으로 텍스트 출력
-                    # RichLog.write()는 'end' 파라미터를 지원하지 않음
-                    self.write_log(chunk)
+                    # 모든 청크에 일관된 인덴트 적용
+                    formatted_chunk = MessageRenderer.render_ai_response_chunk(chunk)
+                    self.write_log(formatted_chunk)
+
+                # AI 응답 종료 구분선 표시
+                self.write_log("")
+                self.write_log(MessageRenderer.render_ai_response_end())
             except asyncio.CancelledError:
                 # 사용자가 Ctrl+I로 중단
                 self.write_log(f"\n[bold yellow]⚠️  작업이 사용자에 의해 중단되었습니다[/bold yellow]")

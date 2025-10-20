@@ -4,6 +4,7 @@ from .input_history import InputHistory
 from .log_exporter import LogExporter
 from .autocomplete import AutocompleteEngine
 from .tui_config import TUIConfig, TUISettings
+from .message_renderer import MessageRenderer
 
 __all__ = [
     "InputHistory",
@@ -11,4 +12,5 @@ __all__ = [
     "AutocompleteEngine",
     "TUIConfig",
     "TUISettings",
+    "MessageRenderer",
 ]
