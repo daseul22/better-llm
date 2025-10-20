@@ -581,7 +581,12 @@ def worker_tool(
         return tool(
             f"execute_{worker_name}_task",
             f"{worker_name.capitalize()} Agent에게 작업을 할당합니다. {description}",
-            {"task_description": str}
+            {
+                "task_description": {
+                    "type": "string",
+                    "description": "작업 설명"
+                }
+            }
         )(wrapper)
 
     return decorator
@@ -910,6 +915,16 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
     pass  # 데코레이터가 모든 로직을 처리
 
 
+@tool(
+    "execute_parallel_tasks",
+    "병렬 작업 실행을 수행합니다. Planner가 생성한 병렬 실행 계획 JSON을 받아서 Task들을 병렬로 실행합니다.",
+    {
+        "plan_json": {
+            "type": "string",
+            "description": "Planner가 생성한 병렬 실행 계획 JSON 문자열"
+        }
+    }
+)
 async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
     """
     병렬 작업 실행 Tool
