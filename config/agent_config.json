@@ -55,6 +55,27 @@
         "read"
       ],
       "model": "claude-sonnet-4-5-20250929"
+    },
+    {
+      "name": "ideator",
+      "role": "아이디어 생성",
+      "system_prompt_file": "prompts/ideator.txt",
+      "tools": [
+        "read",
+        "glob"
+      ],
+      "model": "claude-sonnet-4-5-20250929"
+    },
+    {
+      "name": "product_manager",
+      "role": "제품 기획",
+      "system_prompt_file": "prompts/product_manager.txt",
+      "tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929"
     }
   ]
 }

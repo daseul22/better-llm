@@ -14,14 +14,16 @@ from .session_repository import JsonSessionRepository
 from .sqlite_session_repository import SqliteSessionRepository
 from .sqlite_approval_repository import SqliteApprovalRepository
 from .optimized_session_storage import OptimizedSessionRepository
+from ..config import get_data_dir
 
 logger = logging.getLogger(__name__)
 
 # 기본 스토리지 설정
+# 경로는 ~/.better-llm/{project-name}/에 저장됨
 DEFAULT_STORAGE_CONFIG = {
     "backend": "json",
-    "json_dir": "sessions",
-    "sqlite_db_path": "data/sessions.db",
+    "json_dir": str(get_data_dir("sessions")),  # ~/.better-llm/{project-name}/sessions
+    "sqlite_db_path": str(get_data_dir("data") / "sessions.db"),  # ~/.better-llm/{project-name}/data/sessions.db
     "retention_days": 90
 }
 

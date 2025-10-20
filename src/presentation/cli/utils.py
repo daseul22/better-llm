@@ -26,7 +26,8 @@ def setup_logging(verbose: bool = False) -> None:
     # 환경변수에서 로깅 설정 로드
     log_level = "DEBUG" if verbose else os.getenv("LOG_LEVEL", "INFO")
     log_format = os.getenv("LOG_FORMAT", "json")
-    log_dir = os.getenv("LOG_DIR", "logs")
+    # LOG_DIR 환경변수가 설정되지 않으면 None (기본 경로 사용: ~/.better-llm/{project-name}/logs)
+    log_dir = os.getenv("LOG_DIR")
 
     # structlog 초기화
     configure_structlog(

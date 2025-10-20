@@ -57,7 +57,9 @@ _ERROR_STATS = {
     "coder": {"attempts": 0, "failures": 0},
     "reviewer": {"attempts": 0, "failures": 0},
     "tester": {"attempts": 0, "failures": 0},
-    "committer": {"attempts": 0, "failures": 0}
+    "committer": {"attempts": 0, "failures": 0},
+    "ideator": {"attempts": 0, "failures": 0},
+    "product_manager": {"attempts": 0, "failures": 0}
 }
 
 def _get_timeout_from_env(worker_name: str, default: int) -> int:
@@ -95,6 +97,8 @@ _WORKER_TIMEOUTS = {
     "reviewer": _get_timeout_from_env("reviewer", 300),
     "tester": _get_timeout_from_env("tester", 600),
     "committer": _get_timeout_from_env("committer", 180),
+    "ideator": _get_timeout_from_env("ideator", 300),
+    "product_manager": _get_timeout_from_env("product_manager", 300),
 }
 
 
@@ -227,6 +231,12 @@ def _load_worker_timeouts_from_config():
         )
         _WORKER_TIMEOUTS["committer"] = _get_timeout_from_env(
             "committer", timeouts.get("committer_timeout", 180)
+        )
+        _WORKER_TIMEOUTS["ideator"] = _get_timeout_from_env(
+            "ideator", timeouts.get("ideator_timeout", 300)
+        )
+        _WORKER_TIMEOUTS["product_manager"] = _get_timeout_from_env(
+            "product_manager", timeouts.get("product_manager_timeout", 300)
         )
 
         logger.debug(f"Worker 타임아웃 설정 로드 완료: {_WORKER_TIMEOUTS}")
@@ -845,6 +855,34 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     pass  # 데코레이터가 모든 로직을 처리 (보안 검증 포함)
 
 
+@worker_tool("ideator", "창의적 아이디어 생성 및 브레인스토밍을 담당합니다.", retry=True)
+async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ideator Agent 실행 (재시도 로직 포함)
+
+    Args:
+        args: {"task_description": "작업 설명"}
+
+    Returns:
+        Agent 실행 결과
+    """
+    pass  # 데코레이터가 모든 로직을 처리
+
+
+@worker_tool("product_manager", "제품 기획 및 요구사항 정의를 담당합니다.", retry=True)
+async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Product Manager Agent 실행 (재시도 로직 포함)
+
+    Args:
+        args: {"task_description": "작업 설명"}
+
+    Returns:
+        Agent 실행 결과
+    """
+    pass  # 데코레이터가 모든 로직을 처리
+
+
 def get_error_statistics() -> Dict[str, Any]:
     """
     에러 통계 조회
@@ -915,7 +953,9 @@ def create_worker_tools_server():
             execute_coder_task,
             execute_reviewer_task,
             execute_tester_task,
-            execute_committer_task
+            execute_committer_task,
+            execute_ideator_task,
+            execute_product_manager_task
         ]
     )
 

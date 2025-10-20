@@ -19,8 +19,23 @@ from structlog.stdlib import add_log_level
 JSONSerializable = Union[str, int, float, bool, None, dict, list]
 
 
+def _get_default_log_dir() -> str:
+    """
+    기본 로그 디렉토리 경로 반환 (~/.better-llm/{project-name}/logs)
+
+    Returns:
+        로그 디렉토리 경로 (문자열)
+    """
+    try:
+        from ..config import get_data_dir
+        return str(get_data_dir("logs"))
+    except Exception:
+        # import 실패 시 폴백
+        return "logs"
+
+
 def configure_structlog(
-    log_dir: str = "logs",
+    log_dir: Optional[str] = None,
     log_level: str = "INFO",
     enable_json: bool = True,
 ) -> None:
@@ -28,17 +43,20 @@ def configure_structlog(
     structlog를 설정합니다.
 
     Args:
-        log_dir: 로그 파일 디렉토리
+        log_dir: 로그 파일 디렉토리 (None이면 ~/.better-llm/{project-name}/logs 사용)
         log_level: 로그 레벨 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         enable_json: JSON 형식 출력 활성화 여부 (False시 콘솔 형식)
 
     Example:
-        >>> configure_structlog(log_dir="logs", log_level="INFO", enable_json=True)
+        >>> configure_structlog(log_dir=None, log_level="INFO", enable_json=True)
         >>> logger = get_logger(__name__, session_id="abc123")
         >>> logger.info("Task started", worker_name="planner", task_id="task_001")
     """
+    if log_dir is None:
+        log_dir = _get_default_log_dir()
+
     log_path = Path(log_dir)
-    log_path.mkdir(exist_ok=True)
+    log_path.mkdir(parents=True, exist_ok=True)
 
     # 프로세서 체인 설정
     processors = [

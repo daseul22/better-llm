@@ -9,6 +9,7 @@ import os
 import logging
 import platform
 from pathlib import Path
+from typing import Optional
 
 # Optional dotenv support
 try:
@@ -114,3 +115,73 @@ def get_project_root() -> Path:
     # 현재 파일(validator.py)의 부모의 부모의 부모 = better-llm
     # better-llm/src/infrastructure/config/validator.py -> better-llm
     return Path(__file__).parent.parent.parent.parent.resolve()
+
+
+def get_project_name() -> str:
+    """
+    프로젝트 이름 감지
+
+    우선순위:
+    1. Git 저장소 이름 (git root directory 이름)
+    2. 현재 작업 디렉토리 이름
+
+    Returns:
+        프로젝트 이름 (디렉토리명)
+
+    Example:
+        >>> get_project_name()
+        'better-llm'
+    """
+    import subprocess
+
+    try:
+        # Git root 디렉토리 확인 시도
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+
+        if result.returncode == 0:
+            git_root = Path(result.stdout.strip())
+            return git_root.name
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        # git이 없거나 타임아웃
+        pass
+
+    # Git 저장소가 아니면 현재 작업 디렉토리 이름 사용
+    return Path.cwd().name
+
+
+def get_data_dir(subdir: Optional[str] = None) -> Path:
+    """
+    데이터 디렉토리 경로 반환 (~/.better-llm/{project-name}/)
+
+    프로젝트별 세션, 로그 등을 저장하는 디렉토리를 반환합니다.
+    디렉토리가 없으면 자동으로 생성합니다.
+
+    Args:
+        subdir: 하위 디렉토리 이름 (예: "sessions", "logs")
+
+    Returns:
+        데이터 디렉토리 경로 (절대 경로)
+
+    Example:
+        >>> get_data_dir()
+        Path('/Users/daniel/.better-llm/better-llm')
+        >>> get_data_dir("sessions")
+        Path('/Users/daniel/.better-llm/better-llm/sessions')
+    """
+    home_dir = Path.home()
+    project_name = get_project_name()
+
+    if subdir:
+        data_path = home_dir / ".better-llm" / project_name / subdir
+    else:
+        data_path = home_dir / ".better-llm" / project_name
+
+    # 디렉토리 생성 (없으면)
+    data_path.mkdir(parents=True, exist_ok=True)
+
+    return data_path

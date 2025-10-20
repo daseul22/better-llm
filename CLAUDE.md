@@ -96,6 +96,30 @@ export ANTHROPIC_API_KEY='your-api-key-here'
 python3 -m py_compile src/*.py *.py
 ```
 
+### 데이터 저장 위치
+
+세션, 로그 등 실행 데이터는 `~/.better-llm/{project-name}/` 디렉토리에 저장됩니다.
+
+```bash
+~/.better-llm/
+└── {project-name}/       # Git 저장소 이름 또는 현재 디렉토리 이름
+    ├── sessions/         # 세션 히스토리 (JSON)
+    ├── logs/             # 로그 파일 (better-llm.log, better-llm-error.log)
+    └── data/             # 데이터베이스 (sessions.db)
+```
+
+**환경변수 오버라이드**:
+```bash
+export LOG_DIR="/custom/log/path"      # 로그 디렉토리 변경
+export LOG_LEVEL="DEBUG"               # 로그 레벨 변경
+export LOG_FORMAT="json"               # 로그 포맷 (json/console)
+```
+
+**장점**:
+- 프로젝트별 독립적인 세션/로그 관리
+- 프로젝트 디렉토리를 깨끗하게 유지
+- 여러 프로젝트를 동시에 사용해도 충돌 없음
+
 ---
 
 ## 주요 명령어
@@ -233,6 +257,9 @@ src/
 - Coder: read, write, edit, glob, grep, bash
 - Reviewer: read, glob, grep
 - Tester: read, bash, write
+- Committer: bash, read
+- Ideator: read, glob
+- Product Manager: read, glob, grep
 
 **config/system_config.json** - 시스템 설정
 - manager: max_history_messages, max_turns
@@ -249,6 +276,9 @@ src/
 - coder.txt: 코드 작성 전문가
 - reviewer.txt: 코드 리뷰 전문가 (심각도 분류: 🔴 Critical, 🟡 Warning, 🔵 Info)
 - tester.txt: 테스트 및 검증 전문가
+- committer.txt: Git 커밋 전문가
+- ideator.txt: 아이디어 생성 및 브레인스토밍 전문가
+- product_manager.txt: 제품 기획 및 요구사항 정의 전문가
 
 ---
 
@@ -423,6 +453,75 @@ ls -la prompts/
 
 ## 최근 개선 사항
 
+### feat. 세션 및 로그 저장 위치 변경 (~/.better-llm/{project-name}/)
+- 날짜: 2025-10-20
+- 컨텍스트: 실행 위치에 세션/로그 파일이 생성되어 프로젝트 디렉토리가 어지러워지는 문제
+  - 여러 프로젝트를 사용할 때 세션/로그 구분 어려움
+  - Git에 의도치 않게 커밋될 위험
+- 변경사항:
+  - **프로젝트 이름 감지 로직 추가** (`validator.py`):
+    - `get_project_name()`: Git root 디렉토리 이름 또는 현재 디렉토리 이름 반환
+    - `get_data_dir(subdir)`: `~/.better-llm/{project-name}/{subdir}` 경로 반환 및 자동 생성
+  - **저장소 기본 경로 변경** (`repository_factory.py`):
+    - JSON 세션: `~/.better-llm/{project-name}/sessions`
+    - SQLite DB: `~/.better-llm/{project-name}/data/sessions.db`
+  - **로그 기본 경로 변경** (`structured_logger.py`):
+    - 로그 파일: `~/.better-llm/{project-name}/logs/`
+    - `configure_structlog(log_dir=None)`: None이면 기본 경로 사용
+  - **CLI/TUI 업데이트**:
+    - 환경변수 `LOG_DIR`가 설정되지 않으면 None 전달 (기본 경로 사용)
+    - 기존 환경변수 오버라이드 동작 유지
+- 영향범위:
+  - **사용자 경험**: 프로젝트 디렉토리가 깨끗하게 유지됨
+  - **멀티 프로젝트**: 프로젝트별 독립적인 세션/로그 관리
+  - **호환성**: 환경변수로 기존 동작 유지 가능
+- 디렉토리 구조:
+  ```
+  ~/.better-llm/
+  └── {project-name}/
+      ├── sessions/     # 세션 히스토리
+      ├── logs/         # 로그 파일
+      └── data/         # 데이터베이스
+  ```
+- 테스트: 구문 검사 통과, 디렉토리 생성 확인
+- 후속 조치: 실제 사용 시 마이그레이션 가이드 필요 (기존 세션 이동)
+
+### feat. Ideator 및 Product Manager Worker 추가
+- 날짜: 2025-10-20
+- 컨텍스트: 소프트웨어 개발 프로세스에서 기획 단계 지원 강화 필요
+  - 창의적 아이디어 생성 및 브레인스토밍 기능 부재
+  - 제품 요구사항 정의 및 우선순위 설정 자동화 필요
+- 변경사항:
+  - **Ideator Worker 추가**:
+    - `prompts/ideator.txt`: 창의적 아이디어 생성 전문가 프롬프트
+      - SCAMPER, First Principles 등 사고 기법 적용
+      - 발산적/수렴적 사고 프로세스 구조화
+      - 실현 가능성 기반 아이디어 평가 및 우선순위 제안
+    - Tools: read, glob (컨텍스트 파악용, 읽기 전용)
+    - Timeout: 300초 (환경변수 WORKER_TIMEOUT_IDEATOR로 조정 가능)
+  - **Product Manager Worker 추가**:
+    - `prompts/product_manager.txt`: 제품 기획 전문가 프롬프트
+      - 요구사항 정의 및 우선순위 설정 (MoSCoW 등)
+      - 사용자 스토리 및 수용 기준(Acceptance Criteria) 작성
+      - 제품 로드맵 및 마일스톤 계획 (MVP → Enhancement → Scale)
+      - 위험 분석 및 완화 전략 수립
+    - Tools: read, glob, grep (요구사항 분석용, 읽기 전용)
+    - Timeout: 300초 (환경변수 WORKER_TIMEOUT_PRODUCT_MANAGER로 조정 가능)
+  - **인프라 코드 업데이트**:
+    - `config/agent_config.json`: 두 워커 설정 추가
+    - `src/infrastructure/mcp/worker_tools.py`:
+      - 에러 통계에 ideator, product_manager 추가
+      - 타임아웃 설정 추가 (환경변수 지원)
+      - @worker_tool 데코레이터로 Tool 함수 구현 (재시도 로직 포함)
+      - MCP Server에 두 Tool 등록
+- 영향범위:
+  - **워크플로우 확장**: 기존 Planner 이전 단계로 활용 가능
+    - Ideator → Product Manager → Planner → Coder → Reviewer → Tester
+  - **유연성 향상**: Manager Agent가 필요에 따라 선택적으로 호출
+  - **문서화**: CLAUDE.md 업데이트 (설정 파일 섹션, 프롬프트 목록)
+- 테스트: 구문 검사 통과
+- 후속 조치: 실제 사용 시 워크플로우 효과 검증
+
 ### fix. Worker Agent 타임아웃 문제 해결
 - 날짜: 2025-10-20
 - 컨텍스트: Worker Agent가 작업 완료 후에도 타임아웃까지 대기하는 문제 발생
@@ -460,4 +559,4 @@ ls -la prompts/
 
 **개발 히스토리**: 상세한 개발 히스토리는 `CLAUDE_HISTORY.md` 참조
 
-**최종 업데이트**: 2025-10-20
+**최종 업데이트**: 2025-10-20 (Ideator, Product Manager Worker 추가 / 세션/로그 저장 위치 변경)
