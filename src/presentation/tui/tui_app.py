@@ -183,7 +183,6 @@ class OrchestratorTUI(App):
         background: #0d1117;
         padding: 1;
         scrollbar-gutter: stable;
-        max-lines: 1000;
     }
 
     TabPane > Static {
