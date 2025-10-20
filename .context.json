@@ -49,7 +49,7 @@
   ],
   "testing": {
     "framework": "pytest",
-    "integration_tests": "test_integration.py"
+    "test_directory": "tests/"
   },
   "description": "그룹 챗 오케스트레이션 시스템 - Clean Architecture 기반, Manager Agent가 Worker Tools를 호출하여 소프트웨어 개발 작업 자동화"
 }

@@ -66,24 +66,24 @@ pip install -e .
 **3. 환경 변수 설정**
 
 ```bash
-export ANTHROPIC_API_KEY='your-api-key-here'
+export ANTHROPIC_API_KEY='sk-ant-xxxxx'
 ```
 
 또는 `.env` 파일 생성:
 
 ```bash
-echo "ANTHROPIC_API_KEY=your-api-key-here" > .env
+echo "ANTHROPIC_API_KEY=sk-ant-xxxxx" > .env
 ```
 
 또는 셸 설정 파일에 영구 추가:
 
 ```bash
 # bash 사용자
-echo "export ANTHROPIC_API_KEY='your-api-key-here'" >> ~/.bashrc
+echo "export ANTHROPIC_API_KEY='sk-ant-xxxxx'" >> ~/.bashrc
 source ~/.bashrc
 
 # zsh 사용자
-echo "export ANTHROPIC_API_KEY='your-api-key-here'" >> ~/.zshrc
+echo "export ANTHROPIC_API_KEY='sk-ant-xxxxx'" >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -580,6 +580,13 @@ FileNotFoundError: 설정 파일을 찾을 수 없습니다
 ```
 
 → `prompts/` 디렉토리에 필요한 `.txt` 파일이 있는지 확인하세요.
+
+## 예제 (Examples)
+
+더 많은 사용 예제는 [docs/examples/](docs/examples/) 디렉토리를 참조하세요.
+
+**제공되는 예제:**
+- `cli_ui_demo.py`: CLI/TUI 데모 및 사용법 예시
 
 ## 테스트
 
