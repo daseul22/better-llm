@@ -14,7 +14,17 @@
   },
   "timeouts": {
     "default_worker_timeout": 300,
-    "max_worker_timeout": 1800
+    "max_worker_timeout": 1800,
+    "planner_timeout": 300,
+    "coder_timeout": 600,
+    "reviewer_timeout": 300,
+    "tester_timeout": 600,
+    "committer_timeout": 180
+  },
+  "workflow_limits": {
+    "max_retry_cycles": 3,
+    "max_review_iterations": 3,
+    "max_coder_retries": 2
   },
   "performance": {
     "enable_caching": true,
@@ -23,7 +33,14 @@
     "worker_retry_base_delay": 1.0,
     "worker_retry_max_delay": 30.0,
     "worker_retry_jitter": 0.1,
-    "worker_retry_exponential": true
+    "worker_retry_exponential": true,
+    "metrics_buffer_size": 1000,
+    "metrics_flush_interval": 5.0,
+    "cache_ttl_seconds": 3600,
+    "cache_max_size": 100,
+    "enable_session_compression": true,
+    "enable_background_save": true,
+    "enable_async_metrics": true
   },
   "security": {
     "max_input_length": 5000,

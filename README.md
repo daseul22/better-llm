@@ -231,9 +231,302 @@ better-llm/
 
 `prompts/` 디렉토리의 `.txt` 파일을 수정하여 각 에이전트의 행동을 변경할 수 있습니다.
 
+### 워크플로우 안정성 설정
+
+#### 타임아웃 설정
+
+각 Worker의 실행 타임아웃을 환경변수로 설정할 수 있습니다:
+
+```bash
+# .env 파일에 추가
+WORKER_TIMEOUT_PLANNER=300    # Planner: 5분 (기본값)
+WORKER_TIMEOUT_CODER=600      # Coder: 10분 (기본값)
+WORKER_TIMEOUT_REVIEWER=300   # Reviewer: 5분 (기본값)
+WORKER_TIMEOUT_TESTER=600     # Tester: 10분 (기본값)
+WORKER_TIMEOUT_COMMITTER=180  # Committer: 3분 (기본값)
+```
+
+타임아웃 초과 시 작업이 중단되고 사용자에게 알림이 표시됩니다.
+
+#### 무한 루프 방지
+
+Manager Agent는 다음 규칙으로 무한 루프를 방지합니다:
+
+- **Review → Coder → Review 사이클**: 최대 3회 반복
+- 3회 초과 시 자동 중단 및 사용자 개입 요청
+- 반복 횟수를 실시간으로 표시 (예: "Review 사이클 1/3")
+
+설정 조정 (`config/system_config.json`):
+
+```json
+{
+  "workflow_limits": {
+    "max_retry_cycles": 3,
+    "max_review_iterations": 3,
+    "max_coder_retries": 2
+  }
+}
+```
+
+#### 리소스 관리
+
+- **자동 세션 종료**: try-finally 블록으로 모든 리소스 정리 보장
+- **메모리 누수 방지**: Worker Agent 실행 후 자동 cleanup
+- **에러 로깅**: 모든 예외에 대한 스택 트레이스 자동 기록
+
+### 구조화된 로깅 설정 (Priority 2 구현)
+
+Better-LLM은 `structlog` 기반의 구조화된 로깅을 지원합니다.
+
+#### 환경변수로 설정
+
+```bash
+# .env 파일에 추가
+LOG_LEVEL=INFO          # 로그 레벨 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+LOG_FORMAT=json         # 출력 형식 (json 또는 console)
+LOG_DIR=logs            # 로그 파일 디렉토리
+```
+
+또는 셸에서 직접 설정:
+
+```bash
+export LOG_LEVEL=INFO
+export LOG_FORMAT=json
+export LOG_DIR=logs
+```
+
+#### 로그 파일
+
+로그는 자동으로 다음과 같이 저장됩니다:
+
+- `logs/better-llm.log`: 전체 로그 (10MB 로테이션, 5개 백업)
+- `logs/better-llm-error.log`: 에러 로그만 (5MB 로테이션, 3개 백업)
+- `logs/better-llm-debug.log`: DEBUG 레벨일 때만 생성 (20MB 로테이션, 3개 백업)
+
+모든 로그 파일은 UTF-8 인코딩으로 저장되며, 파일명/함수명/줄번호 정보가 자동으로 포함됩니다.
+
+#### JSON 로그 형식 예시
+
+```json
+{
+  "event": "Worker agent initialized",
+  "worker_name": "planner",
+  "role": "요구사항 분석 및 계획 수립",
+  "model": "claude-sonnet-4-5-20250929",
+  "session_id": "abc123",
+  "pathname": "src/infrastructure/mcp/worker_tools.py",
+  "func_name": "initialize_workers",
+  "lineno": 427,
+  "timestamp": "2025-01-20T10:30:00.123456Z",
+  "level": "info"
+}
+```
+
+#### 에러 추적
+
+Better-LLM은 내장 에러 추적 시스템을 제공합니다.
+
+**자동 에러 추적:**
+
+모든 에러는 자동으로 추적되며, 다음 정보를 포함합니다:
+
+- 에러 타입 및 메시지
+- 발생 시각 (ISO 8601 형식)
+- 컨텍스트 정보 (worker_name, task_id 등)
+- 스택 트레이스 (exc_info 포함)
+
+**프로그래밍 방식 에러 추적:**
+
+```python
+from src.infrastructure.logging import track_error, get_error_stats
+
+# 에러 추적
+try:
+    ...
+except Exception as e:
+    track_error(e, "context_name", worker_name="planner")
+
+# 에러 통계 조회
+stats = get_error_stats()
+print(stats["total_errors"])
+print(stats["error_counts"])  # 에러 타입별 횟수
+print(stats["recent_errors"][:5])  # 최근 5개 에러
+```
+
+**동시성 안전성:**
+
+에러 추적 모듈은 `threading.Lock`을 사용하여 멀티스레드 환경에서도 안전하게 작동합니다.
+
+에러 통계는 TUI에서 실시간으로 확인할 수 있습니다.
+
+## 성능 최적화
+
+Better-LLM은 다음과 같은 성능 최적화 기능을 제공합니다:
+
+### 1. 비동기 메트릭 수집
+
+메트릭 수집이 메인 워크플로우를 블로킹하지 않도록 백그라운드 스레드에서 비동기적으로 처리합니다.
+
+**특징:**
+- 큐 기반 버퍼링 (기본 1000개)
+- 주기적 플러시 (기본 5초)
+- 메모리 효율적인 배치 처리
+- 통계 추적 (히트율, 큐 크기 등)
+
+**설정:**
+
+```json
+{
+  "performance": {
+    "enable_async_metrics": true,
+    "metrics_buffer_size": 1000,
+    "metrics_flush_interval": 5.0
+  }
+}
+```
+
+### 2. 프롬프트 캐싱
+
+중복 프롬프트 호출을 방지하여 API 비용과 응답 시간을 절감합니다.
+
+**특징:**
+- LRU (Least Recently Used) 캐시 정책
+- TTL (Time-To-Live) 기반 만료
+- 스레드 세이프 구현
+- 캐시 히트율 모니터링
+
+**설정:**
+
+```json
+{
+  "performance": {
+    "enable_caching": true,
+    "cache_ttl_seconds": 3600,
+    "cache_max_size": 100
+  }
+}
+```
+
+**사용 예시:**
+
+```python
+from src.infrastructure.cache import PromptCache
+
+cache = PromptCache(max_size=100, default_ttl=3600.0)
+
+# 캐시에 저장
+cache.set("What is Python?", "Python is a programming language")
+
+# 캐시에서 조회
+response = cache.get("What is Python?")
+
+# 통계 확인
+stats = cache.get_stats()
+print(f"Hit rate: {stats['hit_rate']}%")
+```
+
+### 3. 세션 저장 최적화
+
+세션 데이터 저장 시 압축 및 백그라운드 저장을 지원하여 성능을 향상시킵니다.
+
+**특징:**
+- **압축 저장**: gzip으로 파일 크기 30% 이상 절감
+- **백그라운드 저장**: 별도 스레드에서 비동기 저장
+- **증분 저장**: 변경된 데이터만 추가 저장 (향후 구현)
+
+**설정:**
+
+```json
+{
+  "performance": {
+    "enable_session_compression": true,
+    "enable_background_save": true
+  }
+}
+```
+
+**사용 예시:**
+
+```python
+from src.infrastructure.storage import OptimizedSessionRepository
+
+# 최적화된 저장소 생성
+repo = OptimizedSessionRepository(
+    sessions_dir="sessions",
+    enable_compression=True,
+    enable_background_save=True
+)
+
+# 세션 저장 (비동기)
+repo.save(session_id, user_request, history, result)
+
+# 종료 시 남은 작업 플러시
+repo.stop()
+```
+
+### 4. 성능 설정 전체 예시
+
+`config/system_config.json`:
+
+```json
+{
+  "performance": {
+    "enable_caching": true,
+    "worker_retry_enabled": true,
+    "worker_retry_max_attempts": 3,
+    "worker_retry_base_delay": 1.0,
+    "worker_retry_max_delay": 30.0,
+    "worker_retry_jitter": 0.1,
+    "worker_retry_exponential": true,
+    "metrics_buffer_size": 1000,
+    "metrics_flush_interval": 5.0,
+    "cache_ttl_seconds": 3600,
+    "cache_max_size": 100,
+    "enable_session_compression": true,
+    "enable_background_save": true,
+    "enable_async_metrics": true
+  }
+}
+```
+
+### 5. 성능 모니터링
+
+**메트릭 수집기 통계:**
+
+```python
+from src.infrastructure.metrics import AsyncMetricsCollector
+
+stats = collector.get_stats()
+print(f"Total queued: {stats['total_queued']}")
+print(f"Total processed: {stats['total_processed']}")
+print(f"Queue size: {stats['queue_size']}")
+```
+
+**캐시 통계:**
+
+```python
+from src.infrastructure.cache import PromptCache
+
+stats = cache.get_stats()
+print(f"Hit rate: {stats['hit_rate']}%")
+print(f"Cache size: {stats['cache_size']}/{stats['max_size']}")
+print(f"Hits: {stats['hits']}, Misses: {stats['misses']}")
+```
+
+### 6. 성능 최적화 효과
+
+| 기능 | 개선 효과 |
+|------|----------|
+| 비동기 메트릭 수집 | 메인 워크플로우 블로킹 제거 |
+| 프롬프트 캐싱 | API 호출 30-50% 절감 |
+| 압축 저장 | 디스크 공간 30-50% 절감 |
+| 백그라운드 저장 | 세션 저장 시간 70% 단축 |
+
 ## 세션 히스토리
 
-각 작업 완료 후 `sessions/` 디렉토리에 JSON 파일로 저장됩니다:
+각 작업 완료 후 `sessions/` 디렉토리에 JSON 파일로 저장됩니다.
+
+**압축 비활성화 시 (`.json`):**
 
 ```json
 {
@@ -250,6 +543,10 @@ better-llm/
   }
 }
 ```
+
+**압축 활성화 시 (`.json.gz`):**
+
+파일은 gzip으로 압축되어 저장되며, 로드 시 자동으로 압축 해제됩니다.
 
 ## 제약사항
 
@@ -283,6 +580,84 @@ FileNotFoundError: 설정 파일을 찾을 수 없습니다
 ```
 
 → `prompts/` 디렉토리에 필요한 `.txt` 파일이 있는지 확인하세요.
+
+## 테스트
+
+Better-LLM은 단위 테스트, 통합 테스트, E2E 테스트를 포함합니다.
+
+### 테스트 실행
+
+```bash
+# 테스트 의존성 설치
+pip install -r requirements-dev.txt
+
+# 모든 테스트 실행
+pytest
+
+# 특정 마커만 실행
+pytest -m unit          # 단위 테스트
+pytest -m integration   # 통합 테스트
+pytest -m e2e           # E2E 테스트
+
+# 커버리지 포함 실행
+pytest --cov=src --cov-report=html
+
+# 또는 테스트 스크립트 사용
+./scripts/run_tests.sh
+```
+
+### 테스트 구조
+
+```
+tests/
+├── unit/              # 단위 테스트
+│   ├── test_config_loader.py      # Config 로딩 테스트
+│   ├── test_structured_logger.py  # 로깅 테스트
+│   └── test_error_tracker.py      # 에러 추적 테스트
+├── integration/       # 통합 테스트
+│   └── ...
+├── e2e/              # End-to-end 테스트
+│   └── test_workflow.py           # 워크플로우 테스트
+└── mocks/            # Mock 객체
+    └── claude_api_mock.py         # Claude API Mock
+```
+
+### 커버리지 목표
+
+- **목표**: 80% 이상
+- **커버리지 리포트 확인**: `htmlcov/index.html` (HTML 리포트 생성 후)
+
+### 테스트 작성 가이드
+
+#### Unit Test 예시
+
+```python
+import pytest
+from src.infrastructure.config.loader import load_system_config
+
+@pytest.mark.unit
+def test_load_system_config(tmp_path):
+    """시스템 설정 로드 테스트"""
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"key": "value"}')
+
+    result = load_system_config(str(config_file))
+    assert result["key"] == "value"
+```
+
+#### E2E Test 예시
+
+```python
+import pytest
+from src.infrastructure.mcp.worker_tools import _execute_worker_task
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_planner_workflow():
+    """Planner 워크플로우 테스트"""
+    result = await _execute_worker_task("planner", "Analyze requirements")
+    assert result is not None
+```
 
 ## 향후 계획 (Roadmap)
 

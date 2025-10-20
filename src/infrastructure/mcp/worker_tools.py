@@ -10,6 +10,7 @@ from pathlib import Path
 import logging
 import asyncio
 import re
+import os
 from functools import wraps
 from datetime import datetime
 
@@ -20,8 +21,9 @@ from ..claude import WorkerAgent
 from ...domain.models import AgentConfig
 from ...domain.services import MetricsCollector
 from ..config import JsonConfigLoader, get_project_root
+from ..logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, component="WorkerTools")
 
 
 # 민감 정보 검증을 위한 패턴 정의
@@ -56,6 +58,43 @@ _ERROR_STATS = {
     "reviewer": {"attempts": 0, "failures": 0},
     "tester": {"attempts": 0, "failures": 0},
     "committer": {"attempts": 0, "failures": 0}
+}
+
+def _get_timeout_from_env(worker_name: str, default: int) -> int:
+    """
+    환경변수에서 타임아웃 값 가져오기 (안전한 int 변환)
+
+    Args:
+        worker_name: Worker 이름 (예: "planner", "coder")
+        default: 기본값
+
+    Returns:
+        타임아웃 값 (초)
+    """
+    env_var = f"WORKER_TIMEOUT_{worker_name.upper()}"
+    value = os.getenv(env_var)
+
+    if value is None:
+        return default
+
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning(
+            f"환경변수 {env_var}의 값 '{value}'을(를) 정수로 변환할 수 없습니다. "
+            f"기본값 {default}초를 사용합니다."
+        )
+        return default
+
+
+# Worker별 타임아웃 설정 (초 단위, 환경변수 > system_config.json > 기본값 순)
+# 나중에 _load_worker_timeouts()로 초기화됨
+_WORKER_TIMEOUTS = {
+    "planner": _get_timeout_from_env("planner", 300),
+    "coder": _get_timeout_from_env("coder", 600),
+    "reviewer": _get_timeout_from_env("reviewer", 300),
+    "tester": _get_timeout_from_env("tester", 600),
+    "committer": _get_timeout_from_env("committer", 180),
 }
 
 
@@ -102,9 +141,6 @@ async def retry_with_backoff(
                 )
                 raise
 
-    # 여기 도달하면 안 됨
-    raise RuntimeError("Unexpected error in retry_with_backoff")
-
 
 # 전역 변수로 Worker Agent 인스턴스들을 저장
 _WORKER_AGENTS: Dict[str, WorkerAgent] = {}
@@ -115,6 +151,88 @@ _CURRENT_SESSION_ID: Optional[str] = None
 
 # 워크플로우 콜백 (TUI에서 설정)
 _WORKFLOW_CALLBACK: Optional[Callable] = None
+
+# Review cycle 추적 (무한 루프 방지)
+_REVIEW_CYCLE_STATE = {
+    "count": 0,
+    "max_cycles": 3,
+    "last_reviewer_call_time": None,
+    "coder_called_after_reviewer": False
+}
+
+
+def reset_review_cycle() -> None:
+    """
+    Review cycle을 초기화합니다.
+
+    새 작업 시작 시 호출하여 이전 작업의 review count가 누적되지 않도록 합니다.
+    """
+    global _REVIEW_CYCLE_STATE
+    _REVIEW_CYCLE_STATE["count"] = 0
+    _REVIEW_CYCLE_STATE["last_reviewer_call_time"] = None
+    _REVIEW_CYCLE_STATE["coder_called_after_reviewer"] = False
+    logger.info("🔄 Review cycle has been reset")
+
+
+def _increment_review_cycle() -> tuple[int, bool]:
+    """
+    Review cycle을 증가시키고 현재 값을 반환합니다.
+
+    Returns:
+        tuple[int, bool]: (현재 cycle 수, 최대치 초과 여부)
+    """
+    global _REVIEW_CYCLE_STATE
+
+    _REVIEW_CYCLE_STATE["count"] += 1
+    current_cycle = _REVIEW_CYCLE_STATE["count"]
+    max_cycles = _REVIEW_CYCLE_STATE["max_cycles"]
+    exceeded = current_cycle > max_cycles
+
+    logger.info(
+        f"🔄 Review cycle incremented: {current_cycle}/{max_cycles} "
+        f"({'EXCEEDED' if exceeded else 'OK'})"
+    )
+
+    return current_cycle, exceeded
+
+
+def _load_worker_timeouts_from_config():
+    """
+    system_config.json에서 Worker 타임아웃 로드
+
+    환경변수가 설정되어 있으면 우선 사용,
+    없으면 system_config.json 값 사용,
+    둘 다 없으면 기본값 사용
+    """
+    global _WORKER_TIMEOUTS
+
+    try:
+        from ..config import load_system_config
+
+        config = load_system_config()
+        timeouts = config.get("timeouts", {})
+
+        # 환경변수 > system_config.json > 기본값 순으로 우선순위
+        _WORKER_TIMEOUTS["planner"] = _get_timeout_from_env(
+            "planner", timeouts.get("planner_timeout", 300)
+        )
+        _WORKER_TIMEOUTS["coder"] = _get_timeout_from_env(
+            "coder", timeouts.get("coder_timeout", 600)
+        )
+        _WORKER_TIMEOUTS["reviewer"] = _get_timeout_from_env(
+            "reviewer", timeouts.get("reviewer_timeout", 300)
+        )
+        _WORKER_TIMEOUTS["tester"] = _get_timeout_from_env(
+            "tester", timeouts.get("tester_timeout", 600)
+        )
+        _WORKER_TIMEOUTS["committer"] = _get_timeout_from_env(
+            "committer", timeouts.get("committer_timeout", 180)
+        )
+
+        logger.debug(f"Worker 타임아웃 설정 로드 완료: {_WORKER_TIMEOUTS}")
+
+    except Exception as e:
+        logger.warning(f"system_config.json에서 타임아웃 로드 실패: {e}. 기본값 사용.")
 
 
 async def _verify_git_environment() -> Tuple[bool, Optional[str]]:
@@ -279,7 +397,24 @@ def initialize_workers(config_path: Path):
     Args:
         config_path: Agent 설정 파일 경로
     """
-    global _WORKER_AGENTS
+    global _WORKER_AGENTS, _REVIEW_CYCLE_STATE
+
+    # system_config.json에서 타임아웃 설정 로드
+    _load_worker_timeouts_from_config()
+
+    # system_config.json에서 max_review_iterations 로드
+    try:
+        from ..config import load_system_config
+        config = load_system_config()
+        _REVIEW_CYCLE_STATE["max_cycles"] = config.get("workflow_limits", {}).get(
+            "max_review_iterations", 3
+        )
+        logger.info(
+            f"✅ Review cycle 최대 횟수: {_REVIEW_CYCLE_STATE['max_cycles']}회"
+        )
+    except Exception as e:
+        logger.warning(f"max_review_iterations 로드 실패: {e}. 기본값 3 사용.")
+        _REVIEW_CYCLE_STATE["max_cycles"] = 3
 
     loader = JsonConfigLoader(get_project_root())
     worker_configs = loader.load_agent_configs()
@@ -287,7 +422,12 @@ def initialize_workers(config_path: Path):
     for config in worker_configs:
         worker = WorkerAgent(config)
         _WORKER_AGENTS[config.name] = worker
-        logger.info(f"✅ Worker Agent 초기화: {config.name} ({config.role})")
+        logger.info(
+            "Worker agent initialized",
+            worker_name=config.name,
+            role=config.role,
+            model=config.model
+        )
 
 
 def set_metrics_collector(collector: MetricsCollector, session_id: str) -> None:
@@ -301,7 +441,7 @@ def set_metrics_collector(collector: MetricsCollector, session_id: str) -> None:
     global _METRICS_COLLECTOR, _CURRENT_SESSION_ID
     _METRICS_COLLECTOR = collector
     _CURRENT_SESSION_ID = session_id
-    logger.info(f"✅ 메트릭 컬렉터 설정 완료 (Session: {session_id})")
+    logger.info("Metrics collector configured", session_id=session_id)
 
 
 def update_session_id(session_id: str) -> None:
@@ -313,7 +453,7 @@ def update_session_id(session_id: str) -> None:
     """
     global _CURRENT_SESSION_ID
     _CURRENT_SESSION_ID = session_id
-    logger.info(f"✅ 세션 ID 업데이트: {session_id}")
+    logger.info("Session ID updated", session_id=session_id)
 
 
 def set_workflow_callback(callback: Optional[Callable]) -> None:
@@ -426,7 +566,7 @@ async def _execute_worker_task(
     use_retry: bool = False
 ) -> Dict[str, Any]:
     """
-    Worker Agent 실행 공통 로직
+    Worker Agent 실행 공통 로직 (타임아웃 적용 + Review cycle 추적)
 
     Args:
         worker_name: Worker 이름 (예: "planner", "coder")
@@ -436,15 +576,70 @@ async def _execute_worker_task(
     Returns:
         Agent 실행 결과
     """
-    logger.debug(f"[{worker_name.capitalize()} Tool] 작업 실행: {task_description[:50]}...")
+    global _REVIEW_CYCLE_STATE
+
+    # Worker 전용 로거 생성 (컨텍스트 포함)
+    worker_logger = get_logger(__name__, worker_name=worker_name, component="WorkerExecution")
+    worker_logger.debug(
+        "Task execution started",
+        task_description=task_description[:100]
+    )
 
     worker = _WORKER_AGENTS.get(worker_name)
     if not worker:
+        worker_logger.error("Worker agent not found")
         return {
             "content": [
                 {"type": "text", "text": f"❌ {worker_name.capitalize()} Agent를 찾을 수 없습니다."}
             ]
         }
+
+    # 새 작업 시작 시 Review cycle 초기화 (Planner 또는 Coder 시작 시)
+    if worker_name in ["planner", "coder"]:
+        # Planner는 항상 새 작업의 시작이므로 무조건 초기화
+        # Coder는 Reviewer 호출 이후가 아니면 새 작업의 시작으로 간주
+        if worker_name == "planner" or not _REVIEW_CYCLE_STATE["coder_called_after_reviewer"]:
+            reset_review_cycle()
+
+    # Review cycle 추적 로직 (무한 루프 방지)
+
+    if worker_name == "reviewer":
+        # Reviewer 호출 시 cycle count 증가 (Coder 호출 후인 경우)
+        if _REVIEW_CYCLE_STATE["coder_called_after_reviewer"]:
+            _REVIEW_CYCLE_STATE["coder_called_after_reviewer"] = False
+            # Cycle count 증가 및 최대치 체크
+            current_cycle, exceeded = _increment_review_cycle()
+
+            # 최대 횟수 초과 체크
+            if exceeded:
+                error_msg = (
+                    f"⚠️  Review Cycle이 최대 횟수 "
+                    f"({_REVIEW_CYCLE_STATE['max_cycles']}회)를 초과했습니다.\n\n"
+                    f"무한 루프를 방지하기 위해 Reviewer 실행을 중단합니다.\n"
+                    f"수동으로 코드를 검토하고 수정하거나, 요구사항을 조정해주세요.\n\n"
+                    f"(Tip: system_config.json의 'workflow_limits.max_review_iterations'로 "
+                    f"최대 횟수를 조정할 수 있습니다.)"
+                )
+                logger.error(error_msg)
+
+                # Review cycle 초기화
+                reset_review_cycle()
+
+                return {
+                    "content": [{"type": "text", "text": error_msg}]
+                }
+
+        _REVIEW_CYCLE_STATE["last_reviewer_call_time"] = datetime.now()
+
+    elif worker_name == "coder":
+        # Reviewer 호출 후 Coder가 호출되면 플래그 설정
+        if _REVIEW_CYCLE_STATE["last_reviewer_call_time"] is not None:
+            _REVIEW_CYCLE_STATE["coder_called_after_reviewer"] = True
+            logger.debug("Reviewer 호출 후 Coder 실행 감지 (다음 Reviewer 호출 시 cycle count 증가)")
+
+    # 타임아웃 설정 가져오기
+    timeout = _WORKER_TIMEOUTS.get(worker_name, 300)
+    worker_logger.debug("Timeout configured", timeout_seconds=timeout)
 
     # 메트릭 수집 시작
     start_time = datetime.now()
@@ -465,11 +660,15 @@ async def _execute_worker_task(
         return {"content": [{"type": "text", "text": result}]}
 
     try:
+        # 타임아웃 적용
         if use_retry:
-            result = await retry_with_backoff(execute, worker_name)
+            result = await asyncio.wait_for(
+                retry_with_backoff(execute, worker_name),
+                timeout=timeout
+            )
         else:
             _ERROR_STATS[worker_name]["attempts"] += 1
-            result = await execute()
+            result = await asyncio.wait_for(execute(), timeout=timeout)
 
         success = True
 
@@ -482,10 +681,44 @@ async def _execute_worker_task(
 
         return result
 
+    except asyncio.TimeoutError:
+        _ERROR_STATS[worker_name]["failures"] += 1
+        error_message = f"타임아웃 ({timeout}초 초과)"
+        worker_logger.error(
+            "Task execution timeout",
+            timeout_seconds=timeout,
+            exc_info=True
+        )
+
+        # 워크플로우 콜백: FAILED 상태
+        if _WORKFLOW_CALLBACK:
+            try:
+                _WORKFLOW_CALLBACK(worker_name, "failed", error_message)
+            except Exception as callback_error:
+                logger.warning(f"워크플로우 콜백 실행 실패 (failed): {callback_error}")
+
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        f"❌ {worker_name.capitalize()} 실행 타임아웃\n\n"
+                        f"작업이 {timeout}초 내에 완료되지 않았습니다.\n"
+                        f"환경변수 WORKER_TIMEOUT_{worker_name.upper()}를 "
+                        f"조정하여 타임아웃을 늘릴 수 있습니다."
+                    )
+                }
+            ]
+        }
+
     except Exception as e:
         _ERROR_STATS[worker_name]["failures"] += 1
         error_message = str(e)
-        logger.error(f"[{worker_name.capitalize()} Tool] 실행 실패: {e}")
+        worker_logger.error(
+            "Task execution failed",
+            error=str(e),
+            exc_info=True
+        )
 
         # 워크플로우 콜백: FAILED 상태
         if _WORKFLOW_CALLBACK:
@@ -496,7 +729,14 @@ async def _execute_worker_task(
 
         return {
             "content": [
-                {"type": "text", "text": f"❌ {worker_name.capitalize()} 실행 실패: {e}"}
+                {
+                    "type": "text",
+                    "text": (
+                        f"❌ {worker_name.capitalize()} 실행 실패\n\n"
+                        f"에러: {e}\n\n"
+                        f"스택 트레이스는 로그를 확인하세요."
+                    )
+                }
             ]
         }
 
@@ -565,13 +805,28 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
 @worker_tool("reviewer", "코드 리뷰 및 품질 검증을 담당합니다.", retry=False)
 async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Reviewer Agent 실행
+    Reviewer Agent에게 작업을 할당합니다. 코드 리뷰 및 품질 검증을 담당합니다.
+
+    Review cycle은 무한 루프 방지를 위해 최대 횟수가 제한됩니다.
+    (기본값: 3회, system_config.json의 'workflow_limits.max_review_iterations'로 조정 가능)
 
     Args:
-        args: {"task_description": "작업 설명"}
+        args: {"task_description": "리뷰 요청 내용"}
+              - task_description: 리뷰 대상 및 요청 사항
+              - (향후 확장 가능) context: 추가 컨텍스트 정보
+              - (향후 확장 가능) severity_threshold: 최소 보고 심각도
 
     Returns:
-        Agent 실행 결과
+        Dict[str, Any]: Agent 실행 결과
+            - content: [{"type": "text", "text": "리뷰 결과"}]
+
+    Raises:
+        Exception: Review cycle이 최대치를 초과한 경우
+
+    Note:
+        - Review cycle은 Reviewer → Coder → Reviewer 패턴을 감지하여 증가합니다.
+        - 최대 횟수 초과 시 자동으로 실행이 중단되며, 수동 검토가 필요합니다.
+        - 새 작업 시작 시(Planner 또는 Coder 호출) Review cycle이 자동 초기화됩니다.
     """
     pass  # 데코레이터가 모든 로직을 처리
 

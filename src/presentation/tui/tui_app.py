@@ -8,6 +8,7 @@
 import asyncio
 import time
 import logging
+import os
 from pathlib import Path
 from typing import Optional, List, Tuple, Union
 from enum import Enum
@@ -1707,6 +1708,22 @@ class OrchestratorTUI(App):
 
 def main():
     """메인 함수"""
+    # 구조화된 로깅 설정
+    from src.infrastructure.logging import configure_structlog
+
+    # 환경변수에서 로깅 설정 로드
+    log_level = os.getenv("LOG_LEVEL", "INFO")
+    log_format = os.getenv("LOG_FORMAT", "json")
+    log_dir = os.getenv("LOG_DIR", "logs")
+
+    # structlog 초기화
+    configure_structlog(
+        log_dir=log_dir,
+        log_level=log_level,
+        enable_json=(log_format == "json")
+    )
+
+    # 앱 실행
     app = OrchestratorTUI()
     app.run()
 

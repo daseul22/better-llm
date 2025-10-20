@@ -13,6 +13,7 @@ from ...application.ports import ISessionRepository, IApprovalRepository
 from .session_repository import JsonSessionRepository
 from .sqlite_session_repository import SqliteSessionRepository
 from .sqlite_approval_repository import SqliteApprovalRepository
+from .optimized_session_storage import OptimizedSessionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -57,16 +58,18 @@ def load_storage_config() -> dict:
 
 def create_session_repository(
     backend: Optional[str] = None,
-    config: Optional[dict] = None
+    config: Optional[dict] = None,
+    use_optimized: Optional[bool] = None
 ) -> ISessionRepository:
     """
     세션 리포지토리 생성 팩토리 함수
 
-    시스템 설정에 따라 JSON 또는 SQLite 리포지토리를 생성합니다.
+    시스템 설정에 따라 JSON, SQLite, 또는 최적화된 리포지토리를 생성합니다.
 
     Args:
-        backend: 리포지토리 타입 ("json" 또는 "sqlite", None이면 설정에서 로드)
+        backend: 리포지토리 타입 ("json", "sqlite", "optimized", None이면 설정에서 로드)
         config: 리포지토리 설정 (None이면 설정 파일에서 로드)
+        use_optimized: 최적화된 저장소 사용 여부 (None이면 설정에서 로드)
 
     Returns:
         ISessionRepository 인스턴스
@@ -78,20 +81,57 @@ def create_session_repository(
     if config is None:
         config = load_storage_config()
 
+    # 성능 설정 로드
+    config_path = Path("config/system_config.json")
+    performance_config = {}
+    if config_path.exists():
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                full_config = json.load(f)
+                performance_config = full_config.get("performance", {})
+        except Exception as e:
+            logger.warning(f"성능 설정 로드 실패: {e}")
+
     # 타입 결정
     if backend is None:
         backend = config.get("backend", "json")
 
+    # 최적화 사용 여부 결정
+    if use_optimized is None:
+        # performance 설정의 enable_session_compression 또는 enable_background_save가 True면 최적화 사용
+        use_optimized = (
+            performance_config.get("enable_session_compression", False) or
+            performance_config.get("enable_background_save", False)
+        )
+
     # 리포지토리 생성
     if backend == "json":
         json_dir = Path(config.get("json_dir", "sessions"))
-        logger.info(f"JSON 세션 리포지토리 생성: {json_dir}")
-        return JsonSessionRepository(sessions_dir=json_dir)
+
+        if use_optimized:
+            logger.info(f"최적화된 세션 리포지토리 생성: {json_dir}")
+            return OptimizedSessionRepository(
+                sessions_dir=json_dir,
+                enable_compression=performance_config.get("enable_session_compression", True),
+                enable_background_save=performance_config.get("enable_background_save", True)
+            )
+        else:
+            logger.info(f"JSON 세션 리포지토리 생성: {json_dir}")
+            return JsonSessionRepository(sessions_dir=json_dir)
 
     elif backend == "sqlite":
         db_path = Path(config.get("sqlite_db_path", "data/sessions.db"))
         logger.info(f"SQLite 세션 리포지토리 생성: {db_path}")
         return SqliteSessionRepository(db_path=db_path)
+
+    elif backend == "optimized":
+        json_dir = Path(config.get("json_dir", "sessions"))
+        logger.info(f"최적화된 세션 리포지토리 생성 (강제): {json_dir}")
+        return OptimizedSessionRepository(
+            sessions_dir=json_dir,
+            enable_compression=performance_config.get("enable_session_compression", True),
+            enable_background_save=performance_config.get("enable_background_save", True)
+        )
 
     else:
         raise ValueError(f"유효하지 않은 리포지토리 타입: {backend}")

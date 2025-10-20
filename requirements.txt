@@ -17,9 +17,18 @@ rich>=13.7.0
 # 유틸리티
 python-dotenv>=1.0.0
 
+# 구조화된 로깅
+structlog>=23.1.0
+
 # 템플릿 엔진
 jinja2>=3.1.0
 pyyaml>=6.0.0
+
+# 문서화 (mkdocs)
+mkdocs>=1.5.0
+mkdocs-material>=9.0.0
+mkdocstrings[python]>=0.24.0
+pymdown-extensions>=10.0.0
 
 # 개발 의존성 (선택사항)
 pytest>=7.0.0

@@ -15,18 +15,24 @@ from typing import Optional, Tuple
 
 def setup_logging(verbose: bool = False) -> None:
     """
-    로깅 설정
+    로깅 설정 (구조화된 로깅 사용)
 
     Args:
         verbose: 상세 로깅 활성화 여부
     """
-    level = logging.DEBUG if verbose else logging.INFO
-    format_str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    from ...infrastructure.logging import configure_structlog
+    import os
 
-    logging.basicConfig(
-        level=level,
-        format=format_str,
-        datefmt="%Y-%m-%d %H:%M:%S"
+    # 환경변수에서 로깅 설정 로드
+    log_level = "DEBUG" if verbose else os.getenv("LOG_LEVEL", "INFO")
+    log_format = os.getenv("LOG_FORMAT", "json")
+    log_dir = os.getenv("LOG_DIR", "logs")
+
+    # structlog 초기화
+    configure_structlog(
+        log_dir=log_dir,
+        log_level=log_level,
+        enable_json=(log_format == "json")
     )
 
 

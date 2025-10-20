@@ -13,8 +13,9 @@ from claude_agent_sdk.types import ClaudeAgentOptions
 
 from ...domain.models import Message
 from ..config import get_claude_cli_path
+from ..logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ManagerAgent:
@@ -81,7 +82,10 @@ class ManagerAgent:
         base_prompt += """
 
 **중요**:
-- Reviewer가 Critical 이슈를 발견하면 Coder에게 수정 요청 후 다시 Review"""
+- Reviewer가 Critical 이슈를 발견하면 Coder에게 수정 요청 후 다시 Review
+- **무한 루프 방지**: Review → Coder → Review 사이클은 최대 3회까지만 허용
+  - 3회 반복 후에도 Critical 이슈가 남으면 사용자에게 수동 개입 요청
+  - 반복 횟수를 명시적으로 추적하세요 (예: "Review 사이클 1/3")"""
 
         if self.auto_commit_enabled:
             base_prompt += """
@@ -116,6 +120,15 @@ class ManagerAgent:
 - Reviewer의 피드백을 반드시 반영하세요 (Critical 이슈는 필수 수정)
 - Tool 결과를 확인하고 문제가 있으면 재시도하세요
 - 모든 작업이 완료되면 "작업이 완료되었습니다"라고 명시하세요
+
+## 무한 루프 방지 규칙
+- Review → Coder → Review 사이클을 추적하세요
+- 최대 반복 횟수: 3회
+- 사이클 진행 시마다 "Review 사이클 X/3" 형태로 표시
+- 3회 초과 시 다음 메시지를 출력하고 중단:
+  "⚠️ Review 사이클이 3회를 초과했습니다. 수동 개입이 필요합니다.
+   Critical 이슈: [이슈 요약]
+   다음 단계: 사용자가 직접 코드를 수정하거나 요구사항을 조정해주세요."
 """
 
         return base_prompt
@@ -125,7 +138,8 @@ class ManagerAgent:
         worker_tools_server,
         model: str = "claude-sonnet-4-5-20250929",
         max_history_messages: int = 20,
-        auto_commit_enabled: bool = False
+        auto_commit_enabled: bool = False,
+        session_id: Optional[str] = None
     ):
         """
         Args:
@@ -133,11 +147,42 @@ class ManagerAgent:
             model: 사용할 Claude 모델
             max_history_messages: 프롬프트에 포함할 최대 히스토리 메시지 수 (슬라이딩 윈도우)
             auto_commit_enabled: Git 커밋 자동 생성 활성화 여부
+            session_id: 세션 ID (로깅용, 선택사항)
         """
         self.model = model
         self.worker_tools_server = worker_tools_server
         self.max_history_messages = max_history_messages
         self.auto_commit_enabled = auto_commit_enabled
+        self.session_id = session_id or "unknown"
+
+        # 세션 컨텍스트를 포함한 로거 생성
+        self.logger = get_logger(__name__, session_id=self.session_id, component="ManagerAgent")
+
+        # Review cycle 추적 변수 (무한 루프 방지)
+        self.review_cycle_count = 0
+
+        # system_config.json에서 max_review_iterations 로드
+        try:
+            from ..config import load_system_config
+            config = load_system_config()
+            self.max_review_cycles = config.get("workflow_limits", {}).get(
+                "max_review_iterations", 3
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to load max_review_iterations from config",
+                error=str(e),
+                default_value=3
+            )
+            self.max_review_cycles = 3
+
+        self.logger.info(
+            "ManagerAgent initialized",
+            model=self.model,
+            max_history_messages=self.max_history_messages,
+            auto_commit_enabled=self.auto_commit_enabled,
+            max_review_cycles=self.max_review_cycles
+        )
 
     def _build_prompt_from_history(self, history: List[Message]) -> str:
         """
@@ -201,8 +246,12 @@ class ManagerAgent:
             # 대화 히스토리를 프롬프트로 변환
             prompt = self._build_prompt_from_history(history)
 
-            logger.debug(f"[Manager] Claude Agent SDK 호출 시작 (Worker Tools 사용)")
-            logger.debug(f"[Manager] Working Directory: {os.getcwd()}")
+            self.logger.debug(
+                "Starting Claude Agent SDK call",
+                worker_tools_enabled=True,
+                working_dir=os.getcwd(),
+                history_size=len(history)
+            )
 
             # ClaudeSDKClient를 사용 (query()는 툴을 지원하지 않음)
             # Worker Tools MCP Server를 등록하고, read 툴도 허용
@@ -247,27 +296,32 @@ class ManagerAgent:
                 elif hasattr(msg, 'text') and isinstance(msg.text, str):
                     yield msg.text
 
-            logger.debug(f"[Manager] Claude Agent SDK 호출 완료")
-
-            # 정상 종료 시 cleanup
-            if client is not None and not cleanup_done:
-                try:
-                    await client.disconnect()
-                    cleanup_done = True
-                    logger.debug(f"[Manager] Client 연결 종료 완료")
-                except Exception as e:
-                    logger.debug(f"[Manager] Client disconnect 실패 무시: {e}")
+            self.logger.debug("Claude Agent SDK call completed")
 
         except GeneratorExit:
             # Generator가 중간에 종료될 때는 cleanup 하지 않음
             # (다른 태스크에서 실행되어 cancel scope 에러 발생)
-            logger.debug(f"[Manager] Generator 종료 - cleanup 생략")
+            self.logger.debug("Generator exit - cleanup skipped")
             raise
+
         except Exception as e:
-            logger.error(f"❌ [Manager] SDK 호출 실패: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            self.logger.error(
+                "SDK call failed",
+                error=str(e),
+                exc_info=True
+            )
             raise
+
+        finally:
+            # 리소스 정리 (try-finally 보장)
+            # GeneratorExit 제외한 모든 경로에서 cleanup 시도
+            if client is not None and not cleanup_done:
+                try:
+                    await client.disconnect()
+                    cleanup_done = True
+                    self.logger.debug("Client connection closed successfully")
+                except Exception as e:
+                    self.logger.debug("Client disconnect failed (ignored)", error=str(e))
 
     def __repr__(self) -> str:
         return f"ManagerAgent(model={self.model})"

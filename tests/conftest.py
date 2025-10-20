@@ -12,6 +12,7 @@ from typing import List, Dict, Any
 from unittest.mock import Mock, AsyncMock, patch
 
 from src.domain.models import Message, AgentConfig, SessionResult, Role
+from tests.mocks.claude_api_mock import mock_claude_api
 
 
 # ============================================================================
@@ -92,6 +93,27 @@ def sample_session_result() -> SessionResult:
 # ============================================================================
 # Mock SDK Fixtures
 # ============================================================================
+
+@pytest.fixture
+def mock_claude():
+    """Mock Claude API"""
+    mock_claude_api.reset()
+    return mock_claude_api
+
+
+@pytest.fixture
+def temp_config_dir(tmp_path: Path) -> Path:
+    """Temporary config directory"""
+    return tmp_path
+
+
+@pytest.fixture
+def mock_env(monkeypatch):
+    """Mock environment variables for logging"""
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("LOG_FORMAT", "console")
+    monkeypatch.setenv("LOG_DIR", "logs")
+
 
 @pytest.fixture
 def mock_claude_agent_sdk():

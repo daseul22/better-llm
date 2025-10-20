@@ -6,15 +6,18 @@ JsonConfigLoader: JSON 파일에서 설정 로드
 
 import json
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
 from ...application.ports import IConfigLoader, ISystemConfig
 from ...domain.models import AgentConfig
+from ..logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, component="ConfigLoader")
 
 
+@dataclass
 class SystemConfig(ISystemConfig):
     """
     시스템 설정 구현
@@ -22,11 +25,13 @@ class SystemConfig(ISystemConfig):
     JSON 파일에서 로드된 설정
     딕셔너리 접근도 지원 (하위 호환성)
     """
+    _raw_data: dict = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self):
         """dataclass 초기화 후 처리"""
-        # 원본 데이터 저장 (딕셔너리 접근용)
-        self._raw_data = {}
+        # _raw_data는 field로 정의되어 자동 초기화됨
+        # 추가 초기화 로직이 필요하면 여기에 작성
+        pass
 
     def get(self, key: str, default=None):
         """
@@ -42,6 +47,7 @@ class SystemConfig(ISystemConfig):
         # 먼저 dataclass 필드 확인
         if hasattr(self, key):
             return getattr(self, key)
+
         # _raw_data에서 확인
         return self._raw_data.get(key, default)
 
@@ -60,6 +66,7 @@ class SystemConfig(ISystemConfig):
         """
         if hasattr(self, key):
             return getattr(self, key)
+
         if key in self._raw_data:
             return self._raw_data[key]
         raise KeyError(f"설정 키를 찾을 수 없습니다: {key}")
@@ -123,12 +130,14 @@ class JsonConfigLoader(IConfigLoader):
                 config = AgentConfig.from_dict(agent_data_copy)
                 agent_configs.append(config)
 
-            logger.info(f"✅ 에이전트 설정 로드 완료: {len(agent_configs)}개")
+            logger.info("Agent configs loaded", count=len(agent_configs))
             return agent_configs
 
         except json.JSONDecodeError as e:
+            logger.error("JSON parsing failed", config_path=str(self.agent_config_path), error=str(e))
             raise ValueError(f"JSON 파싱 실패: {e}")
         except Exception as e:
+            logger.error("Config loading failed", config_path=str(self.agent_config_path), error=str(e))
             raise ValueError(f"설정 파일 로드 실패: {e}")
 
     def load_system_config(self) -> ISystemConfig:
@@ -177,3 +186,37 @@ class JsonConfigLoader(IConfigLoader):
         except Exception as e:
             logger.error(f"시스템 설정 로드 실패: {e}. 기본값 사용.")
             return SystemConfig()
+
+
+def load_system_config() -> dict:
+    """
+    시스템 설정을 dict로 로드 (간편 함수)
+
+    Returns:
+        dict: 설정 딕셔너리 (파일이 없으면 빈 dict 반환)
+
+    Raises:
+        json.JSONDecodeError: JSON 파싱 실패 시
+        OSError: 파일 읽기 실패 시 (권한 문제 등)
+    """
+    from .utils import get_project_root
+
+    config_path = get_project_root() / "config" / "system_config.json"
+
+    if not config_path.exists():
+        logger.warning(f"Config file not found: {config_path}. Using empty config.")
+        return {}
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                logger.error(f"Config file is not a valid JSON object: {config_path}")
+                return {}
+            return data
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse config JSON: {config_path} - {e}")
+        raise
+    except OSError as e:
+        logger.error(f"Failed to read config file: {config_path} - {e}")
+        raise
