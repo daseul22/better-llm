@@ -50,8 +50,9 @@ class TUISettings:
     log_export_dir: str = "logs"
 
     # UI 패널 표시 설정
-    show_metrics_panel: bool = True
-    show_workflow_panel: bool = True
+    show_metrics_panel: bool = False
+    show_workflow_panel: bool = False
+    show_worker_status: bool = True
 
 
 class TUIConfig:

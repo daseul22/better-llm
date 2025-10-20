@@ -5,7 +5,7 @@ TUI 설정을 변경할 수 있는 모달 화면
 """
 
 from textual.app import ComposeResult
-from textual.containers import Container, Vertical, Horizontal, Grid
+from textual.containers import Container, Vertical, Horizontal, Grid, ScrollableContainer
 from textual.screen import ModalScreen
 from textual.widgets import Static, Button, Switch, Input, Select
 from textual.binding import Binding
@@ -33,7 +33,7 @@ class SettingsModal(ModalScreen):
     }
 
     #settings-content {
-        height: auto;
+        height: 25;
         background: transparent;
         color: #c9d1d9;
         padding: 1 0;
@@ -79,7 +79,7 @@ class SettingsModal(ModalScreen):
         with Container(id="settings-dialog"):
             yield Static("[bold cyan]설정[/bold cyan]")
 
-            with Vertical(id="settings-content"):
+            with ScrollableContainer(id="settings-content"):
                 # 버퍼 크기 설정
                 with Horizontal(classes="setting-row"):
                     yield Static("최대 로그 라인:", classes="setting-label")
@@ -150,13 +150,43 @@ class SettingsModal(ModalScreen):
                         placeholder="text 또는 markdown"
                     )
 
+                # UI 패널 표시 설정
+                with Horizontal(classes="setting-row"):
+                    yield Static("메트릭 패널 표시:", classes="setting-label")
+                    yield Switch(
+                        self.settings.show_metrics_panel,
+                        id="show-metrics-panel",
+                        classes="setting-control"
+                    )
+
+                with Horizontal(classes="setting-row"):
+                    yield Static("워크플로우 패널 표시:", classes="setting-label")
+                    yield Switch(
+                        self.settings.show_workflow_panel,
+                        id="show-workflow-panel",
+                        classes="setting-control"
+                    )
+
+                with Horizontal(classes="setting-row"):
+                    yield Static("Worker 상태 표시:", classes="setting-label")
+                    yield Switch(
+                        self.settings.show_worker_status,
+                        id="show-worker-status",
+                        classes="setting-control"
+                    )
+
             with Horizontal(id="settings-buttons"):
                 yield Button("저장 (Enter)", id="save-button", variant="primary")
                 yield Button("기본값 복원", id="reset-button", variant="warning")
                 yield Button("닫기 (ESC)", id="close-button")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """버튼 클릭 이벤트"""
+        """
+        버튼 클릭 이벤트 핸들러
+
+        Args:
+            event: 버튼 클릭 이벤트 객체
+        """
         if event.button.id == "save-button":
             self.action_save()
         elif event.button.id == "reset-button":
@@ -165,7 +195,16 @@ class SettingsModal(ModalScreen):
             self.action_close()
 
     def action_save(self) -> None:
-        """설정 저장"""
+        """
+        설정 저장 액션
+
+        입력 필드와 스위치 값을 읽어서 설정 객체를 업데이트하고 파일에 저장합니다.
+        저장 성공 시 업데이트된 설정을 반환하며 모달을 닫습니다.
+        잘못된 입력 시 에러 알림을 표시하고 모달을 유지합니다.
+
+        Raises:
+            ValueError: 입력값이 유효하지 않을 때
+        """
         try:
             # 입력 필드에서 값 읽기
             max_log_lines = int(self.query_one("#max-log-lines", Input).value)
@@ -178,6 +217,9 @@ class SettingsModal(ModalScreen):
             notify_on_completion = self.query_one("#notify-on-completion", Switch).value
             notify_on_error = self.query_one("#notify-on-error", Switch).value
             enable_autocomplete = self.query_one("#enable-autocomplete", Switch).value
+            show_metrics_panel = self.query_one("#show-metrics-panel", Switch).value
+            show_workflow_panel = self.query_one("#show-workflow-panel", Switch).value
+            show_worker_status = self.query_one("#show-worker-status", Switch).value
 
             # 설정 업데이트
             self.settings.max_log_lines = max_log_lines
@@ -188,6 +230,9 @@ class SettingsModal(ModalScreen):
             self.settings.notify_on_error = notify_on_error
             self.settings.enable_autocomplete = enable_autocomplete
             self.settings.log_export_format = log_export_format
+            self.settings.show_metrics_panel = show_metrics_panel
+            self.settings.show_workflow_panel = show_workflow_panel
+            self.settings.show_worker_status = show_worker_status
 
             # 파일에 저장
             TUIConfig.save(self.settings)
@@ -201,10 +246,20 @@ class SettingsModal(ModalScreen):
             return  # 저장하지 않고 모달 유지
 
     def action_reset(self) -> None:
-        """설정 기본값 복원"""
+        """
+        설정 기본값 복원 액션
+
+        모든 설정을 기본값으로 리셋하고 파일에 저장한 후,
+        기본값 설정을 반환하며 모달을 닫습니다.
+        """
         default_settings = TUIConfig.reset_to_default()
         self.dismiss(default_settings)
 
     def action_close(self) -> None:
-        """모달 닫기 (저장하지 않음)"""
+        """
+        모달 닫기 액션
+
+        변경사항을 저장하지 않고 모달을 닫습니다.
+        None을 반환하여 설정이 변경되지 않았음을 알립니다.
+        """
         self.dismiss(None)

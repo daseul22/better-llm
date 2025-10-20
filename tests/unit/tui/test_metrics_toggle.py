@@ -47,8 +47,8 @@ class TestMetricsToggle:
         with patch.object(TUIConfig, "load", return_value=TUISettings()):
             app = OrchestratorTUI()
 
-            # 기본 설정에서는 메트릭 패널이 표시됨
-            assert app.show_metrics_panel is True
+            # UI/UX 개선: 기본 설정에서는 메트릭 패널이 숨겨짐
+            assert app.show_metrics_panel is False
 
     def test_metrics_panel_state_from_settings(self, temp_config_path):
         """설정 파일에서 메트릭 패널 상태 로드"""
@@ -351,9 +351,9 @@ class TestEdgeCases:
         with open(temp_config_path, "w") as f:
             json.dump(partial_config, f)
 
-        # 로드 시 기본값 사용되어야 함
+        # 로드 시 기본값 사용되어야 함 (UI/UX 개선으로 기본값 변경됨)
         settings = TUIConfig.load(config_path=temp_config_path)
-        assert settings.show_metrics_panel is True  # 기본값
+        assert settings.show_metrics_panel is False  # 기본값
 
     @pytest.mark.asyncio
     async def test_toggle_with_corrupted_config(self, temp_config_path):
@@ -363,9 +363,9 @@ class TestEdgeCases:
         with open(temp_config_path, "w") as f:
             f.write("{ invalid json }")
 
-        # 설정 로드 시 기본값 반환됨
+        # 설정 로드 시 기본값 반환됨 (UI/UX 개선으로 기본값 변경됨)
         settings = TUIConfig.load(config_path=temp_config_path)
-        assert settings.show_metrics_panel is True
+        assert settings.show_metrics_panel is False
 
         # 토글 및 저장 (이제 올바른 JSON 파일이 생성됨)
         settings.show_metrics_panel = False

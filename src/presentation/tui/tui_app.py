@@ -88,7 +88,7 @@ class OrchestratorTUI(App):
         border: tall #21262d;
         background: #0d1117;
         height: 1fr;
-        margin: 1 1 0 1;
+        margin: 0 1;
         padding: 0;
     }
 
@@ -102,7 +102,7 @@ class OrchestratorTUI(App):
     /* Worker 상태 표시 */
     #worker-status-container {
         height: auto;
-        margin: 1 1 0 1;
+        margin: 0 1;
         background: transparent;
         border: round #21262d;
         padding: 0;
@@ -111,14 +111,14 @@ class OrchestratorTUI(App):
     #worker-status {
         background: transparent;
         color: #8b949e;
-        padding: 1 2;
+        padding: 0 2;
         height: auto;
     }
 
     /* 메트릭 대시보드 */
     #metrics-container {
         height: auto;
-        margin: 1 1 0 1;
+        margin: 0 1;
         background: transparent;
         border: round #21262d;
         padding: 0;
@@ -127,7 +127,7 @@ class OrchestratorTUI(App):
     #metrics-panel {
         background: transparent;
         color: #8b949e;
-        padding: 1 2;
+        padding: 0 2;
         height: auto;
     }
 
@@ -135,10 +135,10 @@ class OrchestratorTUI(App):
     #workflow-container {
         height: auto;
         max-height: 20;
-        margin: 1 1 0 1;
+        margin: 0 1;
         background: transparent;
         border: round #21262d;
-        padding: 1 2;
+        padding: 0 2;
     }
 
     WorkflowVisualizer {
@@ -151,7 +151,7 @@ class OrchestratorTUI(App):
         height: auto;
         background: #0d1117;
         border: round #388bfd;
-        margin: 1 1 0 1;
+        margin: 0 1;
         padding: 1 2;
     }
 
@@ -255,7 +255,7 @@ class OrchestratorTUI(App):
     }
 
     .layout-small #input-container {
-        margin: 1 1 0 1;
+        margin: 0 1;
     }
     """
 
@@ -286,6 +286,9 @@ class OrchestratorTUI(App):
         # 워크플로우
         Binding("f4", "toggle_workflow_panel", "워크플로우", show=False),
 
+        # Worker 상태
+        Binding("f5", "toggle_worker_status", "Worker 상태", show=False),
+
         # 히스토리
         Binding("up", "history_up", "이전 입력", show=False),
         Binding("down", "history_down", "다음 입력", show=False),
@@ -315,6 +318,7 @@ class OrchestratorTUI(App):
         self.search_query: Optional[str] = None  # 현재 검색어
         self.show_metrics_panel: bool = self.settings.show_metrics_panel  # 메트릭 패널 표시 여부
         self.show_workflow_panel: bool = self.settings.show_workflow_panel  # 워크플로우 패널 표시 여부
+        self.show_worker_status: bool = self.settings.show_worker_status  # Worker 상태 패널 표시 여부
 
         # 레이아웃 반응성
         self.current_layout_mode: LayoutMode = LayoutMode.LARGE
@@ -369,6 +373,8 @@ class OrchestratorTUI(App):
         self.apply_metrics_panel_visibility()
         # 워크플로우 패널 초기 상태 적용
         self.apply_workflow_panel_visibility()
+        # Worker 상태 패널 초기 상태 적용
+        self.apply_worker_status_visibility()
         # 초기 레이아웃 업데이트
         self.update_layout_for_size(self.size.width, self.size.height)
         # 자동 포커스: task-input 위젯에 포커스 설정
@@ -604,6 +610,10 @@ class OrchestratorTUI(App):
 
             # Worker Tool 상태 업데이트 (종료)
             self.timer_active = False
+
+            # Worker 상태 패널 숨김 (선택사항: 작업 완료 후 자동으로 숨김)
+            # self.show_worker_status = False
+            # self.apply_worker_status_visibility()
 
             self.write_log("")
             self.write_log("[dim]" + "─" * 60 + "[/dim]")
@@ -1036,6 +1046,17 @@ class OrchestratorTUI(App):
         except Exception:
             pass  # 위젯이 아직 없으면 무시
 
+    def apply_worker_status_visibility(self) -> None:
+        """Worker 상태 패널 표시/숨김 상태 적용"""
+        try:
+            worker_status_container = self.query_one("#worker-status-container", Container)
+            if self.show_worker_status:
+                worker_status_container.remove_class("hidden")
+            else:
+                worker_status_container.add_class("hidden")
+        except Exception:
+            pass  # 위젯이 아직 없으면 무시
+
     def on_workflow_update(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
         """
         워크플로우 상태 업데이트 콜백
@@ -1074,12 +1095,21 @@ class OrchestratorTUI(App):
         if not self.timer_active or self.task_start_time is None:
             return
 
-        elapsed = time.time() - self.task_start_time
-        # 애니메이션 효과를 위한 스피너
-        spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        spinner = spinner_frames[int(elapsed * 2) % len(spinner_frames)]
+        try:
+            elapsed = time.time() - self.task_start_time
+            # 애니메이션 효과를 위한 스피너
+            spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            spinner = spinner_frames[int(elapsed * 2) % len(spinner_frames)]
 
-        self.update_worker_status(f"{spinner} Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
+            # status-info에 실행 시간 표시
+            status_info = self.query_one("#status-info", Static)
+            status_info.update(f"{spinner} Running... ⏱️  {elapsed:.1f}s")
+
+            # worker-status는 표시되어 있을 때만 업데이트
+            if self.show_worker_status:
+                self.update_worker_status(f"{spinner} Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
+        except Exception:
+            pass
 
     def update_metrics_panel(self) -> None:
         """타이머: 메트릭 대시보드 업데이트 (1초마다 호출)"""
@@ -1320,6 +1350,13 @@ class OrchestratorTUI(App):
                 self.settings = result
                 # 히스토리 크기 업데이트
                 self.input_history = InputHistory(max_size=self.settings.max_history_size)
+                # 패널 표시 상태 업데이트
+                self.show_metrics_panel = self.settings.show_metrics_panel
+                self.show_workflow_panel = self.settings.show_workflow_panel
+                self.show_worker_status = self.settings.show_worker_status
+                self.apply_metrics_panel_visibility()
+                self.apply_workflow_panel_visibility()
+                self.apply_worker_status_visibility()
                 # 알림 표시
                 if self.settings.enable_notifications:
                     self.notify("설정이 저장되었습니다", severity="information")
@@ -1394,6 +1431,40 @@ class OrchestratorTUI(App):
 
         except Exception as e:
             logger.error(f"워크플로우 패널 토글 실패: {e}")
+
+    async def action_toggle_worker_status(self) -> None:
+        """
+        F5 키: Worker 상태 패널 표시/숨김 토글
+
+        Worker 상태 패널의 표시 상태를 토글하고, 변경된 설정을 파일에 저장합니다.
+
+        Raises:
+            Exception: Worker 상태 패널 토글 중 예상치 못한 오류 발생 시
+        """
+        try:
+            # 상태 토글
+            self.show_worker_status = not self.show_worker_status
+
+            # UI 업데이트
+            self.apply_worker_status_visibility()
+
+            # 설정 저장
+            self.settings.show_worker_status = self.show_worker_status
+            save_success = TUIConfig.save(self.settings)
+
+            # 저장 실패 시 경고
+            if not save_success:
+                logger.warning("Worker 상태 패널 설정 저장 실패")
+                if self.settings.notify_on_error:
+                    self.notify("설정 저장 실패", severity="warning")
+
+            # 알림 표시
+            if self.settings.enable_notifications:
+                status_msg = "표시" if self.show_worker_status else "숨김"
+                self.notify(f"Worker 상태 패널: {status_msg}", severity="information")
+
+        except Exception as e:
+            logger.error(f"Worker 상태 패널 토글 실패: {e}")
 
     async def action_save_log(self) -> None:
         """Ctrl+S: 로그 저장"""

@@ -59,8 +59,10 @@ class TestTUISettings:
         assert settings.log_export_format == "text"
         assert settings.log_export_dir == "logs"
 
-        # UI 패널 표시 설정
-        assert settings.show_metrics_panel is True
+        # UI 패널 표시 설정 (UI/UX 개선으로 기본값 변경됨)
+        assert settings.show_metrics_panel is False
+        assert settings.show_workflow_panel is False
+        assert settings.show_worker_status is True
 
     def test_custom_initialization(self):
         """커스텀 값으로 초기화 테스트"""
