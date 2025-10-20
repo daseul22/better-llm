@@ -113,29 +113,32 @@ class Orchestrator:
         # Workflow Tree (Worker Tool 호출 추적)
         self.workflow_tree = WorkflowTree(title="Worker Tools Workflow")
 
-    async def run(self, user_request: str) -> SessionResult:
+    def _validate_and_prepare_input(self, user_request: str) -> tuple[bool, str, str]:
         """
-        작업 실행 - Manager가 Worker Tool들을 호출하여 작업 수행
+        사용자 입력 검증 및 정제
 
         Args:
-            user_request: 사용자 요청
+            user_request: 원본 사용자 요청
 
         Returns:
-            작업 결과
+            (검증 성공 여부, 에러 메시지, 정제된 입력) 튜플
         """
         # 입력 검증
         is_valid, error_msg = validate_user_input(user_request)
         if not is_valid:
-            # 피드백 시스템 사용
-            self.feedback.error(
-                "입력 검증에 실패했습니다",
-                details=error_msg
-            )
-            return SessionResult(status=SessionStatus.INVALID_INPUT)
+            return False, error_msg, ""
 
         # 입력 정제
-        user_request = sanitize_user_input(user_request)
+        sanitized_input = sanitize_user_input(user_request)
+        return True, "", sanitized_input
 
+    def _print_session_header(self, user_request: str) -> None:
+        """
+        세션 헤더 출력
+
+        Args:
+            user_request: 사용자 요청 (헤더에 표시)
+        """
         # 헤더 출력 (Rich 사용)
         self.renderer.print_header(
             "Group Chat Orchestration v3.0",
@@ -148,84 +151,154 @@ class Orchestrator:
             tools=["execute_planner_task", "execute_coder_task", "execute_tester_task", "read"]
         )
 
-        # 사용자 요청을 히스토리에 추가
-        self.history.add_message("user", user_request)
+    async def _execute_manager_turn(self, turn: int) -> str:
+        """
+        단일 Manager 턴 실행 (스트리밍 방식)
 
-        turn = 0
-        max_turns = self.system_config.max_turns  # 설정에서 로드
+        Args:
+            turn: 현재 턴 번호
+
+        Returns:
+            Manager의 응답 전체 텍스트
+        """
+        # 턴 헤더 출력 (Rich 사용)
+        self.renderer.print_turn_header(turn, "ManagerAgent")
+
+        manager_response = ""
+        async for chunk in self.manager.analyze_and_plan_stream(
+            self.history.get_history()
+        ):
+            manager_response += chunk
+            self.renderer.console.print(chunk, end="", highlight=False)
+
+        self.renderer.console.print()
+        self.renderer.console.print()
+
+        return manager_response
+
+    def _check_completion_condition(self, manager_response: str) -> bool:
+        """
+        작업 완료 조건 확인
+
+        Args:
+            manager_response: Manager의 응답
+
+        Returns:
+            True: 작업 완료, False: 계속 진행
+        """
+        return "작업이 완료되었습니다" in manager_response or "작업 완료" in manager_response
+
+    def _handle_max_turns_reached(self, max_turns: int) -> SessionResult:
+        """
+        최대 턴 수 도달 처리
+
+        Args:
+            max_turns: 최대 턴 수
+
+        Returns:
+            MAX_TURNS_REACHED 상태의 SessionResult
+        """
+        self.feedback.warning(
+            f"최대 턴 수({max_turns})에 도달했습니다",
+            use_panel=False
+        )
+        return SessionResult(status=SessionStatus.MAX_TURNS_REACHED)
+
+    def _finalize_session(
+        self,
+        user_request: str,
+        result: SessionResult
+    ) -> None:
+        """
+        세션 종료 처리 (에러 통계, 히스토리 저장, 푸터 출력)
+
+        Args:
+            user_request: 사용자 요청
+            result: 작업 결과
+        """
+        # 에러 통계 출력
+        self.renderer.console.print()
+        log_error_summary()
+        self.renderer.console.print()
+
+        # 세션 히스토리 저장
+        duration = time.time() - self.start_time
+
+        sessions_dir = Path("sessions")
+        filepath = save_session_history(
+            self.session_id,
+            user_request,
+            self.history,
+            result.to_dict(),
+            sessions_dir
+        )
+
+        # 푸터 출력 (Rich 사용)
+        self.renderer.print_footer(
+            self.session_id,
+            sum(1 for msg in self.history.get_history() if msg.role == "manager"),
+            duration,
+            0,
+            filepath
+        )
+
+    async def run(self, user_request: str) -> SessionResult:
+        """
+        작업 실행 - Manager가 Worker Tool들을 호출하여 작업 수행 (리팩토링 버전)
+
+        Args:
+            user_request: 사용자 요청
+
+        Returns:
+            작업 결과
+        """
+        # 1. 입력 검증 및 정제
+        is_valid, error_msg, sanitized_input = self._validate_and_prepare_input(user_request)
+        if not is_valid:
+            self.feedback.error(
+                "입력 검증에 실패했습니다",
+                details=error_msg
+            )
+            return SessionResult(status=SessionStatus.INVALID_INPUT)
+
+        # 2. 세션 헤더 출력
+        self._print_session_header(sanitized_input)
+
+        # 3. 사용자 요청을 히스토리에 추가
+        self.history.add_message("user", sanitized_input)
+
+        max_turns = self.system_config.max_turns
 
         try:
-            while turn < max_turns:
-                turn += 1
+            # 4. 대화 루프
+            for turn in range(1, max_turns + 1):
+                # 4.1 Manager 턴 실행
+                manager_response = await self._execute_manager_turn(turn)
 
-                # 턴 헤더 출력 (Rich 사용)
-                self.renderer.print_turn_header(turn, "ManagerAgent")
-
-                manager_response = ""
-                async for chunk in self.manager.analyze_and_plan_stream(
-                    self.history.get_history()
-                ):
-                    manager_response += chunk
-                    self.renderer.console.print(chunk, end="", highlight=False)
-
-                self.renderer.console.print()
-                self.renderer.console.print()
-
-                # Manager 응답을 히스토리에 추가
+                # 4.2 Manager 응답을 히스토리에 추가
                 self.history.add_message("manager", manager_response)
 
-                # 종료 조건 확인
-                if "작업이 완료되었습니다" in manager_response or "작업 완료" in manager_response:
-                    # 피드백 시스템 사용
+                # 4.3 완료 조건 확인
+                if self._check_completion_condition(manager_response):
                     self.feedback.success(
                         "Manager가 작업 완료를 보고했습니다",
                         use_panel=False
                     )
-                    break
+                    result = SessionResult(
+                        status=SessionStatus.COMPLETED,
+                        files_modified=[],
+                        tests_passed=True
+                    )
+                    return result
 
-            # 최대 턴 수 도달
-            if turn >= max_turns:
-                # 피드백 시스템 사용
-                self.feedback.warning(
-                    f"최대 턴 수({max_turns})에 도달했습니다",
-                    use_panel=False
-                )
-                return SessionResult(status=SessionStatus.MAX_TURNS_REACHED)
-
-            # 정상 완료
-            return SessionResult(
-                status=SessionStatus.COMPLETED,
-                files_modified=[],
-                tests_passed=True
-            )
+            # 5. 최대 턴 수 도달
+            return self._handle_max_turns_reached(max_turns)
 
         finally:
-            # 에러 통계 출력
-            self.renderer.console.print()
-            log_error_summary()
-            self.renderer.console.print()
-
-            # 세션 히스토리 저장
-            duration = time.time() - self.start_time
+            # 6. 세션 종료 처리
+            # result가 없는 경우 (에러 등) 기본 COMPLETED 상태 사용
             result = SessionResult(status=SessionStatus.COMPLETED)
-
-            sessions_dir = Path("sessions")
-            filepath = save_session_history(
-                self.session_id,
-                user_request,
-                self.history,
-                result.to_dict(),
-                sessions_dir
-            )
-
-            # 푸터 출력 (Rich 사용)
-            self.renderer.print_footer(
-                self.session_id,
-                sum(1 for msg in self.history.get_history() if msg.role == "manager"),
-                duration,
-                0,
-                filepath
-            )
+            self._finalize_session(sanitized_input, result)
 
 
 

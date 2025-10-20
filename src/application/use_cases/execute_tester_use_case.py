@@ -11,6 +11,7 @@ from .base_worker_use_case import BaseWorkerUseCase
 from domain.models import Task, TaskResult
 from domain.exceptions import PreconditionFailedError
 from ..ports import IAgentClient
+from ..validation import UseCaseValidator
 
 
 logger = logging.getLogger(__name__)
@@ -55,21 +56,10 @@ class ExecuteTesterUseCase(BaseWorkerUseCase):
             PreconditionFailedError: 사전 조건 실패
         """
         # 1. 테스트 대상이 필요한 경우 체크
-        if self.require_test_target:
-            description_lower = task.description.lower()
-            has_test_keywords = any(
-                keyword in description_lower
-                for keyword in [
-                    "테스트", "test", "검증", "verify",
-                    "pytest", "unittest", "함수", "function"
-                ]
-            )
-
-            if not has_test_keywords:
-                raise PreconditionFailedError(
-                    "테스트 대상이 명확하지 않습니다. "
-                    "작업 설명에 테스트할 대상을 포함해주세요."
-                )
+        UseCaseValidator.validate_test_target_requirement(
+            description=task.description,
+            require_test_target=self.require_test_target
+        )
 
         logger.debug(f"[{self.worker_name}] ✅ 사전 조건 체크 완료")
 

@@ -11,6 +11,7 @@ from .base_worker_use_case import BaseWorkerUseCase
 from domain.models import Task, TaskResult
 from domain.exceptions import PreconditionFailedError
 from ..ports import IAgentClient
+from ..validation import UseCaseValidator
 
 
 logger = logging.getLogger(__name__)
@@ -55,21 +56,10 @@ class ExecuteReviewerUseCase(BaseWorkerUseCase):
             PreconditionFailedError: 사전 조건 실패
         """
         # 1. 코드 참조가 필요한 경우 체크
-        if self.require_code_reference:
-            description_lower = task.description.lower()
-            has_code_keywords = any(
-                keyword in description_lower
-                for keyword in [
-                    "파일", "file", "코드", "code",
-                    ".py", ".js", ".ts", ".java"
-                ]
-            )
-
-            if not has_code_keywords:
-                raise PreconditionFailedError(
-                    "리뷰할 코드 파일이 명시되지 않았습니다. "
-                    "작업 설명에 파일 경로나 코드를 포함해주세요."
-                )
+        UseCaseValidator.validate_code_reference_requirement(
+            description=task.description,
+            require_code_reference=self.require_code_reference
+        )
 
         logger.debug(f"[{self.worker_name}] ✅ 사전 조건 체크 완료")
 

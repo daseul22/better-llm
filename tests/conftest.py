@@ -4,6 +4,7 @@ Pytest 공통 설정 및 Fixtures
 모든 테스트에서 공유되는 fixtures를 정의합니다.
 """
 
+import sys
 import pytest
 import inspect
 from datetime import datetime
@@ -13,6 +14,23 @@ from unittest.mock import Mock, AsyncMock, patch
 
 from src.domain.models import Message, AgentConfig, SessionResult, Role
 from tests.mocks.claude_api_mock import mock_claude_api
+
+
+# ============================================================================
+# Python Path 설정
+# ============================================================================
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_python_path():
+    """
+    프로젝트 루트를 Python path에 추가
+
+    모든 테스트에서 자동으로 실행되어 import 경로 문제를 방지합니다.
+    src 디렉토리도 추가하여 절대 경로 import를 지원합니다 (FAQ 권장사항).
+    """
+    project_root = Path(__file__).parent.parent
+    sys.path.insert(0, str(project_root))
+    sys.path.insert(0, str(project_root / "src"))
 
 
 # ============================================================================

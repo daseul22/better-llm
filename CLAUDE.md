@@ -546,6 +546,37 @@ ls -la prompts/
 - 테스트: 수동 테스트 필요 (orchestrator.py 실행)
 - 후속 조치: 실제 사용 시 Worker Agent 응답 시간 모니터링
 
+### fix. Worker Agent 실행 실패 문제 해결 (CodingStyle 속성 에러)
+- 날짜: 2025-10-20
+- 컨텍스트: Worker Agent가 실행되지 않고 타임아웃되는 문제 발생
+  - 에러 메시지: `AttributeError: 'CodingStyle' object has no attribute 'language'`
+  - 에러 위치: `worker_client.py:136` in `_generate_debug_info()`
+- 근본 원인:
+  - `WORKER_DEBUG_INFO=true`로 설정되어 있어서 디버그 정보 생성 시도
+  - `_generate_debug_info()` 함수에서 존재하지 않는 `CodingStyle.language`와 `CodingStyle.indentation` 속성에 접근
+  - AttributeError 발생 → `execute_task()` 실패 → Worker가 응답 생성하지 못함
+  - Claude SDK의 `query()` 함수가 전혀 호출되지 않음
+- 변경사항:
+  - **`src/infrastructure/claude/worker_client.py` (Line 136)**:
+    - 변경 전: `lines.append(f"   - Coding Style: {style.language}, indentation={style.indentation}")`
+    - 변경 후: `lines.append(f"   - Coding Style: line_length={style.line_length}, quote_style={style.quote_style}")`
+    - CodingStyle 모델에 실제 존재하는 속성 사용 (`line_length`, `quote_style`)
+  - **조기 종료 로직 제거**:
+    - 30초 타임아웃 감지 로직 제거
+    - 완료 키워드 감지 로직 제거
+    - 에러 키워드 감지 로직 제거
+    - Worker가 자연스럽게 스트리밍을 완료할 때까지 대기
+  - **로깅 강화**:
+    - `logger.debug()` → `logger.info()`로 변경
+    - query() 호출 전 상세 정보 로깅 (Prompt 길이, Model, Tools, CLI 경로)
+    - 수신된 청크 개수 추적 및 로깅
+- 영향범위:
+  - **Worker 실행**: 이제 Worker가 정상적으로 실행되고 응답 생성
+  - **디버깅**: AttributeError 해결로 디버그 모드 사용 가능
+  - **성능**: Worker가 완전히 완료될 때까지 대기 (타임아웃은 `worker_tools.py`에서만 관리)
+- 테스트: 구문 검사 통과
+- 후속 조치: 실제 실행 테스트로 Worker 정상 동작 확인 필요
+
 ---
 
 ## 참고 자료

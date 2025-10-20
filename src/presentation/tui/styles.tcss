@@ -1,0 +1,249 @@
+/* TUI 스타일 (Textual CSS) */
+
+Screen {
+    background: #0d1117;
+}
+
+/* 숨김 클래스 */
+.hidden {
+    display: none;
+}
+
+/* 출력 영역 */
+#output-container {
+    border: tall #21262d;
+    background: #0d1117;
+    height: 1fr;
+    margin: 0 1;
+    padding: 0;
+}
+
+#output-log {
+    height: 1fr;
+    background: #0d1117;
+    padding: 1;
+    scrollbar-gutter: stable;
+}
+
+/* Worker 출력 영역 (TabbedContent) */
+#worker-output-container {
+    border: tall #21262d;
+    background: #0d1117;
+    height: 1fr;
+    margin: 0 1;
+    padding: 0;
+}
+
+TabbedContent {
+    background: #0d1117;
+    height: 1fr;
+}
+
+TabbedContent > ContentSwitcher {
+    background: #0d1117;
+    height: 1fr;
+}
+
+TabPane {
+    background: #0d1117;
+    height: 1fr;
+    padding: 1;
+}
+
+TabPane > RichLog {
+    height: 1fr;
+    background: #0d1117;
+    padding: 1;
+    scrollbar-gutter: stable;
+}
+
+TabPane > Static {
+    height: 1fr;
+    background: #0d1117;
+    padding: 1;
+    content-align: center middle;
+}
+
+Tabs {
+    background: #0d1117;
+    border-bottom: tall #21262d;
+}
+
+Tab {
+    background: #0d1117;
+    color: #8b949e;
+}
+
+Tab.-active {
+    background: #1c2128;
+    color: #58a6ff;
+}
+
+Tab:hover {
+    background: #1c2128;
+}
+
+/* Worker 상태 표시 */
+#worker-status-container {
+    height: auto;
+    margin: 0 1;
+    background: transparent;
+    border: round #21262d;
+    padding: 0;
+}
+
+#worker-status {
+    background: transparent;
+    color: #8b949e;
+    padding: 0 2;
+    height: auto;
+}
+
+/* 메트릭 대시보드 */
+#metrics-container {
+    height: auto;
+    margin: 0 1;
+    background: transparent;
+    border: round #21262d;
+    padding: 0;
+}
+
+#metrics-panel {
+    background: transparent;
+    color: #8b949e;
+    padding: 0 2;
+    height: auto;
+}
+
+/* 워크플로우 비주얼라이저 */
+#workflow-container {
+    height: auto;
+    max-height: 20;
+    margin: 0 1;
+    background: transparent;
+    border: round #21262d;
+    padding: 0 2;
+}
+
+WorkflowVisualizer {
+    background: transparent;
+    height: auto;
+}
+
+/* 입력 영역 */
+#input-container {
+    height: auto;
+    background: #0d1117;
+    border: round #388bfd;
+    margin: 0 1;
+    padding: 1 2;
+}
+
+Input {
+    background: transparent;
+    border: none;
+    color: #c9d1d9;
+    padding: 0;
+    margin: 0;
+}
+
+Input:focus {
+    border: none;
+    background: transparent;
+}
+
+Input.-placeholder {
+    color: #6e7681;
+}
+
+/* MultilineInput 스타일 (TextArea 기반) */
+MultilineInput {
+    background: #0d1117;
+    border: none;
+    color: #c9d1d9;
+    padding: 0;
+    margin: 0;
+    height: auto;
+    max-height: 10;
+}
+
+MultilineInput:focus {
+    border: none;
+    background: #0d1117;
+}
+
+MultilineInput > .text-area--cursor {
+    background: #c9d1d9;
+}
+
+MultilineInput > .text-area--selection {
+    background: #388bfd40;
+}
+
+/* 자동 완성 미리보기 */
+#autocomplete-preview {
+    height: auto;
+    background: transparent;
+    color: #6e7681;
+    padding: 0;
+    margin-top: 1;
+}
+
+#autocomplete-preview.hidden {
+    display: none;
+}
+
+/* 하단 정보바 */
+#info-bar {
+    dock: bottom;
+    height: 1;
+    background: #0d1117;
+    color: #6e7681;
+    padding: 0 2;
+    border-top: tall #21262d;
+}
+
+#session-info {
+    text-align: left;
+    width: 2fr;
+}
+
+#token-info {
+    text-align: center;
+    width: 1fr;
+    color: #58a6ff;
+}
+
+#status-info {
+    text-align: right;
+    width: 2fr;
+}
+
+/* Footer 스타일 */
+Footer {
+    background: #0d1117;
+    border-top: tall #21262d;
+}
+
+Footer > .footer--key {
+    background: #1c2128;
+    color: #58a6ff;
+}
+
+Footer > .footer--description {
+    color: #8b949e;
+}
+
+/* 반응형 레이아웃 클래스 */
+.layout-warning {
+    background: #4d1d00;
+    border: tall #ff8800;
+}
+
+.layout-small #metrics-container {
+    display: none;
+}
+
+.layout-small #input-container {
+    margin: 0 1;
+}

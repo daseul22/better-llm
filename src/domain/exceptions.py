@@ -1,11 +1,40 @@
 """
-Domain 계층 예외 정의
+Domain 계층 예외 정의.
 
 비즈니스 로직 관련 예외들을 정의합니다.
 Use Case에서 Infrastructure 예외를 Domain 예외로 변환하여 사용합니다.
+
+이 모듈은 두 가지 예외 시스템을 제공합니다:
+1. Domain 계층 예외 (DomainException 계열): 비즈니스 로직 예외
+2. Better-LLM 시스템 예외 (BetterLLMError 계열): 인프라/시스템 예외
+
+Examples:
+    >>> from src.domain.exceptions import WorkerExecutionError, ValidationError
+    >>> from src.domain.exceptions import BetterLLMError, ErrorCode, handle_error
 """
 
 from typing import Optional
+
+# Better-LLM 시스템 예외 (error_handler에서 import)
+from domain.errors.error_handler import (
+    BetterLLMError,
+    WorkerError,
+    ConfigError,
+    SessionError,
+    APIError,
+    StorageError,
+    MetricsError,
+    LoggingError,
+    CacheError,
+    handle_error,
+    ERROR_CLASS_MAPPING,
+)
+from domain.errors.error_codes import ErrorCode
+from domain.errors.error_messages import (
+    get_error_message,
+    format_error_message,
+    ERROR_MESSAGES,
+)
 
 
 class DomainException(Exception):
@@ -104,3 +133,34 @@ class CircuitOpenError(DomainException):
 class RetryableError(DomainException):
     """재시도 가능한 예외의 기본 클래스"""
     pass
+
+
+# Export all exception classes
+__all__ = [
+    # Domain 계층 예외
+    "DomainException",
+    "ValidationError",
+    "WorkerExecutionError",
+    "WorkerNotFoundError",
+    "WorkerTimeoutError",
+    "PreconditionFailedError",
+    "CircuitOpenError",
+    "RetryableError",
+    # Better-LLM 시스템 예외
+    "BetterLLMError",
+    "WorkerError",
+    "ConfigError",
+    "SessionError",
+    "APIError",
+    "StorageError",
+    "MetricsError",
+    "LoggingError",
+    "CacheError",
+    # 에러 핸들러 및 유틸리티
+    "handle_error",
+    "ERROR_CLASS_MAPPING",
+    "ErrorCode",
+    "get_error_message",
+    "format_error_message",
+    "ERROR_MESSAGES",
+]

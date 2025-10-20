@@ -11,6 +11,7 @@ from .base_worker_use_case import BaseWorkerUseCase
 from domain.models import Task, TaskResult
 from domain.exceptions import PreconditionFailedError
 from ..ports import IAgentClient
+from ..validation import UseCaseValidator
 
 
 logger = logging.getLogger(__name__)
@@ -54,11 +55,11 @@ class ExecutePlannerUseCase(BaseWorkerUseCase):
             PreconditionFailedError: 사전 조건 실패
         """
         # 1. 작업 설명이 충분히 구체적인지 확인
-        if len(task.description.strip()) < self.min_description_length:
-            raise PreconditionFailedError(
-                f"작업 설명이 너무 짧습니다. "
-                f"(최소 {self.min_description_length}자, 현재 {len(task.description)}자)"
-            )
+        UseCaseValidator.validate_min_length(
+            text=task.description,
+            min_length=self.min_description_length,
+            field_name="작업 설명"
+        )
 
         logger.debug(f"[{self.worker_name}] ✅ 사전 조건 체크 완료")
 

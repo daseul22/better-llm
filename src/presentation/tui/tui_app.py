@@ -44,14 +44,14 @@ from infrastructure.config import (
 )
 from infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
 from infrastructure.logging import get_logger, log_exception_silently
-from ..cli.utils import (
+from presentation.cli.utils import (
     generate_session_id,
     save_session_history,
     validate_user_input,
     sanitize_user_input,
     save_metrics_report,
 )
-from ..cli.feedback import TUIFeedbackWidget, FeedbackType
+from presentation.cli.feedback import TUIFeedbackWidget, FeedbackType
 from .widgets import (
     HelpModal,
     SearchModal,
@@ -69,6 +69,14 @@ from .utils import (
     TUIConfig,
     TUISettings,
     MessageRenderer,
+)
+from .managers import (
+    SessionManager,
+    WorkerOutputManager,
+    LayoutManager,
+    MetricsUIManager,
+    InputHandler,
+    WorkflowUIManager,
 )
 
 logger = get_logger(__name__, component="TUI")
@@ -127,255 +135,7 @@ class LayoutMode(Enum):
 class OrchestratorTUI(App):
     """전문적인 오케스트레이션 TUI 애플리케이션"""
 
-    CSS = """
-    Screen {
-        background: #0d1117;
-    }
-
-    /* 숨김 클래스 */
-    .hidden {
-        display: none;
-    }
-
-    /* 출력 영역 */
-    #output-container {
-        border: tall #21262d;
-        background: #0d1117;
-        height: 1fr;
-        margin: 0 1;
-        padding: 0;
-    }
-
-    #output-log {
-        height: 1fr;
-        background: #0d1117;
-        padding: 1;
-        scrollbar-gutter: stable;
-    }
-
-    /* Worker 출력 영역 (TabbedContent) */
-    #worker-output-container {
-        border: tall #21262d;
-        background: #0d1117;
-        height: 1fr;
-        margin: 0 1;
-        padding: 0;
-    }
-
-    TabbedContent {
-        background: #0d1117;
-        height: 1fr;
-    }
-
-    TabbedContent > ContentSwitcher {
-        background: #0d1117;
-        height: 1fr;
-    }
-
-    TabPane {
-        background: #0d1117;
-        height: 1fr;
-        padding: 1;
-    }
-
-    TabPane > RichLog {
-        height: 1fr;
-        background: #0d1117;
-        padding: 1;
-        scrollbar-gutter: stable;
-    }
-
-    TabPane > Static {
-        height: 1fr;
-        background: #0d1117;
-        padding: 1;
-        content-align: center middle;
-    }
-
-    Tabs {
-        background: #0d1117;
-        border-bottom: tall #21262d;
-    }
-
-    Tab {
-        background: #0d1117;
-        color: #8b949e;
-    }
-
-    Tab.-active {
-        background: #1c2128;
-        color: #58a6ff;
-    }
-
-    Tab:hover {
-        background: #1c2128;
-    }
-
-    /* Worker 상태 표시 */
-    #worker-status-container {
-        height: auto;
-        margin: 0 1;
-        background: transparent;
-        border: round #21262d;
-        padding: 0;
-    }
-
-    #worker-status {
-        background: transparent;
-        color: #8b949e;
-        padding: 0 2;
-        height: auto;
-    }
-
-    /* 메트릭 대시보드 */
-    #metrics-container {
-        height: auto;
-        margin: 0 1;
-        background: transparent;
-        border: round #21262d;
-        padding: 0;
-    }
-
-    #metrics-panel {
-        background: transparent;
-        color: #8b949e;
-        padding: 0 2;
-        height: auto;
-    }
-
-    /* 워크플로우 비주얼라이저 */
-    #workflow-container {
-        height: auto;
-        max-height: 20;
-        margin: 0 1;
-        background: transparent;
-        border: round #21262d;
-        padding: 0 2;
-    }
-
-    WorkflowVisualizer {
-        background: transparent;
-        height: auto;
-    }
-
-    /* 입력 영역 */
-    #input-container {
-        height: auto;
-        background: #0d1117;
-        border: round #388bfd;
-        margin: 0 1;
-        padding: 1 2;
-    }
-
-    Input {
-        background: transparent;
-        border: none;
-        color: #c9d1d9;
-        padding: 0;
-        margin: 0;
-    }
-
-    Input:focus {
-        border: none;
-        background: transparent;
-    }
-
-    Input.-placeholder {
-        color: #6e7681;
-    }
-
-    /* MultilineInput 스타일 (TextArea 기반) */
-    MultilineInput {
-        background: #0d1117;
-        border: none;
-        color: #c9d1d9;
-        padding: 0;
-        margin: 0;
-        height: auto;
-        max-height: 10;
-    }
-
-    MultilineInput:focus {
-        border: none;
-        background: #0d1117;
-    }
-
-    MultilineInput > .text-area--cursor {
-        background: #c9d1d9;
-    }
-
-    MultilineInput > .text-area--selection {
-        background: #388bfd40;
-    }
-
-    /* 자동 완성 미리보기 */
-    #autocomplete-preview {
-        height: auto;
-        background: transparent;
-        color: #6e7681;
-        padding: 0;
-        margin-top: 1;
-    }
-
-    #autocomplete-preview.hidden {
-        display: none;
-    }
-
-    /* 하단 정보바 */
-    #info-bar {
-        dock: bottom;
-        height: 1;
-        background: #0d1117;
-        color: #6e7681;
-        padding: 0 2;
-        border-top: tall #21262d;
-    }
-
-    #session-info {
-        text-align: left;
-        width: 2fr;
-    }
-
-    #token-info {
-        text-align: center;
-        width: 1fr;
-        color: #58a6ff;
-    }
-
-    #status-info {
-        text-align: right;
-        width: 2fr;
-    }
-
-    /* Footer 스타일 */
-    Footer {
-        background: #0d1117;
-        border-top: tall #21262d;
-    }
-
-    Footer > .footer--key {
-        background: #1c2128;
-        color: #58a6ff;
-    }
-
-    Footer > .footer--description {
-        color: #8b949e;
-    }
-
-    /* 반응형 레이아웃 클래스 */
-    .layout-warning {
-        background: #4d1d00;
-        border: tall #ff8800;
-    }
-
-    .layout-small #metrics-container {
-        display: none;
-    }
-
-    .layout-small #input-container {
-        margin: 0 1;
-    }
-    """
+    CSS_PATH = Path(__file__).parent / "styles.tcss"
 
     BINDINGS = [
         # 기본 동작
@@ -470,6 +230,14 @@ class OrchestratorTUI(App):
 
         # MessageRenderer 인스턴스 (상태 유지용)
         self.message_renderer = MessageRenderer()
+
+        # Level 1 매니저 초기화 (6개)
+        self.session_manager = SessionManager()
+        self.worker_output_manager = WorkerOutputManager()
+        self.layout_manager = LayoutManager()
+        self.metrics_ui_manager = MetricsUIManager()
+        self.input_handler = InputHandler()
+        self.workflow_ui_manager = WorkflowUIManager()
 
     @property
     def current_session(self) -> SessionData:
@@ -664,186 +432,304 @@ class OrchestratorTUI(App):
         # 새 작업 시작
         self.current_task = asyncio.create_task(self.run_task(user_request))
 
-    def on_input_changed(self, event: Input.Changed) -> None:
+    def _validate_and_prepare_input(self, user_request: str) -> Tuple[bool, str]:
         """
-        입력 변경 이벤트 - Phase 2.3: 실시간 입력 검증
+        입력 검증 및 task_name 추출
 
-        입력 길이 표시 및 최대 길이 경고
-        """
-        try:
-            status_info = self.query_one("#status-info", Static)
-            input_length = len(event.value)
-            max_length = self.settings.max_log_lines  # 임시로 설정 값 사용
+        Args:
+            user_request: 사용자 입력 요청
 
-            # 입력 길이가 길 때 경고
-            if input_length > 4000:
-                status_info.update(f"[yellow]입력: {input_length}자 (길이 주의)[/yellow]")
-            elif input_length > 500:
-                status_info.update(f"입력: {input_length}자")
-            else:
-                status_info.update("Ready")
+        Returns:
+            Tuple[bool, str]: (검증 성공 여부, 검증된/정제된 입력)
 
-        except Exception:
-            pass  # 위젯이 없으면 무시
+        Raises:
+            ValueError: 입력이 None이거나 빈 문자열인 경우
 
-    async def on_text_area_changed(self, event) -> None:
-        """
-        TextArea (MultilineInput) 입력 변경 이벤트
-
-        자동 완성 상태를 리셋합니다 (Tab 키 외의 입력 시).
+        Example:
+            >>> is_valid, sanitized = self._validate_and_prepare_input("테스트 작업")
+            >>> print(sanitized)
+            '테스트 작업'
         """
         try:
-            # 자동 완성 미리보기 숨기기
-            autocomplete_preview = self.query_one("#autocomplete-preview", Static)
-            autocomplete_preview.add_class("hidden")
+            if not user_request or not user_request.strip():
+                raise ValueError("입력이 비어있습니다")
 
-            # 자동 완성 엔진 리셋
-            self.autocomplete_engine.reset()
-
-        except Exception:
-            pass  # 위젯이 없으면 무시
-
-    async def run_task(self, user_request: str) -> None:
-        """작업 실행 - Manager가 Worker Tools를 자동으로 호출"""
-        task_input = self.query_one("#task-input", MultilineInput)
-        output_log = self.query_one("#output-log", RichLog)
-        worker_status = self.query_one("#worker-status", Static)
-        status_info = self.query_one("#status-info", Static)
-
-        try:
             # 입력 검증
             is_valid, error_msg = validate_user_input(user_request)
             if not is_valid:
-                # 피드백 시스템 사용
+                task_input = self.query_one("#task-input", MultilineInput)
                 error_panel = TUIFeedbackWidget.create_panel(
-                    "입력 검증 실패",
-                    FeedbackType.ERROR,
-                    details=error_msg
+                    "입력 검증 실패", FeedbackType.ERROR, details=error_msg
                 )
                 self.write_log("")
                 self.write_log(error_panel)
                 self.write_log("")
                 task_input.clear()
-                return
+                return False, error_msg
 
             # 입력 정제
-            user_request = sanitize_user_input(user_request)
+            sanitized_request = sanitize_user_input(user_request)
+            return True, sanitized_request
 
-            # 입력 필드 비우기
-            task_input.clear()
+        except ValueError as e:
+            logger.error(f"입력 검증 실패: {e}")
+            return False, str(e)
+        except Exception as e:
+            logger.error(f"입력 준비 중 예외 발생: {e}")
+            return False, f"입력 준비 실패: {str(e)}"
 
-            # 사용자 요청 표시 (MessageRenderer 정적 메서드 사용)
+    async def _execute_streaming_task(
+        self, effective_width: Optional[int]
+    ) -> Tuple[str, float]:
+        """
+        스트리밍 실행 (astream_events)
+
+        Args:
+            effective_width: 출력 너비 (None인 경우 자동 계산)
+
+        Returns:
+            Tuple[str, float]: (Manager 응답, 실행 시간)
+
+        Raises:
+            asyncio.CancelledError: 작업이 사용자에 의해 중단된 경우
+            Exception: 스트리밍 중 에러 발생 시
+
+        Example:
+            >>> response, duration = await self._execute_streaming_task(80)
+            >>> print(f"응답: {response}, 소요 시간: {duration}초")
+        """
+        task_start_time = time.time()
+        manager_response = ""
+
+        try:
+            self.message_renderer.reset_state()
+            self.write_log(MessageRenderer.render_ai_response_start())
             self.write_log("")
-            user_panel = MessageRenderer.render_user_message(user_request)
-            self.write_log(user_panel)
+
+            async for chunk in self.manager.analyze_and_plan_stream(
+                self.history.get_history()
+            ):
+                manager_response += chunk
+                formatted_chunk = self.message_renderer.render_ai_response_chunk(
+                    chunk, max_width=effective_width
+                )
+                self.write_log(formatted_chunk)
+
             self.write_log("")
+            self.write_log(MessageRenderer.render_ai_response_end())
 
-            # 히스토리에 추가
-            self.history.add_message("user", user_request)
-
-            # Manager Agent 실행
-            status_info.update("Running...")
-
-            # Worker Tool 상태 업데이트 (시작)
-            self.task_start_time = time.time()
-            self.timer_active = True
-            self.update_worker_status("🔄 Manager Agent 실행 중...")
-
-            # Manager가 Worker Tools를 호출하여 작업 수행 (스트리밍)
-            task_start_time = time.time()
-            manager_response = ""
-
-            # 스트리밍으로 실시간 출력 (MessageRenderer 인스턴스 사용)
-            try:
-                # MessageRenderer 상태 초기화
-                self.message_renderer.reset_state()
-
-                # AI 응답 시작 헤더 표시
-                self.write_log(MessageRenderer.render_ai_response_start())
-                self.write_log("")
-
-                # output_log의 실제 너비 계산 (줄바꿈용)
-                try:
-                    output_log_widget = self.query_one("#output-log", RichLog)
-                    available_width = output_log_widget.size.width
-                    # OUTPUT_LOG_PADDING 사용 (매직 넘버 제거)
-                    effective_width = max(
-                        available_width - MessageRenderer.OUTPUT_LOG_PADDING,
-                        MessageRenderer.MIN_OUTPUT_WIDTH
-                    )
-                except Exception:
-                    effective_width = None  # 계산 실패 시 줄바꿈 비활성화
-
-                async for chunk in self.manager.analyze_and_plan_stream(
-                    self.history.get_history()
-                ):
-                    manager_response += chunk
-                    # 모든 청크에 일관된 인덴트 적용 및 줄바꿈 (인스턴스 메서드 사용)
-                    formatted_chunk = self.message_renderer.render_ai_response_chunk(
-                        chunk, max_width=effective_width
-                    )
-                    self.write_log(formatted_chunk)
-
-                # AI 응답 종료 구분선 표시
-                self.write_log("")
-                self.write_log(MessageRenderer.render_ai_response_end())
-            except asyncio.CancelledError:
-                # 사용자가 Ctrl+I로 중단
-                self.write_log(f"\n[bold yellow]⚠️  작업이 사용자에 의해 중단되었습니다[/bold yellow]")
-                self.timer_active = False
-                self.update_worker_status("")
-                return
-            except Exception as stream_error:
-                self.write_log(f"\n[bold red]❌ 스트리밍 에러: {stream_error}[/bold red]")
-                import traceback
-                self.write_log(f"[dim]{traceback.format_exc()}[/dim]")
-                self.timer_active = False
-                self.update_worker_status("")
-                raise
-
-            # Worker Tool 상태 업데이트 (종료)
+        except asyncio.CancelledError:
+            self.write_log(
+                "\n[bold yellow]⚠️  작업이 사용자에 의해 중단되었습니다[/bold yellow]"
+            )
             self.timer_active = False
+            self.update_worker_status("")
+            raise
 
-            # 히스토리에 추가
-            self.history.add_message("manager", manager_response)
+        except Exception as stream_error:
+            self.write_log(f"\n[bold red]❌ 스트리밍 에러: {stream_error}[/bold red]")
+            import traceback
+            self.write_log(f"[dim]{traceback.format_exc()}[/dim]")
+            self.timer_active = False
+            self.update_worker_status("")
+            raise
 
-            # 작업 완료 (컴팩트 버전)
-            task_duration = time.time() - task_start_time
+        task_duration = time.time() - task_start_time
+        return manager_response, task_duration
 
+    def _calculate_display_width(self) -> Optional[int]:
+        """
+        터미널 너비 계산 (app.size.width 사용)
+
+        Returns:
+            Optional[int]: 유효 너비 (계산 실패 시 None)
+
+        Raises:
+            AttributeError: output_log 위젯이 존재하지 않는 경우
+
+        Example:
+            >>> width = self._calculate_display_width()
+            >>> print(f"유효 너비: {width}")
+        """
+        try:
+            output_log_widget = self.query_one("#output-log", RichLog)
+            available_width = output_log_widget.size.width
+            effective_width = max(
+                available_width - MessageRenderer.OUTPUT_LOG_PADDING,
+                MessageRenderer.MIN_OUTPUT_WIDTH
+            )
+            return effective_width
+        except Exception as e:
+            logger.warning(f"너비 계산 실패: {e}")
+            return None
+
+    def _handle_task_error(self, error: Exception) -> None:
+        """
+        에러 로깅 및 UI 업데이트
+
+        Args:
+            error: 발생한 예외 객체
+
+        Returns:
+            None
+
+        Raises:
+            Exception: UI 업데이트 중 치명적 오류 발생 시
+
+        Example:
+            >>> try:
+            ...     # 작업 수행
+            ... except Exception as e:
+            ...     self._handle_task_error(e)
+        """
+        try:
+            import traceback
+
+            worker_status = self.query_one("#worker-status", Static)
+            status_info = self.query_one("#status-info", Static)
+
+            error_panel = TUIFeedbackWidget.create_panel(
+                "작업 실행 중 오류가 발생했습니다",
+                FeedbackType.ERROR,
+                details=f"{str(error)}\n\n{traceback.format_exc()}"
+            )
+
+            self.write_log("")
+            self.write_log(error_panel)
+            self.write_log("")
+
+            worker_status.update("❌ 오류")
+            status_info.update("Error")
+
+            logger.error(f"작업 실행 중 오류: {error}", exc_info=True)
+
+        except Exception as ui_error:
+            logger.critical(f"에러 핸들링 중 치명적 오류: {ui_error}", exc_info=True)
+
+    def _save_and_cleanup(
+        self, user_request: str, task_duration: float
+    ) -> Tuple[Path, Optional[Path]]:
+        """
+        세션 저장 및 최종 상태 업데이트
+
+        Args:
+            user_request: 사용자 요청 문자열
+            task_duration: 작업 실행 시간 (초)
+
+        Returns:
+            Tuple[Path, Optional[Path]]: (세션 파일 경로, 메트릭 파일 경로)
+
+        Raises:
+            IOError: 파일 저장 실패 시
+            PermissionError: 파일 쓰기 권한 없을 시
+
+        Example:
+            >>> session_path, metrics_path = self._save_and_cleanup("테스트", 5.2)
+            >>> print(f"세션: {session_path}, 메트릭: {metrics_path}")
+        """
+        try:
             # 세션 저장
             result = SessionResult(status=SessionStatus.COMPLETED)
             sessions_dir = Path("sessions")
             filepath = save_session_history(
-                self.session_id,
-                user_request,
-                self.history,
-                result.to_dict(),
-                sessions_dir
+                self.session_id, user_request, self.history,
+                result.to_dict(), sessions_dir
             )
 
             # 메트릭 리포트 저장
             metrics_filepath = save_metrics_report(
-                self.session_id,
-                self.metrics_collector,
-                sessions_dir,
-                format="text"
+                self.session_id, self.metrics_collector, sessions_dir, format="text"
             )
 
-            # 컴팩트한 완료 메시지 (한 줄)
-            completion_msg = f"[bold green]✅ 완료[/bold green] [dim]({task_duration:.1f}초)[/dim]"
+            return filepath, metrics_filepath
+
+        except Exception as e:
+            logger.error(f"세션 저장 실패: {e}", exc_info=True)
+            raise
+
+    async def run_task(self, user_request: str) -> None:
+        """
+        작업 실행 - Manager가 Worker Tools를 자동으로 호출
+
+        복잡도 감소를 위해 5개 헬퍼 함수로 책임 분리:
+        1. _validate_and_prepare_input: 입력 검증 및 정제
+        2. _execute_streaming_task: 스트리밍 실행
+        3. _calculate_display_width: 터미널 너비 계산
+        4. _handle_task_error: 에러 처리
+        5. _save_and_cleanup: 세션 저장 및 정리
+
+        Args:
+            user_request: 사용자 요청 문자열
+
+        Returns:
+            None
+
+        Raises:
+            Exception: 작업 실행 중 예외 발생 시
+
+        Example:
+            >>> await self.run_task("파일 생성하기")
+        """
+        task_input = self.query_one("#task-input", MultilineInput)
+        worker_status = self.query_one("#worker-status", Static)
+        status_info = self.query_one("#status-info", Static)
+
+        try:
+            # 1. 입력 검증 및 준비
+            is_valid, sanitized_request = self._validate_and_prepare_input(user_request)
+            if not is_valid:
+                return
+
+            task_input.clear()
+
+            # 사용자 요청 표시
+            self.write_log("")
+            user_panel = MessageRenderer.render_user_message(sanitized_request)
+            self.write_log(user_panel)
+            self.write_log("")
+
+            # 히스토리에 추가
+            self.history.add_message("user", sanitized_request)
+
+            # 2. Manager Agent 실행 준비
+            status_info.update("Running...")
+            self.task_start_time = time.time()
+            self.timer_active = True
+            self.update_worker_status("🔄 Manager Agent 실행 중...")
+
+            # 3. 너비 계산
+            effective_width = self._calculate_display_width()
+
+            # 4. 스트리밍 실행
+            manager_response, task_duration = await self._execute_streaming_task(
+                effective_width
+            )
+
+            self.timer_active = False
+            self.history.add_message("manager", manager_response)
+
+            # 5. 세션 저장 및 정리
+            filepath, metrics_filepath = self._save_and_cleanup(
+                sanitized_request, task_duration
+            )
+
+            # 완료 메시지
+            completion_msg = (
+                f"[bold green]✅ 완료[/bold green] [dim]({task_duration:.1f}초)[/dim]"
+            )
             if metrics_filepath:
-                completion_msg += f" [dim]• 세션: {filepath.name} • 메트릭: {metrics_filepath.name}[/dim]"
+                completion_msg += (
+                    f" [dim]• 세션: {filepath.name} • 메트릭: {metrics_filepath.name}[/dim]"
+                )
             else:
                 completion_msg += f" [dim]• 세션: {filepath.name}[/dim]"
 
             self.write_log("")
             self.write_log(completion_msg)
 
-            # 에러 통계 표시 (설정에 따라)
             if self.settings.show_error_stats_on_complete:
                 self._display_error_statistics()
             else:
-                # 에러 통계 안내 (한 번만)
                 self.write_log("[dim]💡 Tip: F6 키로 에러 통계 확인 가능[/dim]")
 
             self.write_log("")
@@ -852,183 +738,372 @@ class OrchestratorTUI(App):
             status_info.update(f"Completed • {filepath.name}")
 
         except Exception as e:
-            # 피드백 시스템 사용
-            import traceback
-            error_panel = TUIFeedbackWidget.create_panel(
-                "작업 실행 중 오류가 발생했습니다",
-                FeedbackType.ERROR,
-                details=f"{str(e)}\n\n{traceback.format_exc()}"
-            )
-            self.write_log("")
-            self.write_log(error_panel)
-            self.write_log("")
-            worker_status.update(f"❌ 오류")
-            status_info.update("Error")
+            self._handle_task_error(e)
 
-    async def handle_slash_command(self, command: str) -> None:
+    async def _handle_help_command(self) -> None:
         """
-        슬래시 커맨드 처리
+        /help 명령 처리: 도움말 메시지 표시
 
-        지원 커맨드:
-        - /init: 현재 작업공간 분석하여 context 생성 및 새 세션 시작
-        - /help: 도움말 표시
-        - /clear: 로그 화면 지우기
-        - /load <session_id>: 이전 세션 불러오기
-        - /metrics: 메트릭 패널 토글
-        - /search: 로그 검색
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            Exception: 도움말 모달 표시 실패 시
         """
-        task_input = self.query_one("#task-input", MultilineInput)
-        output_log = self.query_one("#output-log", RichLog)
-        worker_status = self.query_one("#worker-status", Static)
-        status_info = self.query_one("#status-info", Static)
-
-        # 입력 필드 비우기
-        task_input.clear()
-
-        # 커맨드 파싱 (공백으로 분리)
-        parts = command.strip().split()
-        cmd = parts[0].lower()
-        args = parts[1:] if len(parts) > 1 else []
-
-        if cmd == '/help':
-            # 도움말 표시
+        try:
             await self.action_show_help()
+        except Exception as e:
+            logger.error(f"도움말 표시 실패: {e}")
+            self.write_log(TUIFeedbackWidget.create_panel(
+                "도움말 표시 실패", FeedbackType.ERROR, details=str(e)
+            ))
 
-        elif cmd == '/metrics':
-            # 메트릭 패널 토글
+    async def _handle_metrics_command(self) -> None:
+        """
+        /metrics 명령 처리: 메트릭 통계 표시
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            Exception: 메트릭 패널 토글 실패 시
+        """
+        try:
             await self.action_toggle_metrics_panel()
+        except Exception as e:
+            logger.error(f"메트릭 패널 토글 실패: {e}")
+            self.write_log(TUIFeedbackWidget.create_panel(
+                "메트릭 패널 토글 실패", FeedbackType.ERROR, details=str(e)
+            ))
 
-        elif cmd == '/search':
-            # 로그 검색
-            await self.action_search_log()
+    async def _handle_search_command(self, keyword: str) -> None:
+        """
+        /search 명령 처리: 세션 검색 및 결과 표시
 
-        elif cmd == '/clear':
-            # 로그 화면 지우기
+        Args:
+            keyword: 검색 키워드 (빈 문자열 가능)
+
+        Returns:
+            None
+
+        Raises:
+            Exception: 검색 모달 표시 실패 시
+
+        Example:
+            >>> await self._handle_search_command("error")
+        """
+        try:
+            if not keyword.strip():
+                # 키워드가 없으면 검색 모달 표시
+                await self.action_search_log()
+            else:
+                # 키워드가 있으면 즉시 검색 수행
+                await self.perform_search(keyword)
+        except Exception as e:
+            logger.error(f"검색 실패: {e}")
+            self.write_log(TUIFeedbackWidget.create_panel(
+                "검색 실패", FeedbackType.ERROR, details=str(e)
+            ))
+
+    async def _handle_clear_command(self) -> None:
+        """
+        /clear 명령 처리: 화면 지우기
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            Exception: 로그 화면 지우기 실패 시
+        """
+        try:
+            output_log = self.query_one("#output-log", RichLog)
             output_log.clear()
             self.log_lines.clear()
-            # 피드백 시스템 사용
+
             success_panel = TUIFeedbackWidget.create_panel(
-                "로그 화면이 지워졌습니다",
-                FeedbackType.SUCCESS
+                "로그 화면이 지워졌습니다", FeedbackType.SUCCESS
             )
             self.write_log("")
             self.write_log(success_panel)
             self.write_log("")
+        except Exception as e:
+            logger.error(f"로그 화면 지우기 실패: {e}")
 
-        elif cmd == '/load':
-            # 세션 불러오기 (Phase 3.1)
-            if not args:
-                # 피드백 시스템 사용
+    async def _handle_load_command(self, session_id: str) -> None:
+        """
+        /load 명령 처리: 세션 로드
+
+        Args:
+            session_id: 로드할 세션 ID (빈 문자열 가능)
+
+        Returns:
+            None
+
+        Raises:
+            Exception: 세션 로드 실패 시
+
+        Example:
+            >>> await self._handle_load_command("abc123")
+        """
+        try:
+            if not session_id.strip():
                 warning_panel = TUIFeedbackWidget.create_panel(
-                    "사용법: /load <session_id>",
-                    FeedbackType.WARNING
+                    "사용법: /load <session_id>", FeedbackType.WARNING
                 )
                 self.write_log("")
                 self.write_log(warning_panel)
                 self.write_log("")
             else:
-                session_id_to_load = args[0]
-                await self.load_session(session_id_to_load)
+                await self.load_session(session_id)
+        except Exception as e:
+            logger.error(f"세션 로드 실패: {e}")
+            self.write_log(TUIFeedbackWidget.create_panel(
+                "세션 로드 실패", FeedbackType.ERROR, details=str(e)
+            ))
 
-        elif cmd == '/init':
-            # /init 커맨드: 프로젝트 분석 및 context 생성
-            try:
-                self.write_log("")
-                self.write_log(Panel(
-                    "[bold cyan]🔍 프로젝트 분석 시작...[/bold cyan]",
-                    border_style="cyan"
-                ))
-                self.write_log("")
+    def _parse_init_args(self, args: str) -> dict[str, str]:
+        """
+        /init 명령 인자 파싱 (--path, --name, --description 등)
 
-                worker_status.update("🔍 프로젝트 구조 분석 중...")
-                status_info.update("Analyzing...")
+        Args:
+            args: 명령줄 인자 문자열
 
-                # 프로젝트 루트 가져오기
-                project_root = get_project_root()
+        Returns:
+            파싱된 인자 딕셔너리
 
-                # 프로젝트 분석
-                self.write_log("[dim]프로젝트 루트:[/dim] " + str(project_root))
-                self.write_log("[dim]파일 스캔 중...[/dim]")
+        Raises:
+            ValueError: 인자 파싱 실패 시
 
-                analyzer = ProjectContextAnalyzer(project_root)
-                context = analyzer.analyze()
+        Example:
+            >>> self._parse_init_args("--path /tmp --name myproject")
+            {'path': '/tmp', 'name': 'myproject'}
+        """
+        parsed_args = {}
+        if not args:
+            return parsed_args
 
-                self.write_log("")
-                self.write_log("[bold green]✅ 분석 완료[/bold green]")
-                self.write_log("")
+        # 간단한 인자 파싱 (향후 argparse로 확장 가능)
+        parts = args.split()
+        i = 0
+        while i < len(parts):
+            if parts[i].startswith("--"):
+                key = parts[i][2:]
+                if i + 1 < len(parts) and not parts[i + 1].startswith("--"):
+                    parsed_args[key] = parts[i + 1]
+                    i += 2
+                else:
+                    parsed_args[key] = "true"
+                    i += 1
+            else:
+                i += 1
 
-                # 분석 결과 표시
-                result_table = Table(show_header=False, border_style="cyan", box=None, padding=(0, 2))
-                result_table.add_column("항목", style="dim")
-                result_table.add_column("값", style="white")
+        return parsed_args
 
-                result_table.add_row("프로젝트", context.project_name)
-                result_table.add_row("언어", context.language)
-                result_table.add_row("프레임워크", context.framework)
-                result_table.add_row("아키텍처", context.architecture)
-                result_table.add_row("의존성", f"{len(context.dependencies)}개 패키지")
+    def _render_project_analysis_table(self, context: ProjectContextAnalyzer) -> Table:
+        """
+        프로젝트 분석 결과를 Rich Table로 렌더링
 
-                self.write_log(Panel(
-                    result_table,
-                    title="[bold cyan]분석 결과[/bold cyan]",
-                    border_style="cyan"
-                ))
-                self.write_log("")
+        Args:
+            context: 프로젝트 컨텍스트 분석 결과
 
-                # .context.json 저장
-                self.write_log("[dim]컨텍스트 저장 중...[/dim]")
-                worker_status.update("💾 컨텍스트 저장 중...")
+        Returns:
+            Rich Table 객체
 
-                context_file = project_root / ".context.json"
-                repo = JsonContextRepository(context_file)
-                repo.save(context)
+        Raises:
+            AttributeError: context 객체에 필수 속성이 없을 시
 
-                self.write_log(f"[green]✅ 저장 완료:[/green] {context_file.name}")
-                self.write_log("")
+        Example:
+            >>> table = self._render_project_analysis_table(context)
+            >>> self.write_log(table)
+        """
+        result_table = Table(
+            show_header=False,
+            border_style="cyan",
+            box=None,
+            padding=(0, 2)
+        )
+        result_table.add_column("항목", style="dim")
+        result_table.add_column("값", style="white")
+        result_table.add_row("프로젝트", context.project_name)
+        result_table.add_row("언어", context.language)
+        result_table.add_row("프레임워크", context.framework)
+        result_table.add_row("아키텍처", context.architecture)
+        result_table.add_row("의존성", f"{len(context.dependencies)}개 패키지")
 
-                # 새 세션 시작
-                self.write_log("[dim]새 세션 시작...[/dim]")
-                new_session_id = generate_session_id()
-                new_session = SessionData(new_session_id)
+        return result_table
 
-                # 현재 세션 교체
-                self.sessions[self.active_session_index] = new_session
+    def _save_project_context(self, context: ProjectContextAnalyzer) -> Path:
+        """
+        프로젝트 컨텍스트를 파일 시스템에 저장
 
-                # 세션 ID 업데이트 (메트릭 수집용)
-                update_session_id(self.session_id)
-                set_metrics_collector(self.metrics_collector, self.session_id)
+        Args:
+            context: 프로젝트 컨텍스트 분석 결과
 
-                # UI 업데이트
-                self._update_status_bar()  # 터미널 크기 및 레이아웃 모드 포함
+        Returns:
+            저장된 파일 경로
 
-                self.write_log("")
-                self.write_log(Panel(
-                    f"[bold green]✅ 초기화 완료[/bold green]\n\n"
-                    f"Session ID: {self.session_id}\n"
-                    f"Context: {context.project_name} ({context.architecture})",
-                    border_style="green"
-                ))
-                self.write_log("")
+        Raises:
+            IOError: 파일 저장 실패 시
+            PermissionError: 파일 쓰기 권한 없을 시
 
-                worker_status.update("✅ 초기화 완료")
-                status_info.update("Ready")
+        Example:
+            >>> path = self._save_project_context(context)
+            >>> print(f"Saved to {path}")
+        """
+        project_root = get_project_root()
+        context_file = project_root / ".context.json"
+        repo = JsonContextRepository(context_file)
+        repo.save(context)
 
-            except Exception as e:
-                # 피드백 시스템 사용
-                import traceback
-                error_panel = TUIFeedbackWidget.create_panel(
-                    "프로젝트 초기화 실패",
-                    FeedbackType.ERROR,
-                    details=f"{str(e)}\n\n{traceback.format_exc()}"
-                )
-                self.write_log("")
-                self.write_log(error_panel)
-                self.write_log("")
-                worker_status.update(f"❌ 오류")
-                status_info.update("Error")
+        return context_file
 
+    async def _handle_init_command(self, args: str) -> None:
+        """
+        /init 명령 처리: 프로젝트 초기화 및 컨텍스트 생성
+
+        Args:
+            args: 명령줄 인자 (현재 미사용, 향후 확장 가능)
+
+        Returns:
+            None
+
+        Raises:
+            Exception: 프로젝트 초기화 실패 시
+
+        Example:
+            >>> await self._handle_init_command("")
+        """
+        worker_status = self.query_one("#worker-status", Static)
+        status_info = self.query_one("#status-info", Static)
+
+        try:
+            # 인자 파싱 (현재는 사용하지 않음)
+            parsed_args = self._parse_init_args(args)
+
+            self.write_log("")
+            self.write_log(Panel(
+                "[bold cyan]🔍 프로젝트 분석 시작...[/bold cyan]",
+                border_style="cyan"
+            ))
+            self.write_log("")
+
+            worker_status.update("🔍 프로젝트 구조 분석 중...")
+            status_info.update("Analyzing...")
+
+            project_root = get_project_root()
+            self.write_log("[dim]프로젝트 루트:[/dim] " + str(project_root))
+            self.write_log("[dim]파일 스캔 중...[/dim]")
+
+            analyzer = ProjectContextAnalyzer(project_root)
+            context = analyzer.analyze()
+
+            self.write_log("")
+            self.write_log("[bold green]✅ 분석 완료[/bold green]")
+            self.write_log("")
+
+            # 분석 결과 테이블 렌더링
+            result_table = self._render_project_analysis_table(context)
+            self.write_log(Panel(
+                result_table,
+                title="[bold cyan]분석 결과[/bold cyan]",
+                border_style="cyan"
+            ))
+            self.write_log("")
+
+            self.write_log("[dim]컨텍스트 저장 중...[/dim]")
+            worker_status.update("💾 컨텍스트 저장 중...")
+
+            # 컨텍스트 저장
+            context_file = self._save_project_context(context)
+
+            self.write_log(f"[green]✅ 저장 완료:[/green] {context_file.name}")
+            self.write_log("")
+
+            self.write_log("[dim]새 세션 시작...[/dim]")
+            new_session_id = generate_session_id()
+            new_session = SessionData(new_session_id)
+            self.sessions[self.active_session_index] = new_session
+
+            update_session_id(self.session_id)
+            set_metrics_collector(self.metrics_collector, self.session_id)
+
+            self._update_status_bar()
+
+            self.write_log("")
+            self.write_log(Panel(
+                f"[bold green]✅ 초기화 완료[/bold green]\n\n"
+                f"Session ID: {self.session_id}\n"
+                f"Context: {context.project_name} ({context.architecture})",
+                border_style="green"
+            ))
+            self.write_log("")
+
+            worker_status.update("✅ 초기화 완료")
+            status_info.update("Ready")
+
+        except Exception as e:
+            import traceback
+            error_panel = TUIFeedbackWidget.create_panel(
+                "프로젝트 초기화 실패", FeedbackType.ERROR,
+                details=f"{str(e)}\n\n{traceback.format_exc()}"
+            )
+            self.write_log("")
+            self.write_log(error_panel)
+            self.write_log("")
+            worker_status.update("❌ 오류")
+            status_info.update("Error")
+
+    async def handle_slash_command(self, command: str) -> None:
+        """
+        슬래시 명령 처리 (Command Pattern 적용)
+
+        Args:
+            command: 슬래시 명령 문자열 (예: "/help", "/search keyword")
+
+        Returns:
+            None
+
+        Raises:
+            Exception: 명령 처리 실패 시
+
+        Example:
+            >>> await self.handle_slash_command("/help")
+            >>> await self.handle_slash_command("/search error")
+        """
+        task_input = self.query_one("#task-input", MultilineInput)
+        task_input.clear()
+
+        cmd, _, args = command.partition(" ")
+        cmd = cmd.lower().strip()
+        args = args.strip()
+
+        # Command Router (인자 없는 명령)
+        handlers = {
+            "/help": self._handle_help_command,
+            "/metrics": self._handle_metrics_command,
+            "/clear": self._handle_clear_command,
+        }
+
+        # 인자 필요한 명령
+        if cmd == "/search":
+            await self._handle_search_command(args)
+        elif cmd == "/load":
+            await self._handle_load_command(args)
+        elif cmd == "/init":
+            await self._handle_init_command(args)
+        elif cmd in handlers:
+            await handlers[cmd]()
         else:
-            # 알 수 없는 커맨드 - 피드백 시스템 사용
+            # 알 수 없는 명령
             available_commands = (
                 "사용 가능한 커맨드:\n"
                 "  /help - 도움말 표시\n"
@@ -1039,8 +1114,7 @@ class OrchestratorTUI(App):
                 "  /clear - 로그 화면 지우기"
             )
             warning_panel = TUIFeedbackWidget.create_panel(
-                f"알 수 없는 커맨드: {cmd}",
-                FeedbackType.WARNING,
+                f"알 수 없는 커맨드: {cmd}", FeedbackType.WARNING,
                 details=available_commands
             )
             self.write_log("")
@@ -1051,131 +1125,43 @@ class OrchestratorTUI(App):
         """Ctrl+N: 새 세션 (현재 활성 세션을 새로 만듦)"""
         new_session_id = generate_session_id()
         new_session = SessionData(new_session_id)
-
-        # 현재 세션 교체
         self.sessions[self.active_session_index] = new_session
-
-        # 세션 ID 업데이트 (메트릭 수집용)
         update_session_id(self.session_id)
         set_metrics_collector(self.metrics_collector, self.session_id)
 
-        # Manager Agent 토큰 사용량 초기화
         if self.manager:
             self.manager.reset_token_usage()
 
-        # UI 업데이트
         status_info = self.query_one("#status-info", Static)
-        self._update_status_bar()  # 터미널 크기 및 레이아웃 모드 포함
+        status_info.update(f"New session • {self.session_id[:8]}...")
+        self._update_status_bar()
 
         output_log = self.query_one("#output-log", RichLog)
         output_log.clear()
+        self.log_lines.clear()
+
         self.write_log("")
-        self.write_log(f"[bold green]✅ 새 세션[/bold green] [dim]• ID: {self.session_id}[/dim]")
+        self.write_log(Panel(
+            f"[bold green]새 세션 시작[/bold green]\n\nSession ID: {self.session_id}",
+            border_style="green"
+        ))
         self.write_log("")
 
-        worker_status = self.query_one("#worker-status", Static)
-        worker_status.update("✅ 준비 완료")
-        status_info.update("Ready")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """입력 변경 이벤트 (InputHandler로 위임)."""
+        self.input_handler.handle_input_changed(event)
 
     def on_resize(self, event: events.Resize) -> None:
-        """
-        터미널 크기 변경 이벤트 핸들러
-
-        터미널 크기가 변경될 때마다 호출되며, 레이아웃을 동적으로 조정합니다.
-
-        Args:
-            event: Resize 이벤트 (width, height 포함)
-        """
-        self.update_layout_for_size(event.size.width, event.size.height)
+        """화면 크기 변경 이벤트 (LayoutManager로 위임)."""
+        self.layout_manager.handle_resize(event)
 
     def update_layout_for_size(self, width: int, height: int) -> None:
-        """
-        화면 크기에 따라 레이아웃 동적 조정
-
-        반응형 브레이크포인트:
-        - Large: width >= 120, height >= 30 (모든 패널 표시)
-        - Medium: width >= 80, height >= 24 (메트릭 패널 토글 가능)
-        - Small: width < 80 or height < 24 (메트릭 패널 자동 숨김, 경고)
-
-        Args:
-            width: 터미널 너비
-            height: 터미널 높이
-        """
-        self.terminal_width = width
-        self.terminal_height = height
-
-        # 레이아웃 모드 결정
-        old_mode = self.current_layout_mode
-
-        if width >= 120 and height >= 30:
-            self.current_layout_mode = LayoutMode.LARGE
-        elif width >= 80 and height >= 24:
-            self.current_layout_mode = LayoutMode.MEDIUM
-        else:
-            self.current_layout_mode = LayoutMode.SMALL
-
-        # 레이아웃 모드가 변경된 경우에만 UI 업데이트
-        if old_mode != self.current_layout_mode:
-            self._apply_layout_mode()
-            self._update_status_bar()
-
-            # 레이아웃 변경 알림
-            if self.settings.enable_notifications:
-                self.notify(
-                    f"레이아웃: {self.current_layout_mode.value} ({width}x{height})",
-                    severity="information"
-                )
-        else:
-            # 모드는 동일하지만 크기만 업데이트
-            self._update_status_bar()
+        """레이아웃 크기 업데이트 (LayoutManager로 위임)."""
+        self.layout_manager.update_layout_for_size(width, height)
 
     def _apply_layout_mode(self) -> None:
-        """
-        현재 레이아웃 모드에 따라 UI 요소 조정
-
-        - LARGE: 모든 패널 표시, 사용자 메트릭 설정 존중
-        - MEDIUM: 메트릭 패널 토글 가능, 사용자 메트릭 설정 존중
-        - SMALL: 메트릭 패널 강제 숨김, 경고 표시
-        """
-        try:
-            # CSS 클래스 업데이트
-            screen = self.screen
-            screen.remove_class("layout-large")
-            screen.remove_class("layout-medium")
-            screen.remove_class("layout-small")
-
-            if self.current_layout_mode == LayoutMode.LARGE:
-                screen.add_class("layout-large")
-                # 사용자 설정에 따라 메트릭 패널 표시
-                if self.metrics_panel_hidden_by_layout:
-                    self.metrics_panel_hidden_by_layout = False
-                self.apply_metrics_panel_visibility()
-
-            elif self.current_layout_mode == LayoutMode.MEDIUM:
-                screen.add_class("layout-medium")
-                # 사용자 설정에 따라 메트릭 패널 표시
-                if self.metrics_panel_hidden_by_layout:
-                    self.metrics_panel_hidden_by_layout = False
-                self.apply_metrics_panel_visibility()
-
-            elif self.current_layout_mode == LayoutMode.SMALL:
-                screen.add_class("layout-small")
-                # 메트릭 패널 강제 숨김
-                metrics_container = self.query_one("#metrics-container", Container)
-                if not metrics_container.has_class("hidden"):
-                    self.metrics_panel_hidden_by_layout = True
-                metrics_container.add_class("hidden")
-
-                # 경고 메시지 표시 (최소 크기 미달)
-                if self.terminal_width < 60 or self.terminal_height < 20:
-                    worker_status = self.query_one("#worker-status", Static)
-                    worker_status.update(
-                        f"⚠️  터미널 크기가 너무 작습니다 ({self.terminal_width}x{self.terminal_height}). "
-                        f"권장: 80x24 이상"
-                    )
-
-        except Exception as e:
-            logger.warning(f"레이아웃 모드 적용 실패: {e}")
+        """레이아웃 모드 적용 (LayoutManager로 위임)."""
+        self.layout_manager.apply_layout_mode()
 
     def _update_status_bar(self) -> None:
         """
@@ -1251,47 +1237,13 @@ class OrchestratorTUI(App):
             pass  # 위젯이 아직 없으면 무시
 
     def on_workflow_update(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
-        """
-        워크플로우 상태 업데이트 콜백
-
-        Worker Tool 실행 시 호출되어 워크플로우 비주얼라이저를 업데이트합니다.
-        워커 스레드에서 호출될 수 있으므로 UI 업데이트는 call_from_thread()를 통해 메인 스레드로 위임합니다.
-
-        Args:
-            worker_name: Worker 이름 (예: "planner", "coder")
-            status: 상태 ("running", "completed", "failed")
-            error: 에러 메시지 (실패 시)
-        """
-        # UI 업데이트는 메인 스레드에서 실행되어야 하므로 call_from_thread 사용
-        self.call_from_thread(self._update_workflow_ui, worker_name, status, error)
+        """워크플로우 상태 업데이트 콜백 (WorkflowUIManager로 위임)."""
+        self.workflow_ui_manager.handle_workflow_update(worker_name, status, error)
 
     def _update_workflow_ui(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
-        """
-        워크플로우 UI 업데이트 (메인 스레드에서 실행)
-
-        Args:
-            worker_name: Worker 이름
-            status: 상태
-            error: 에러 메시지
-        """
+        """워크플로우 UI 업데이트 (WorkflowUIManager로 위임)."""
         try:
-            workflow_visualizer = self.query_one("#workflow-visualizer", WorkflowVisualizer)
-
-            # 상태 문자열을 WorkerStatus enum으로 변환
-            status_map = {
-                "pending": WorkerStatus.PENDING,
-                "running": WorkerStatus.RUNNING,
-                "completed": WorkerStatus.COMPLETED,
-                "failed": WorkerStatus.FAILED,
-            }
-            worker_status_enum = status_map.get(status, WorkerStatus.PENDING)
-
-            # 워크플로우 비주얼라이저 업데이트
-            workflow_visualizer.update_worker_status(
-                worker_name=worker_name,
-                status=worker_status_enum,
-                error_message=error
-            )
+            self.workflow_ui_manager.update_workflow_ui(worker_name, status, error)
 
             # Worker 실행 시작 시 새 탭 생성 및 등록
             if status == "running":
@@ -1306,155 +1258,20 @@ class OrchestratorTUI(App):
             logger.warning(f"워크플로우 업데이트 실패: {e}")
 
     def _create_worker_tab(self, worker_name: str) -> None:
-        """
-        Worker 탭 생성 (UI 스레드에서 호출)
-
-        Args:
-            worker_name: Worker 이름
-        """
-        try:
-            worker_tabs = self.query_one("#worker-tabs", TabbedContent)
-
-            # "No active workers" 탭 제거
-            try:
-                no_workers_tab = self.query_one("#no-workers-tab")
-                if no_workers_tab:
-                    worker_tabs.remove_pane("no-workers-tab")
-            except NoMatches:
-                # 탭이 이미 제거되었거나 존재하지 않음
-                logger.debug("No workers tab not found, already removed")
-            except Exception as e:
-                logger.warning(f"Failed to remove no-workers tab: {e}")
-
-            # 이미 해당 Worker의 탭이 존재하는지 확인
-            tab_id = f"worker-tab-{worker_name}"
-            if worker_name in self.active_workers:
-                # 기존 탭의 RichLog 초기화
-                worker_log = self.active_workers[worker_name]
-                worker_log.clear()
-                # 헤더 추가
-                worker_log.write(Panel(
-                    f"[bold cyan]🤖 {worker_name.capitalize()} Worker[/bold cyan]",
-                    border_style="cyan"
-                ))
-                worker_log.write("")
-                # 해당 탭으로 전환
-                worker_tabs.active = tab_id
-            else:
-                # 새 탭 생성
-                # RichLog 생성
-                worker_log = RichLog(
-                    id=f"worker-log-{worker_name}",
-                    markup=True,
-                    highlight=True,
-                    wrap=True,
-                    max_lines=1000
-                )
-                # 헤더 추가
-                worker_log.write(Panel(
-                    f"[bold cyan]🤖 {worker_name.capitalize()} Worker[/bold cyan]",
-                    border_style="cyan"
-                ))
-                worker_log.write("")
-
-                # WorkerTabPane을 사용하여 탭 생성 (공식 API 사용)
-                tab_pane = WorkerTabPane(
-                    f"{worker_name.capitalize()} ⏳",
-                    worker_log,
-                    id=tab_id
-                )
-
-                # TabbedContent에 탭 추가
-                worker_tabs.add_pane(tab_pane)
-
-                # active_workers에 등록
-                self.active_workers[worker_name] = worker_log
-
-                # 새로 생성한 탭으로 전환
-                worker_tabs.active = tab_id
-
-        except Exception as e:
-            logger.warning(f"Worker 탭 생성 실패: {e}")
+        """Worker 탭 생성 (WorkerOutputManager로 위임)."""
+        self.worker_output_manager.create_worker_tab(worker_name)
 
     def _update_worker_tab_status(self, worker_name: str, status: str) -> None:
-        """
-        Worker 탭 상태 업데이트 (탭 재생성 방식)
-
-        TabPane.label을 직접 수정하는 것은 Textual 공식 API가 아니므로,
-        탭을 제거하고 새로운 제목으로 재생성합니다.
-
-        Args:
-            worker_name: Worker 이름
-            status: 상태 ("completed", "failed")
-        """
-        try:
-            worker_tabs = self.query_one("#worker-tabs", TabbedContent)
-            tab_id = f"worker-tab-{worker_name}"
-
-            # 기존 탭의 RichLog 참조 저장
-            worker_log = self.active_workers.get(worker_name)
-            if not worker_log:
-                logger.warning(f"Worker log not found for {worker_name}")
-                return
-
-            # 상태 아이콘 설정
-            if status == "completed":
-                icon = "✓"
-            elif status == "failed":
-                icon = "✗"
-            else:
-                icon = "⏳"
-
-            new_title = f"{worker_name.capitalize()} {icon}"
-
-            # 탭 제거 후 재생성
-            try:
-                worker_tabs.remove_pane(tab_id)
-            except NoMatches:
-                logger.debug(f"Tab {tab_id} not found, skipping removal")
-
-            # 새 탭 생성 및 추가
-            new_tab = WorkerTabPane(new_title, worker_log, id=tab_id)
-            worker_tabs.add_pane(new_tab)
-
-        except NoMatches:
-            logger.debug(f"Worker tabs container not found for {worker_name}")
-        except Exception as e:
-            logger.warning(f"Worker 탭 상태 업데이트 실패: {e}")
+        """Worker 탭 상태 업데이트 (WorkerOutputManager로 위임)."""
+        self.worker_output_manager.update_worker_tab_status(worker_name, status)
 
     def on_worker_output(self, worker_name: str, chunk: str) -> None:
-        """
-        Worker 출력 스트리밍 콜백
-
-        Worker Tool 실행 중 실시간으로 출력을 받아서 Worker 출력 화면에 표시합니다.
-        워커 스레드에서 호출될 수 있으므로 UI 업데이트는 call_from_thread()를 통해 메인 스레드로 위임합니다.
-
-        Args:
-            worker_name: Worker 이름 (예: "planner", "coder")
-            chunk: 출력 청크
-        """
-        # UI 업데이트는 메인 스레드에서 실행되어야 하므로 call_from_thread 사용
-        self.call_from_thread(self._write_worker_output, worker_name, chunk)
+        """Worker 출력 콜백 (WorkerOutputManager로 위임)."""
+        self.worker_output_manager.handle_worker_output(worker_name, chunk)
 
     def _write_worker_output(self, worker_name: str, chunk: str) -> None:
-        """
-        Worker 출력을 UI에 작성 (메인 스레드에서 실행)
-
-        Args:
-            worker_name: Worker 이름
-            chunk: 출력 청크
-        """
-        try:
-            # active_workers에서 해당 Worker의 RichLog 조회
-            if worker_name in self.active_workers:
-                worker_log = self.active_workers[worker_name]
-                # 실시간으로 청크 출력
-                worker_log.write(chunk)
-            else:
-                logger.warning(f"Worker '{worker_name}'의 탭을 찾을 수 없습니다")
-
-        except Exception as e:
-            logger.warning(f"Worker 출력 표시 실패: {e}")
+        """Worker 출력 작성 (WorkerOutputManager로 위임)."""
+        self.worker_output_manager.write_worker_output(worker_name, chunk)
 
     def update_worker_status_timer(self) -> None:
         """타이머: Worker Tool 실행 시간 업데이트 (0.5초마다 호출)"""
@@ -1520,406 +1337,8 @@ class OrchestratorTUI(App):
             logger.warning(f"토큰 정보 업데이트 실패: {e}")
 
     def update_metrics_panel(self) -> None:
-        """타이머: 메트릭 대시보드 업데이트 (1초마다 호출)"""
-        try:
-            metrics_panel = self.query_one("#metrics-panel", Static)
-
-            # 세션 메트릭 조회
-            session_metrics = self.metrics_collector.get_session_summary(self.session_id)
-
-            if not session_metrics or not session_metrics.workers_metrics:
-                metrics_panel.update("📊 메트릭 없음")
-                return
-
-            # 통계 테이블 생성
-            stats_table = Table(
-                show_header=True,
-                header_style="bold cyan",
-                border_style="dim",
-                box=None,
-                padding=(0, 1)
-            )
-            stats_table.add_column("Worker", style="cyan", width=12)
-            stats_table.add_column("시도", justify="right", width=6)
-            stats_table.add_column("성공", justify="right", width=6, style="green")
-            stats_table.add_column("실패", justify="right", width=6, style="red")
-            stats_table.add_column("성공률", justify="right", width=8)
-            stats_table.add_column("평균시간", justify="right", width=10)
-
-            # 모든 Worker 통계 조회
-            all_stats = self.metrics_collector.get_all_workers_statistics(self.session_id)
-
-            for worker_name, stats in all_stats.items():
-                success_rate = stats["success_rate"]
-                success_rate_style = (
-                    "green" if success_rate >= 80
-                    else "yellow" if success_rate >= 50
-                    else "red"
-                )
-
-                stats_table.add_row(
-                    worker_name.upper(),
-                    str(stats["attempts"]),
-                    str(stats["successes"]),
-                    str(stats["failures"]),
-                    f"[{success_rate_style}]{success_rate:.1f}%[/{success_rate_style}]",
-                    f"{stats['avg_execution_time']:.2f}s",
-                )
-
-            # 세션 요약 추가
-            total_duration = session_metrics.total_duration
-            total_attempts = len(session_metrics.workers_metrics)
-            overall_success_rate = session_metrics.get_success_rate()
-
-            summary_text = (
-                f"[bold]세션 요약[/bold]: "
-                f"총 {total_attempts}회 실행, "
-                f"소요시간 {total_duration:.1f}s, "
-                f"성공률 {overall_success_rate:.1f}%"
-            )
-
-            # Rich 렌더링 (테이블 + 요약)
-            from rich.console import Group
-            content = Group(
-                Text("📊 성능 메트릭", style="bold"),
-                Text(""),
-                stats_table,
-                Text(""),
-                Text.from_markup(summary_text),
-            )
-
-            metrics_panel.update(content)
-
-        except Exception as e:
-            # 메트릭 업데이트 실패는 로그만 남기고 무시
-            logger.warning(f"메트릭 패널 업데이트 실패: {e}")
-
-    async def action_interrupt_or_quit(self) -> None:
-        """
-        Ctrl+C: 3단계 로직
-        1회: 입력 초기화
-        2회: 작업 중단
-        3회: 프로그램 종료
-        """
-        current_time = time.time()
-        time_since_last_ctrl_c = current_time - self.last_ctrl_c_time
-
-        task_input = self.query_one("#task-input", MultilineInput)
-        output_log = self.query_one("#output-log", RichLog)
-        worker_status = self.query_one("#worker-status", Static)
-        status_info = self.query_one("#status-info", Static)
-
-        # 2초 이상 지나면 카운터 리셋
-        if time_since_last_ctrl_c >= 2.0:
-            self.ctrl_c_count = 0
-
-        self.ctrl_c_count += 1
-        self.last_ctrl_c_time = current_time
-
-        if self.ctrl_c_count == 1:
-            # 1회: 입력 초기화 (로그 없이)
-            task_input.clear()
-
-        elif self.ctrl_c_count == 2:
-            # 2회: 작업 중단
-            if self.current_task and not self.current_task.done():
-                self.current_task.cancel()
-                self.write_log("")
-                self.write_log(Panel(
-                    "[bold yellow]⚠️  작업이 중단되었습니다[/bold yellow]\n\n"
-                    "[dim]Ctrl+C를 다시 누르면 프로그램이 종료됩니다[/dim]",
-                    border_style="yellow"
-                ))
-                self.write_log("")
-                self.timer_active = False
-                worker_status.update("⚠️  작업 중단됨")
-                status_info.update("작업 중단 • Ctrl+C 다시 누르면 종료")
-            else:
-                # 작업이 없으면 즉시 종료 (메시지 없이)
-                self.exit()
-
-        else:  # self.ctrl_c_count >= 3
-            # 3회: 프로그램 종료
-            self.write_log("")
-            self.write_log(Panel(
-                "[bold]👋 프로그램을 종료합니다...[/bold]",
-                border_style="dim"
-            ))
-            self.write_log("")
-            self.exit()
-
-    # ==================== 새로운 액션 메서드 (Phase 1-4) ====================
-
-    async def action_history_up(self) -> None:
-        """↑ 키: 히스토리 이전 항목으로 이동"""
-        try:
-            task_input = self.query_one("#task-input", MultilineInput)
-            previous = self.input_history.navigate_up(task_input.text)
-            if previous is not None:
-                task_input.load_text(previous)
-                # 커서를 텍스트 끝으로 이동 (충분히 큰 값 사용)
-                task_input.move_cursor_relative(rows=1000, columns=1000)
-        except Exception:
-            pass
-
-    async def action_history_down(self) -> None:
-        """↓ 키: 히스토리 다음 항목으로 이동"""
-        try:
-            task_input = self.query_one("#task-input", MultilineInput)
-            next_item = self.input_history.navigate_down()
-            if next_item is not None:
-                task_input.load_text(next_item)
-                # 커서를 텍스트 끝으로 이동 (충분히 큰 값 사용)
-                task_input.move_cursor_relative(rows=1000, columns=1000)
-        except Exception:
-            pass
-
-    async def on_multiline_input_history_up(
-        self, message: MultilineInput.HistoryUp
-    ) -> None:
-        """
-        MultilineInput에서 발생한 HistoryUp 메시지 처리.
-
-        Args:
-            message: HistoryUp 메시지
-        """
-        await self.action_history_up()
-
-    async def on_multiline_input_history_down(
-        self, message: MultilineInput.HistoryDown
-    ) -> None:
-        """
-        MultilineInput에서 발생한 HistoryDown 메시지 처리.
-
-        Args:
-            message: HistoryDown 메시지
-        """
-        await self.action_history_down()
-
-    async def on_multiline_input_autocomplete_requested(
-        self, message: MultilineInput.AutocompleteRequested
-    ) -> None:
-        """
-        MultilineInput에서 발생한 AutocompleteRequested 메시지 처리.
-
-        Tab 키를 누르면 자동 완성을 수행하고, 여러 후보가 있으면 순환합니다.
-
-        Args:
-            message: AutocompleteRequested 메시지
-        """
-        try:
-            task_input = self.query_one("#task-input", MultilineInput)
-            autocomplete_preview = self.query_one("#autocomplete-preview", Static)
-
-            current_text = message.current_text.strip()
-
-            # 빈 입력이면 자동 완성 비활성화
-            if not current_text:
-                autocomplete_preview.add_class("hidden")
-                self.autocomplete_engine.reset()
-                return
-
-            # 자동 완성 수행 (순환 모드)
-            completed_text = self.autocomplete_engine.complete(current_text, cycle=True)
-
-            if completed_text:
-                # 입력 텍스트 업데이트
-                task_input.load_text(completed_text)
-                # 커서를 텍스트 끝으로 이동
-                task_input.move_cursor_relative(rows=1000, columns=1000)
-
-                # 미리보기 업데이트
-                preview_text = self.autocomplete_engine.get_preview()
-                if preview_text:
-                    autocomplete_preview.update(f"[dim]{preview_text}[/dim]")
-                    autocomplete_preview.remove_class("hidden")
-                else:
-                    autocomplete_preview.add_class("hidden")
-            else:
-                # 자동 완성 후보가 없으면 미리보기 숨김
-                autocomplete_preview.add_class("hidden")
-
-        except Exception as e:
-            logger.warning(f"자동 완성 처리 실패: {e}")
-
-    async def action_show_help(self) -> None:
-        """F1 키: 도움말 모달 표시"""
-        try:
-            await self.push_screen(HelpModal())
-        except Exception as e:
-            logger.error(f"도움말 표시 실패: {e}")
-
-    async def action_show_settings(self) -> None:
-        """F2 키: 설정 모달 표시"""
-        try:
-            result = await self.push_screen(SettingsModal(self.settings))
-            if result:
-                # 설정이 변경됨
-                self.settings = result
-                # 히스토리 크기 업데이트
-                self.input_history = InputHistory(max_size=self.settings.max_history_size)
-                # 패널 표시 상태 업데이트
-                self.show_metrics_panel = self.settings.show_metrics_panel
-                self.show_workflow_panel = self.settings.show_workflow_panel
-                self.show_worker_status = self.settings.show_worker_status
-                self.apply_metrics_panel_visibility()
-                self.apply_workflow_panel_visibility()
-                self.apply_worker_status_visibility()
-                # 알림 표시
-                if self.settings.enable_notifications:
-                    self.notify("설정이 저장되었습니다", severity="information")
-        except Exception as e:
-            logger.error(f"설정 표시 실패: {e}")
-
-    async def action_toggle_metrics_panel(self) -> None:
-        """
-        F3 키: 메트릭 패널 표시/숨김 토글
-
-        메트릭 패널의 표시 상태를 토글하고, 변경된 설정을 파일에 저장합니다.
-        설정 저장에 실패하면 경고 로그를 남기고 사용자에게 알림을 표시합니다.
-
-        Raises:
-            Exception: 메트릭 패널 토글 중 예상치 못한 오류 발생 시
-        """
-        try:
-            # 상태 토글
-            self.show_metrics_panel = not self.show_metrics_panel
-
-            # UI 업데이트
-            self.apply_metrics_panel_visibility()
-
-            # 설정 저장
-            self.settings.show_metrics_panel = self.show_metrics_panel
-            save_success = TUIConfig.save(self.settings)
-
-            # 저장 실패 시 경고
-            if not save_success:
-                logger.warning("메트릭 패널 설정 저장 실패")
-                if self.settings.notify_on_error:
-                    self.notify("설정 저장 실패", severity="warning")
-
-            # 알림 표시
-            if self.settings.enable_notifications:
-                status_msg = "표시" if self.show_metrics_panel else "숨김"
-                self.notify(f"메트릭 패널: {status_msg}", severity="information")
-
-        except Exception as e:
-            logger.error(f"메트릭 패널 토글 실패: {e}")
-
-    async def action_toggle_workflow_panel(self) -> None:
-        """
-        F4 키: 워크플로우 패널 표시/숨김 토글
-
-        워크플로우 패널의 표시 상태를 토글하고, 변경된 설정을 파일에 저장합니다.
-
-        Raises:
-            Exception: 워크플로우 패널 토글 중 예상치 못한 오류 발생 시
-        """
-        try:
-            # 상태 토글
-            self.show_workflow_panel = not self.show_workflow_panel
-
-            # UI 업데이트
-            self.apply_workflow_panel_visibility()
-
-            # 설정 저장
-            self.settings.show_workflow_panel = self.show_workflow_panel
-            save_success = TUIConfig.save(self.settings)
-
-            # 저장 실패 시 경고
-            if not save_success:
-                logger.warning("워크플로우 패널 설정 저장 실패")
-                if self.settings.notify_on_error:
-                    self.notify("설정 저장 실패", severity="warning")
-
-            # 알림 표시
-            if self.settings.enable_notifications:
-                status_msg = "표시" if self.show_workflow_panel else "숨김"
-                self.notify(f"워크플로우 패널: {status_msg}", severity="information")
-
-        except Exception as e:
-            logger.error(f"워크플로우 패널 토글 실패: {e}")
-
-    async def action_toggle_worker_status(self) -> None:
-        """
-        F5 키: Worker 상태 패널 표시/숨김 토글
-
-        Worker 상태 패널의 표시 상태를 토글하고, 변경된 설정을 파일에 저장합니다.
-
-        Raises:
-            Exception: Worker 상태 패널 토글 중 예상치 못한 오류 발생 시
-        """
-        try:
-            # 상태 토글
-            self.show_worker_status = not self.show_worker_status
-
-            # UI 업데이트
-            self.apply_worker_status_visibility()
-
-            # 설정 저장
-            self.settings.show_worker_status = self.show_worker_status
-            save_success = TUIConfig.save(self.settings)
-
-            # 저장 실패 시 경고
-            if not save_success:
-                logger.warning("Worker 상태 패널 설정 저장 실패")
-                if self.settings.notify_on_error:
-                    self.notify("설정 저장 실패", severity="warning")
-
-            # 알림 표시
-            if self.settings.enable_notifications:
-                status_msg = "표시" if self.show_worker_status else "숨김"
-                self.notify(f"Worker 상태 패널: {status_msg}", severity="information")
-
-        except Exception as e:
-            logger.error(f"Worker 상태 패널 토글 실패: {e}")
-
-    async def action_toggle_output_mode(self) -> None:
-        """
-        Ctrl+O: 출력 모드 전환 (Manager <-> Worker)
-
-        Manager 출력과 Worker 출력을 전환합니다.
-        Worker가 실행 중이지 않으면 경고 메시지를 표시합니다.
-        """
-        try:
-            # 출력 모드 토글
-            if self.output_mode == "manager":
-                # Worker 출력으로 전환
-                if self.active_workers:
-                    self.output_mode = "worker"
-                    # 첫 번째 워커 탭으로 이동
-                    first_worker = list(self.active_workers.keys())[0]
-                    self.current_worker_tab = first_worker
-                    try:
-                        worker_tabs = self.query_one("#worker-tabs", TabbedContent)
-                        worker_tabs.active = f"worker-tab-{first_worker}"
-                    except Exception:
-                        pass
-                    self.apply_output_mode()
-                    # 알림 표시
-                    if self.settings.enable_notifications:
-                        worker_count = len(self.active_workers)
-                        self.notify(
-                            f"출력 모드: Worker ({worker_count}개 활성)",
-                            severity="information"
-                        )
-                else:
-                    # Worker가 실행 중이지 않으면 경고
-                    if self.settings.enable_notifications:
-                        self.notify(
-                            "실행 중인 Worker가 없습니다",
-                            severity="warning"
-                        )
-            else:
-                # Manager 출력으로 전환
-                self.output_mode = "manager"
-                self.apply_output_mode()
-                # 알림 표시
-                if self.settings.enable_notifications:
-                    self.notify("출력 모드: Manager", severity="information")
-
-        except Exception as e:
-            logger.error(f"출력 모드 토글 실패: {e}")
+        """메트릭 패널 업데이트 (MetricsUIManager로 위임)."""
+        self.metrics_ui_manager.update_metrics_display()
 
     def apply_output_mode(self) -> None:
         """

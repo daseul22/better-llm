@@ -15,6 +15,7 @@ from typing import Optional, List, Tuple
 from application.ports import IApprovalRepository
 from domain.models.approval import ApprovalRequest, ApprovalResponse, ApprovalStatus, ApprovalType
 from domain.models.feedback import Feedback
+from infrastructure.storage.db_utils import DatabaseExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,37 @@ class SqliteApprovalRepository(IApprovalRepository):
             conn.commit()
             logger.debug("승인 및 피드백 테이블 초기화 완료")
 
+    def _row_to_approval_request(self, row: tuple) -> ApprovalRequest:
+        """
+        데이터베이스 row를 ApprovalRequest 객체로 변환
+
+        Args:
+            row: 데이터베이스 쿼리 결과 튜플
+                (id, session_id, approval_type, status, task_description,
+                 context_data, created_at, responded_at)
+
+        Returns:
+            변환된 ApprovalRequest 객체
+
+        Note:
+            - responded_at이 None인 경우 처리
+            - approval_type과 status는 Enum으로 변환
+            - created_at과 responded_at은 datetime 객체로 변환
+        """
+        (id, session_id, approval_type, status, task_description,
+         context_data, created_at, responded_at) = tuple(row)
+
+        return ApprovalRequest(
+            id=id,
+            session_id=session_id,
+            approval_type=ApprovalType(approval_type),
+            status=ApprovalStatus(status),
+            task_description=task_description,
+            context_data=context_data,
+            created_at=datetime.fromisoformat(created_at),
+            responded_at=datetime.fromisoformat(responded_at) if responded_at else None
+        )
+
     def create_approval_request(self, request: ApprovalRequest) -> ApprovalRequest:
         """
         승인 요청 생성
@@ -143,36 +175,41 @@ class SqliteApprovalRepository(IApprovalRepository):
             Exception: DB 저장 실패 시
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
+            with DatabaseExecutor(self.db_path) as executor:
                 # Foreign key 활성화
-                cursor.execute("PRAGMA foreign_keys = ON")
+                executor.execute_update(
+                    "PRAGMA foreign_keys = ON",
+                    operation="enable foreign keys"
+                )
 
                 # 세션 존재 확인
-                cursor.execute(
+                rows = executor.execute_query(
                     "SELECT session_id FROM sessions WHERE session_id = ?",
-                    (request.session_id,)
+                    (request.session_id,),
+                    operation=f"check session {request.session_id}"
                 )
-                if not cursor.fetchone():
+                if not rows:
                     raise ValueError(f"세션을 찾을 수 없습니다: {request.session_id}")
 
                 # 승인 요청 삽입
-                cursor.execute("""
+                executor.execute_update(
+                    """
                     INSERT INTO approvals
                     (session_id, approval_type, status, task_description, context_data, created_at)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    request.session_id,
-                    request.approval_type.value,
-                    request.status.value,
-                    request.task_description,
-                    request.context_data,
-                    request.created_at.isoformat()
-                ))
+                    """,
+                    (
+                        request.session_id,
+                        request.approval_type.value,
+                        request.status.value,
+                        request.task_description,
+                        request.context_data,
+                        request.created_at.isoformat()
+                    ),
+                    operation="create approval request"
+                )
 
-                approval_id = cursor.lastrowid
-                conn.commit()
+                approval_id = executor.cursor.lastrowid
 
                 # 생성된 객체 반환 (ID 포함) - 불변성 유지를 위해 새 인스턴스 생성
                 created_request = replace(request, id=approval_id)
@@ -317,33 +354,22 @@ class SqliteApprovalRepository(IApprovalRepository):
             승인 요청 객체 (없으면 None)
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                cursor.execute("""
+            with DatabaseExecutor(self.db_path) as executor:
+                rows = executor.execute_query(
+                    """
                     SELECT id, session_id, approval_type, status, task_description,
                            context_data, created_at, responded_at
                     FROM approvals
                     WHERE id = ?
-                """, (approval_id,))
+                    """,
+                    (approval_id,),
+                    operation=f"get approval {approval_id}"
+                )
 
-                row = cursor.fetchone()
-                if not row:
+                if not rows:
                     return None
 
-                (id, session_id, approval_type, status, task_description,
-                 context_data, created_at, responded_at) = row
-
-                return ApprovalRequest(
-                    id=id,
-                    session_id=session_id,
-                    approval_type=ApprovalType(approval_type),
-                    status=ApprovalStatus(status),
-                    task_description=task_description,
-                    context_data=context_data,
-                    created_at=datetime.fromisoformat(created_at),
-                    responded_at=datetime.fromisoformat(responded_at) if responded_at else None
-                )
+                return self._row_to_approval_request(rows[0])
 
         except Exception as e:
             logger.error(f"승인 요청 조회 실패: {e}")
@@ -360,43 +386,33 @@ class SqliteApprovalRepository(IApprovalRepository):
             대기 중인 승인 요청 목록 (생성일시 오름차순)
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
+            with DatabaseExecutor(self.db_path) as executor:
                 if session_id:
-                    cursor.execute("""
+                    rows = executor.execute_query(
+                        """
                         SELECT id, session_id, approval_type, status, task_description,
                                context_data, created_at, responded_at
                         FROM approvals
                         WHERE status = ? AND session_id = ?
                         ORDER BY created_at ASC
-                    """, (ApprovalStatus.PENDING.value, session_id))
+                        """,
+                        (ApprovalStatus.PENDING.value, session_id),
+                        operation=f"get pending approvals for {session_id}"
+                    )
                 else:
-                    cursor.execute("""
+                    rows = executor.execute_query(
+                        """
                         SELECT id, session_id, approval_type, status, task_description,
                                context_data, created_at, responded_at
                         FROM approvals
                         WHERE status = ?
                         ORDER BY created_at ASC
-                    """, (ApprovalStatus.PENDING.value,))
+                        """,
+                        (ApprovalStatus.PENDING.value,),
+                        operation="get all pending approvals"
+                    )
 
-                approvals = []
-                for row in cursor.fetchall():
-                    (id, session_id, approval_type, status, task_description,
-                     context_data, created_at, responded_at) = row
-
-                    approvals.append(ApprovalRequest(
-                        id=id,
-                        session_id=session_id,
-                        approval_type=ApprovalType(approval_type),
-                        status=ApprovalStatus(status),
-                        task_description=task_description,
-                        context_data=context_data,
-                        created_at=datetime.fromisoformat(created_at),
-                        responded_at=datetime.fromisoformat(responded_at) if responded_at else None
-                    ))
-
-                return approvals
+                return [self._row_to_approval_request(row) for row in rows]
 
         except Exception as e:
             logger.error(f"대기 중인 승인 요청 조회 실패: {e}")
@@ -413,34 +429,20 @@ class SqliteApprovalRepository(IApprovalRepository):
             승인 요청 목록 (생성일시 내림차순)
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                cursor.execute("""
+            with DatabaseExecutor(self.db_path) as executor:
+                rows = executor.execute_query(
+                    """
                     SELECT id, session_id, approval_type, status, task_description,
                            context_data, created_at, responded_at
                     FROM approvals
                     WHERE session_id = ?
                     ORDER BY created_at DESC
-                """, (session_id,))
+                    """,
+                    (session_id,),
+                    operation=f"get approval history for {session_id}"
+                )
 
-                approvals = []
-                for row in cursor.fetchall():
-                    (id, session_id, approval_type, status, task_description,
-                     context_data, created_at, responded_at) = row
-
-                    approvals.append(ApprovalRequest(
-                        id=id,
-                        session_id=session_id,
-                        approval_type=ApprovalType(approval_type),
-                        status=ApprovalStatus(status),
-                        task_description=task_description,
-                        context_data=context_data,
-                        created_at=datetime.fromisoformat(created_at),
-                        responded_at=datetime.fromisoformat(responded_at) if responded_at else None
-                    ))
-
-                return approvals
+                return [self._row_to_approval_request(row) for row in rows]
 
         except Exception as e:
             logger.error(f"승인 이력 조회 실패: {e}")
@@ -461,42 +463,48 @@ class SqliteApprovalRepository(IApprovalRepository):
             Exception: DB 저장 실패 시
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
+            with DatabaseExecutor(self.db_path) as executor:
                 # Foreign key 활성화
-                cursor.execute("PRAGMA foreign_keys = ON")
+                executor.execute_update(
+                    "PRAGMA foreign_keys = ON",
+                    operation="enable foreign keys"
+                )
 
                 # 승인 요청 존재 확인
-                cursor.execute(
+                rows = executor.execute_query(
                     "SELECT id FROM approvals WHERE id = ?",
-                    (feedback.approval_id,)
+                    (feedback.approval_id,),
+                    operation=f"check approval {feedback.approval_id}"
                 )
-                if not cursor.fetchone():
+                if not rows:
                     raise ValueError(f"승인 요청을 찾을 수 없습니다: {feedback.approval_id}")
 
                 # 세션 존재 확인
-                cursor.execute(
+                rows = executor.execute_query(
                     "SELECT session_id FROM sessions WHERE session_id = ?",
-                    (feedback.session_id,)
+                    (feedback.session_id,),
+                    operation=f"check session {feedback.session_id}"
                 )
-                if not cursor.fetchone():
+                if not rows:
                     raise ValueError(f"세션을 찾을 수 없습니다: {feedback.session_id}")
 
                 # 피드백 삽입
-                cursor.execute("""
+                executor.execute_update(
+                    """
                     INSERT INTO feedbacks
                     (approval_id, session_id, feedback_content, created_at)
                     VALUES (?, ?, ?, ?)
-                """, (
-                    feedback.approval_id,
-                    feedback.session_id,
-                    feedback.feedback_content,
-                    feedback.created_at.isoformat()
-                ))
+                    """,
+                    (
+                        feedback.approval_id,
+                        feedback.session_id,
+                        feedback.feedback_content,
+                        feedback.created_at.isoformat()
+                    ),
+                    operation="create feedback"
+                )
 
-                feedback_id = cursor.lastrowid
-                conn.commit()
+                feedback_id = executor.cursor.lastrowid
 
                 # 생성된 객체 반환 (ID 포함) - 불변성 유지를 위해 새 인스턴스 생성
                 created_feedback = replace(feedback, id=feedback_id)
@@ -520,19 +528,21 @@ class SqliteApprovalRepository(IApprovalRepository):
             피드백 목록 (생성일시 오름차순)
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                cursor.execute("""
+            with DatabaseExecutor(self.db_path) as executor:
+                rows = executor.execute_query(
+                    """
                     SELECT id, approval_id, session_id, feedback_content, created_at
                     FROM feedbacks
                     WHERE approval_id = ?
                     ORDER BY created_at ASC
-                """, (approval_id,))
+                    """,
+                    (approval_id,),
+                    operation=f"get feedbacks for approval {approval_id}"
+                )
 
                 feedbacks = []
-                for row in cursor.fetchall():
-                    id, approval_id, session_id, feedback_content, created_at = row
+                for row in rows:
+                    id, approval_id, session_id, feedback_content, created_at = tuple(row)
 
                     feedbacks.append(Feedback(
                         id=id,
@@ -559,19 +569,21 @@ class SqliteApprovalRepository(IApprovalRepository):
             피드백 목록 (생성일시 내림차순)
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                cursor.execute("""
+            with DatabaseExecutor(self.db_path) as executor:
+                rows = executor.execute_query(
+                    """
                     SELECT id, approval_id, session_id, feedback_content, created_at
                     FROM feedbacks
                     WHERE session_id = ?
                     ORDER BY created_at DESC
-                """, (session_id,))
+                    """,
+                    (session_id,),
+                    operation=f"get feedbacks for session {session_id}"
+                )
 
                 feedbacks = []
-                for row in cursor.fetchall():
-                    id, approval_id, session_id, feedback_content, created_at = row
+                for row in rows:
+                    id, approval_id, session_id, feedback_content, created_at = tuple(row)
 
                     feedbacks.append(Feedback(
                         id=id,

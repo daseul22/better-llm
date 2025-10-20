@@ -11,6 +11,7 @@ from .base_worker_use_case import BaseWorkerUseCase
 from domain.models import Task, TaskResult
 from domain.exceptions import PreconditionFailedError
 from ..ports import IAgentClient
+from ..validation import UseCaseValidator
 
 
 logger = logging.getLogger(__name__)
@@ -55,18 +56,10 @@ class ExecuteCoderUseCase(BaseWorkerUseCase):
             PreconditionFailedError: 사전 조건 실패
         """
         # 1. 계획이 필요한 경우 계획이 포함되어 있는지 확인
-        if self.require_plan:
-            description_lower = task.description.lower()
-            has_plan_keywords = any(
-                keyword in description_lower
-                for keyword in ["계획", "plan", "단계", "step"]
-            )
-
-            if not has_plan_keywords:
-                raise PreconditionFailedError(
-                    "코드 작성 전 계획이 필요합니다. "
-                    "Planner를 먼저 실행하거나 작업 설명에 계획을 포함해주세요."
-                )
+        UseCaseValidator.validate_plan_requirement(
+            description=task.description,
+            require_plan=self.require_plan
+        )
 
         logger.debug(f"[{self.worker_name}] ✅ 사전 조건 체크 완료")
 

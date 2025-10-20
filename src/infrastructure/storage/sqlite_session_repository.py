@@ -10,7 +10,7 @@ import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Union
 
 from application.ports import ISessionRepository
 from domain.models import (
@@ -20,6 +20,7 @@ from domain.models import (
     SessionDetail
 )
 from domain.services import ConversationHistory
+from infrastructure.storage.db_utils import DatabaseExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -309,9 +310,170 @@ class SqliteSessionRepository(ISessionRepository):
             logger.error(f"세션 로드 실패: {e}")
             return None
 
+    def _build_search_query(self, criteria: SessionSearchCriteria) -> tuple:
+        """
+        검색 쿼리 및 파라미터 생성 (Query Builder Pattern)
+
+        Args:
+            criteria: 검색 조건
+
+        Returns:
+            (SQL 쿼리, 파라미터 리스트) 튜플
+        """
+        # 기본 쿼리
+        if criteria.keyword:
+            query = """
+                SELECT DISTINCT s.session_id, s.created_at, s.completed_at,
+                       s.user_request, s.status, s.total_turns,
+                       s.tests_passed, s.error_message,
+                       GROUP_CONCAT(DISTINCT sa.agent_name) as agents,
+                       GROUP_CONCAT(DISTINCT sf.file_path) as files
+                FROM sessions s
+                JOIN sessions_fts fts ON s.session_id = fts.session_id
+                LEFT JOIN session_agents sa ON s.session_id = sa.session_id
+                LEFT JOIN session_files sf ON s.session_id = sf.session_id
+            """
+        else:
+            query = """
+                SELECT DISTINCT s.session_id, s.created_at, s.completed_at,
+                       s.user_request, s.status, s.total_turns,
+                       s.tests_passed, s.error_message,
+                       GROUP_CONCAT(DISTINCT sa.agent_name) as agents,
+                       GROUP_CONCAT(DISTINCT sf.file_path) as files
+                FROM sessions s
+                LEFT JOIN session_agents sa ON s.session_id = sa.session_id
+                LEFT JOIN session_files sf ON s.session_id = sf.session_id
+            """
+
+        conditions = []
+        params = []
+
+        # 필터 추가
+        self._add_keyword_filter(criteria.keyword, conditions, params)
+        self._add_status_filter(criteria.status, conditions, params)
+        self._add_agent_filter(criteria.agent_name, conditions, params)
+        self._add_date_filters(criteria.date_from, criteria.date_to, conditions, params)
+
+        # WHERE 절 추가
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        # GROUP BY, ORDER BY, LIMIT 추가
+        query += " GROUP BY s.session_id ORDER BY s.created_at DESC LIMIT ? OFFSET ?"
+        params.extend([criteria.limit, criteria.offset])
+
+        return query, params
+
+    def _add_keyword_filter(
+        self, keyword: Optional[str], conditions: list, params: list
+    ) -> None:
+        """
+        키워드 필터를 조건에 추가
+
+        Args:
+            keyword: 검색 키워드
+            conditions: 조건 리스트 (변경됨)
+            params: 파라미터 리스트 (변경됨)
+        """
+        if keyword:
+            escaped_keyword = self._escape_fts_keyword(keyword)
+            conditions.append("sessions_fts MATCH ?")
+            params.append(escaped_keyword)
+
+    def _add_status_filter(
+        self, status: Optional[str], conditions: list, params: list
+    ) -> None:
+        """
+        상태 필터를 조건에 추가
+
+        Args:
+            status: 세션 상태
+            conditions: 조건 리스트 (변경됨)
+            params: 파라미터 리스트 (변경됨)
+        """
+        if status:
+            conditions.append("s.status = ?")
+            params.append(status)
+
+    def _add_agent_filter(
+        self, agent_name: Optional[str], conditions: list, params: list
+    ) -> None:
+        """
+        에이전트 필터를 조건에 추가
+
+        Args:
+            agent_name: 에이전트 이름
+            conditions: 조건 리스트 (변경됨)
+            params: 파라미터 리스트 (변경됨)
+        """
+        if agent_name:
+            conditions.append("sa.agent_name = ?")
+            params.append(agent_name)
+
+    def _add_date_filters(
+        self,
+        date_from: Optional[str],
+        date_to: Optional[str],
+        conditions: list,
+        params: list
+    ) -> None:
+        """
+        날짜 범위 필터를 조건에 추가
+
+        Args:
+            date_from: 시작 날짜 (YYYY-MM-DD)
+            date_to: 종료 날짜 (YYYY-MM-DD)
+            conditions: 조건 리스트 (변경됨)
+            params: 파라미터 리스트 (변경됨)
+        """
+        if date_from:
+            conditions.append("s.created_at >= ?")
+            params.append(date_from)
+
+        if date_to:
+            # 종료일을 포함하기 위해 다음 날까지 포함
+            from datetime import timedelta
+            date_to_inclusive = datetime.strptime(date_to, "%Y-%m-%d")
+            date_to_inclusive += timedelta(days=1)
+            conditions.append("s.created_at < ?")
+            params.append(date_to_inclusive.strftime("%Y-%m-%d"))
+
+    def _parse_session_row(self, row: tuple) -> SessionMetadata:
+        """
+        DB Row를 SessionMetadata로 변환
+
+        Args:
+            row: DB 쿼리 결과 Row
+
+        Returns:
+            SessionMetadata 객체
+        """
+        (session_id, created_at, completed_at, user_request,
+         status, total_turns, tests_passed, error_message,
+         agents_str, files_str) = row
+
+        # 에이전트 목록 파싱
+        agents_used = sorted(agents_str.split(',')) if agents_str else []
+
+        # 파일 목록 파싱
+        files_modified = files_str.split(',') if files_str else []
+
+        return SessionMetadata(
+            session_id=session_id,
+            created_at=datetime.fromisoformat(created_at),
+            completed_at=datetime.fromisoformat(completed_at),
+            user_request=user_request,
+            status=status,
+            total_turns=total_turns,
+            agents_used=agents_used,
+            files_modified=files_modified,
+            tests_passed=bool(tests_passed) if tests_passed is not None else None,
+            error_message=error_message
+        )
+
     def search_sessions(self, criteria: SessionSearchCriteria) -> List[SessionMetadata]:
         """
-        세션 검색
+        세션 검색 (Query Builder Pattern)
 
         Args:
             criteria: 검색 조건
@@ -323,105 +485,15 @@ class SqliteSessionRepository(ISessionRepository):
             Exception: 검색 실패 시
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
+            query, params = self._build_search_query(criteria)
 
-                # 기본 쿼리 (JOIN으로 N+1 문제 해결)
-                query = """
-                    SELECT DISTINCT s.session_id, s.created_at, s.completed_at,
-                           s.user_request, s.status, s.total_turns,
-                           s.tests_passed, s.error_message,
-                           GROUP_CONCAT(DISTINCT sa.agent_name) as agents,
-                           GROUP_CONCAT(DISTINCT sf.file_path) as files
-                    FROM sessions s
-                    LEFT JOIN session_agents sa ON s.session_id = sa.session_id
-                    LEFT JOIN session_files sf ON s.session_id = sf.session_id
-                """
-
-                conditions = []
-                params = []
-
-                # 키워드 검색 (FTS5)
-                if criteria.keyword:
-                    escaped_keyword = self._escape_fts_keyword(criteria.keyword)
-                    query = """
-                        SELECT DISTINCT s.session_id, s.created_at, s.completed_at,
-                               s.user_request, s.status, s.total_turns,
-                               s.tests_passed, s.error_message,
-                               GROUP_CONCAT(DISTINCT sa.agent_name) as agents,
-                               GROUP_CONCAT(DISTINCT sf.file_path) as files
-                        FROM sessions s
-                        JOIN sessions_fts fts ON s.session_id = fts.session_id
-                        LEFT JOIN session_agents sa ON s.session_id = sa.session_id
-                        LEFT JOIN session_files sf ON s.session_id = sf.session_id
-                    """
-                    conditions.append("sessions_fts MATCH ?")
-                    params.append(escaped_keyword)
-
-                # 상태 필터
-                if criteria.status:
-                    conditions.append("s.status = ?")
-                    params.append(criteria.status)
-
-                # 에이전트 필터
-                if criteria.agent_name:
-                    conditions.append("sa.agent_name = ?")
-                    params.append(criteria.agent_name)
-
-                # 날짜 필터
-                if criteria.date_from:
-                    conditions.append("s.created_at >= ?")
-                    params.append(criteria.date_from)
-
-                if criteria.date_to:
-                    # 종료일을 포함하기 위해 다음 날까지 포함
-                    date_to_inclusive = datetime.strptime(
-                        criteria.date_to, "%Y-%m-%d"
-                    )
-                    from datetime import timedelta
-                    date_to_inclusive += timedelta(days=1)
-                    conditions.append("s.created_at < ?")
-                    params.append(date_to_inclusive.strftime("%Y-%m-%d"))
-
-                # WHERE 절 추가
-                if conditions:
-                    query += " WHERE " + " AND ".join(conditions)
-
-                # GROUP BY 추가
-                query += " GROUP BY s.session_id"
-
-                # 정렬 및 페이징
-                query += " ORDER BY s.created_at DESC LIMIT ? OFFSET ?"
-                params.extend([criteria.limit, criteria.offset])
-
-                cursor.execute(query, params)
-
-                sessions = []
-                for row in cursor.fetchall():
-                    (session_id, created_at, completed_at, user_request,
-                     status, total_turns, tests_passed, error_message,
-                     agents_str, files_str) = row
-
-                    # 에이전트 목록 파싱
-                    agents_used = sorted(agents_str.split(',')) if agents_str else []
-
-                    # 파일 목록 파싱
-                    files_modified = files_str.split(',') if files_str else []
-
-                    sessions.append(SessionMetadata(
-                        session_id=session_id,
-                        created_at=datetime.fromisoformat(created_at),
-                        completed_at=datetime.fromisoformat(completed_at),
-                        user_request=user_request,
-                        status=status,
-                        total_turns=total_turns,
-                        agents_used=agents_used,
-                        files_modified=files_modified,
-                        tests_passed=bool(tests_passed) if tests_passed is not None else None,
-                        error_message=error_message
-                    ))
-
-                return sessions
+            with DatabaseExecutor(self.db_path) as executor:
+                rows = executor.execute_query(
+                    query,
+                    tuple(params),
+                    operation="search sessions"
+                )
+                return [self._parse_session_row(tuple(row)) for row in rows]
 
         except Exception as e:
             logger.error(f"세션 검색 실패: {e}")
@@ -441,38 +513,42 @@ class SqliteSessionRepository(ISessionRepository):
             Exception: 조회 실패 시
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
+            with DatabaseExecutor(self.db_path) as executor:
                 # 세션 메타데이터 조회
-                cursor.execute("""
+                rows = executor.execute_query(
+                    """
                     SELECT session_id, created_at, completed_at, user_request,
                            status, total_turns, tests_passed, error_message
                     FROM sessions
                     WHERE session_id = ?
-                """, (session_id,))
+                    """,
+                    (session_id,),
+                    operation=f"get session detail {session_id}"
+                )
 
-                row = cursor.fetchone()
-                if not row:
+                if not rows:
                     logger.warning(f"세션을 찾을 수 없습니다: {session_id}")
                     return None
 
+                row = rows[0]
                 (session_id, created_at, completed_at, user_request,
-                 status, total_turns, tests_passed, error_message) = row
+                 status, total_turns, tests_passed, error_message) = tuple(row)
 
                 # 에이전트 목록 조회
-                cursor.execute("""
-                    SELECT agent_name FROM session_agents
-                    WHERE session_id = ?
-                """, (session_id,))
-                agents_used = [r[0] for r in cursor.fetchall()]
+                agent_rows = executor.execute_query(
+                    "SELECT agent_name FROM session_agents WHERE session_id = ?",
+                    (session_id,),
+                    operation=f"get agents for {session_id}"
+                )
+                agents_used = [r[0] for r in agent_rows]
 
                 # 파일 목록 조회
-                cursor.execute("""
-                    SELECT file_path FROM session_files
-                    WHERE session_id = ?
-                """, (session_id,))
-                files_modified = [r[0] for r in cursor.fetchall()]
+                file_rows = executor.execute_query(
+                    "SELECT file_path FROM session_files WHERE session_id = ?",
+                    (session_id,),
+                    operation=f"get files for {session_id}"
+                )
+                files_modified = [r[0] for r in file_rows]
 
                 # 메타데이터 생성
                 metadata = SessionMetadata(
@@ -489,16 +565,20 @@ class SqliteSessionRepository(ISessionRepository):
                 )
 
                 # 메시지 조회
-                cursor.execute("""
+                message_rows = executor.execute_query(
+                    """
                     SELECT role, content, agent_name, timestamp
                     FROM messages
                     WHERE session_id = ?
                     ORDER BY id ASC
-                """, (session_id,))
+                    """,
+                    (session_id,),
+                    operation=f"get messages for {session_id}"
+                )
 
                 messages = []
-                for row in cursor.fetchall():
-                    role, content, agent_name, timestamp = row
+                for row in message_rows:
+                    role, content, agent_name, timestamp = tuple(row)
                     messages.append({
                         "role": role,
                         "content": content,
@@ -543,32 +623,38 @@ class SqliteSessionRepository(ISessionRepository):
             Exception: 삭제 실패 시
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
+            with DatabaseExecutor(self.db_path) as executor:
                 # Foreign key 활성화
-                cursor.execute("PRAGMA foreign_keys = ON")
+                executor.execute_update(
+                    "PRAGMA foreign_keys = ON",
+                    operation="enable foreign keys"
+                )
 
                 # 세션 존재 확인
-                cursor.execute("""
-                    SELECT session_id FROM sessions WHERE session_id = ?
-                """, (session_id,))
+                rows = executor.execute_query(
+                    "SELECT session_id FROM sessions WHERE session_id = ?",
+                    (session_id,),
+                    operation=f"check session {session_id}"
+                )
 
-                if not cursor.fetchone():
+                if not rows:
                     logger.warning(f"세션을 찾을 수 없습니다: {session_id}")
                     return False
 
                 # 세션 삭제 (CASCADE로 관련 데이터 자동 삭제)
-                cursor.execute("""
-                    DELETE FROM sessions WHERE session_id = ?
-                """, (session_id,))
+                executor.execute_update(
+                    "DELETE FROM sessions WHERE session_id = ?",
+                    (session_id,),
+                    operation=f"delete session {session_id}"
+                )
 
                 # FTS 테이블에서도 삭제
-                cursor.execute("""
-                    DELETE FROM sessions_fts WHERE session_id = ?
-                """, (session_id,))
+                executor.execute_update(
+                    "DELETE FROM sessions_fts WHERE session_id = ?",
+                    (session_id,),
+                    operation=f"delete from FTS {session_id}"
+                )
 
-                conn.commit()
                 logger.info(f"세션 삭제 완료: {session_id}")
                 return True
 

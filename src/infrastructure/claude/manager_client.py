@@ -14,6 +14,11 @@ from claude_agent_sdk.types import ClaudeAgentOptions
 from domain.models import Message
 from ..config import get_claude_cli_path
 from ..logging import get_logger, log_exception_silently
+from .sdk_executor import (
+    SDKExecutionConfig,
+    ManagerResponseHandler,
+    ManagerSDKExecutor
+)
 
 logger = get_logger(__name__)
 
@@ -256,6 +261,29 @@ class ManagerAgent:
 
         return "".join(prompt_parts)
 
+    def _update_token_usage(self, usage_dict: dict) -> None:
+        """토큰 사용량 업데이트.
+
+        Args:
+            usage_dict: 토큰 사용량 딕셔너리
+        """
+        if 'input_tokens' in usage_dict:
+            self.total_input_tokens += usage_dict['input_tokens']
+        if 'output_tokens' in usage_dict:
+            self.total_output_tokens += usage_dict['output_tokens']
+        if 'cache_read_tokens' in usage_dict:
+            self.total_cache_read_tokens += usage_dict['cache_read_tokens']
+        if 'cache_creation_tokens' in usage_dict:
+            self.total_cache_creation_tokens += usage_dict['cache_creation_tokens']
+
+        self.logger.debug(
+            "Token usage updated",
+            input_tokens=self.total_input_tokens,
+            output_tokens=self.total_output_tokens,
+            cache_read_tokens=self.total_cache_read_tokens,
+            cache_creation_tokens=self.total_cache_creation_tokens
+        )
+
     async def analyze_and_plan_stream(self, history: List[Message]):
         """
         사용자 요청을 분석하고 작업 수행 (스트리밍)
@@ -269,117 +297,56 @@ class ManagerAgent:
         Raises:
             Exception: SDK 호출 실패 시
         """
-        client = None
-        cleanup_done = False
+        # 대화 히스토리를 프롬프트로 변환
+        prompt = self._build_prompt_from_history(history)
 
-        try:
-            # 대화 히스토리를 프롬프트로 변환
-            prompt = self._build_prompt_from_history(history)
+        self.logger.debug(
+            "Starting Claude Agent SDK call",
+            worker_tools_enabled=True,
+            working_dir=os.getcwd(),
+            history_size=len(history)
+        )
 
-            self.logger.debug(
-                "Starting Claude Agent SDK call",
-                worker_tools_enabled=True,
-                working_dir=os.getcwd(),
-                history_size=len(history)
-            )
+        # allowed_tools 리스트 생성 (auto_commit_enabled에 따라 조건부)
+        allowed_tools = [
+            "mcp__workers__execute_planner_task",
+            "mcp__workers__execute_parallel_tasks",  # 병렬 실행
+            "mcp__workers__execute_coder_task",
+            "mcp__workers__execute_reviewer_task",
+            "mcp__workers__execute_tester_task",
+            "mcp__workers__execute_ideator_task",  # 아이디어 생성
+            "mcp__workers__execute_product_manager_task",  # 제품 기획
+            "read"  # 파일 읽기 툴
+        ]
 
-            # ClaudeSDKClient를 사용 (query()는 툴을 지원하지 않음)
-            # Worker Tools MCP Server를 등록하고, read 툴도 허용
-            # Note: working_dir는 ClaudeAgentOptions에서 지원하지 않음 (os.getcwd()가 기본값)
+        # auto_commit_enabled가 True일 때만 committer tool 추가
+        if self.auto_commit_enabled:
+            allowed_tools.append("mcp__workers__execute_committer_task")
 
-            # allowed_tools 리스트 생성 (auto_commit_enabled에 따라 조건부)
-            allowed_tools = [
-                "mcp__workers__execute_planner_task",
-                "mcp__workers__execute_parallel_tasks",  # 병렬 실행
-                "mcp__workers__execute_coder_task",
-                "mcp__workers__execute_reviewer_task",
-                "mcp__workers__execute_tester_task",
-                "mcp__workers__execute_ideator_task",  # 아이디어 생성
-                "mcp__workers__execute_product_manager_task",  # 제품 기획
-                "read"  # 파일 읽기 툴
-            ]
+        # SDK 실행 설정
+        config = SDKExecutionConfig(
+            model=self.model,
+            cli_path=get_claude_cli_path(),
+            permission_mode="bypassPermissions"
+        )
 
-            # auto_commit_enabled가 True일 때만 committer tool 추가
-            if self.auto_commit_enabled:
-                allowed_tools.append("mcp__workers__execute_committer_task")
+        # 응답 핸들러 생성 (토큰 사용량 업데이트 콜백 포함)
+        response_handler = ManagerResponseHandler(
+            usage_callback=self._update_token_usage
+        )
 
-            options = ClaudeAgentOptions(
-                model=self.model,
-                mcp_servers={"workers": self.worker_tools_server},
-                allowed_tools=allowed_tools,
-                cli_path=get_claude_cli_path(),
-                permission_mode="bypassPermissions"
-            )
+        # Executor 생성
+        executor = ManagerSDKExecutor(
+            config=config,
+            mcp_servers={"workers": self.worker_tools_server},
+            allowed_tools=allowed_tools,
+            response_handler=response_handler,
+            session_id=self.session_id
+        )
 
-            # 명시적으로 client 생성 및 연결 (async with 대신)
-            # Generator 내부에서 async with를 사용하면 cleanup이 다른 태스크에서 실행될 수 있음
-            client = ClaudeSDKClient(options=options)
-            await client.connect()
-
-            # 프롬프트 전송
-            await client.query(prompt)
-
-            # 응답 수신 (스트리밍)
-            async for msg in client.receive_response():
-                # usage 정보 추출 (있는 경우)
-                if hasattr(msg, 'usage') and msg.usage:
-                    usage = msg.usage
-                    # 토큰 사용량 업데이트
-                    if hasattr(usage, 'input_tokens'):
-                        self.total_input_tokens += usage.input_tokens
-                    if hasattr(usage, 'output_tokens'):
-                        self.total_output_tokens += usage.output_tokens
-                    if hasattr(usage, 'cache_read_tokens'):
-                        self.total_cache_read_tokens += usage.cache_read_tokens
-                    if hasattr(usage, 'cache_creation_tokens'):
-                        self.total_cache_creation_tokens += usage.cache_creation_tokens
-
-                    self.logger.debug(
-                        "Token usage updated",
-                        input_tokens=self.total_input_tokens,
-                        output_tokens=self.total_output_tokens,
-                        cache_read_tokens=self.total_cache_read_tokens,
-                        cache_creation_tokens=self.total_cache_creation_tokens
-                    )
-
-                # 텍스트 콘텐츠만 추출 (JSON 형태는 제외)
-                if hasattr(msg, 'content') and isinstance(msg.content, list):
-                    for content in msg.content:
-                        if hasattr(content, 'text') and content.text:
-                            yield content.text
-                elif hasattr(msg, 'text') and isinstance(msg.text, str):
-                    yield msg.text
-
-            self.logger.debug("Claude Agent SDK call completed")
-
-        except GeneratorExit:
-            # Generator가 중간에 종료될 때는 cleanup 하지 않음
-            # (다른 태스크에서 실행되어 cancel scope 에러 발생)
-            self.logger.debug("Generator exit - cleanup skipped")
-            raise
-
-        except Exception as e:
-            # 런타임 에러를 조용히 로그에 기록 (프로그램 종료하지 않음)
-            log_exception_silently(
-                self.logger,
-                e,
-                "Manager Agent SDK call failed",
-                session_id=self.session_id,
-                model=self.model
-            )
-            # 예외를 재발생시키지 않고 빈 응답 반환
-            yield f"\n[시스템 오류] Manager Agent 실행 중 오류가 발생했습니다. 에러 로그를 확인해주세요."
-
-        finally:
-            # 리소스 정리 (try-finally 보장)
-            # GeneratorExit 제외한 모든 경로에서 cleanup 시도
-            if client is not None and not cleanup_done:
-                try:
-                    await client.disconnect()
-                    cleanup_done = True
-                    self.logger.debug("Client connection closed successfully")
-                except Exception as e:
-                    self.logger.debug("Client disconnect failed (ignored)", error=str(e))
+        # 스트림 실행
+        async for text in executor.execute_stream(prompt):
+            yield text
 
     def get_token_usage(self) -> dict:
         """
