@@ -53,7 +53,10 @@ class WorkflowNode:
             return 0.0
 
         end = self.end_time if self.end_time else time.time()
-        return end - self.start_time
+        duration = end - self.start_time
+
+        # 음수 시간 방지 (시간 계산 오류 시 0 반환)
+        return max(0.0, duration)
 
     def format_duration(self) -> str:
         """
@@ -202,9 +205,16 @@ class WorkflowVisualizer(ScrollableContainer):
 
         # 시간 기록
         if status_enum == WorkerStatus.RUNNING and old_status != WorkerStatus.RUNNING:
+            # Worker 재실행 시 이전 시간 정보 초기화
             node.start_time = time.time()
+            node.end_time = None  # 진행 중이므로 종료 시간 초기화
         elif status_enum in (WorkerStatus.COMPLETED, WorkerStatus.FAILED):
-            node.end_time = time.time()
+            # 종료 시간 기록
+            if node.start_time is not None:
+                node.end_time = time.time()
+            else:
+                # start_time이 없으면 기록하지 않음 (비정상 상태)
+                node.end_time = None
 
         # 에러 메시지 저장
         if status_enum == WorkerStatus.FAILED and error_message:
