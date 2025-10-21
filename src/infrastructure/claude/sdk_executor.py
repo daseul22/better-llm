@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from typing import AsyncIterator, Callable, Optional, Any
 from abc import ABC, abstractmethod
 
-from domain.exceptions import WorkerExecutionError
-from infrastructure.logging import get_logger
+from src.domain.exceptions import WorkerExecutionError
+from src.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
 

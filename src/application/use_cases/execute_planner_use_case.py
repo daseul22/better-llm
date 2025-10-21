@@ -8,8 +8,8 @@ import logging
 from typing import Optional
 
 from .base_worker_use_case import BaseWorkerUseCase
-from domain.models import Task, TaskResult
-from domain.exceptions import PreconditionFailedError
+from src.domain.models import Task, TaskResult
+from src.domain.exceptions import PreconditionFailedError
 from ..ports import IAgentClient
 from ..validation import UseCaseValidator
 

@@ -20,16 +20,16 @@ from typing import Optional, Dict
 import click
 from rich.traceback import install as install_rich_traceback
 
-from domain.models import SessionResult
-from domain.models.session import SessionStatus
-from domain.services import ConversationHistory
-from infrastructure.claude import ManagerAgent
-from infrastructure.mcp import (
+from src.domain.models import SessionResult
+from src.domain.models.session import SessionStatus
+from src.domain.services import ConversationHistory
+from src.infrastructure.claude import ManagerAgent
+from src.infrastructure.mcp import (
     initialize_workers,
     create_worker_tools_server,
     log_error_summary
 )
-from infrastructure.config import (
+from src.infrastructure.config import (
     validate_environment,
     get_project_root,
     SystemConfig,

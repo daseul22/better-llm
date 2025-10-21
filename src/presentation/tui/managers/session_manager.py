@@ -12,10 +12,10 @@ from typing import Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
-from domain.models import SessionStatus
-from domain.services import ConversationHistory, MetricsCollector
-from infrastructure.storage import InMemoryMetricsRepository
-from infrastructure.logging import get_logger
+from src.domain.models import SessionStatus
+from src.domain.services import ConversationHistory, MetricsCollector
+from src.infrastructure.storage import InMemoryMetricsRepository
+from src.infrastructure.logging import get_logger
 
 logger = get_logger(__name__, component="SessionManager")
 

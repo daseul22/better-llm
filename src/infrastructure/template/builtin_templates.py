@@ -7,7 +7,7 @@
 from datetime import datetime
 from typing import List
 
-from domain.models.template import (
+from src.domain.models.template import (
     Template,
     TemplateCategory,
     TemplateVariable,

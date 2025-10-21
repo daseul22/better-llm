@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import List
 from dataclasses import dataclass
 
-from domain.models import AgentConfig
+from src.domain.models import AgentConfig
 
 
 @dataclass

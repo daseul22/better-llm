@@ -66,24 +66,24 @@ pip install -e .
 **3. 환경 변수 설정**
 
 ```bash
-export ANTHROPIC_API_KEY='sk-ant-xxxxx'
+export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
 ```
 
 또는 `.env` 파일 생성:
 
 ```bash
-echo "ANTHROPIC_API_KEY=sk-ant-xxxxx" > .env
+echo "CLAUDE_CODE_OAUTH_TOKEN=your-oauth-token-here" > .env
 ```
 
 또는 셸 설정 파일에 영구 추가:
 
 ```bash
 # bash 사용자
-echo "export ANTHROPIC_API_KEY='sk-ant-xxxxx'" >> ~/.bashrc
+echo "export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'" >> ~/.bashrc
 source ~/.bashrc
 
 # zsh 사용자
-echo "export ANTHROPIC_API_KEY='sk-ant-xxxxx'" >> ~/.zshrc
+echo "export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'" >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -557,13 +557,13 @@ print(f"Hits: {stats['hits']}, Misses: {stats['misses']}")
 
 ## 문제 해결
 
-### API 키 에러
+### OAuth 토큰 에러
 
 ```
-ValueError: ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.
+ValueError: CLAUDE_CODE_OAUTH_TOKEN 환경변수가 설정되지 않았습니다.
 ```
 
-→ 환경 변수를 확인하세요: `echo $ANTHROPIC_API_KEY`
+→ 환경 변수를 확인하세요: `echo $CLAUDE_CODE_OAUTH_TOKEN`
 
 ### 설정 파일 에러
 
@@ -580,6 +580,26 @@ FileNotFoundError: 설정 파일을 찾을 수 없습니다
 ```
 
 → `prompts/` 디렉토리에 필요한 `.txt` 파일이 있는지 확인하세요.
+
+### TUI 종료 후 터미널 이상 동작
+
+TUI가 비정상 종료되어 마우스 클릭이나 커서가 이상하게 동작하는 경우:
+
+**방법 1: 자동 복원 스크립트 (권장)**
+
+```bash
+./reset_terminal.sh
+```
+
+**방법 2: 수동 복원**
+
+```bash
+reset
+# 또는
+stty sane
+```
+
+**참고**: TUI는 정상 종료 시 자동으로 터미널 상태를 복원합니다 (Ctrl+C 또는 `q` 키).
 
 ## 예제 (Examples)
 

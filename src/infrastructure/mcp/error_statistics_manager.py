@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Optional
 from collections import defaultdict
 import logging
 
-from infrastructure.logging import get_logger
+from src.infrastructure.logging import get_logger
 
 logger = get_logger(__name__, component="ErrorStatisticsManager")
 

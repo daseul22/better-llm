@@ -82,11 +82,11 @@ ERROR_MESSAGES: Dict[ErrorCode, str] = {
     ),
     # API 관련
     ErrorCode.API_KEY_MISSING: (
-        "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다. "
-        "API 키를 설정한 후 다시 시도하세요."
+        "CLAUDE_CODE_OAUTH_TOKEN 환경변수가 설정되지 않았습니다. "
+        "OAuth 토큰을 설정한 후 다시 시도하세요."
     ),
     ErrorCode.API_KEY_INVALID: (
-        "유효하지 않은 API 키입니다. ANTHROPIC_API_KEY를 확인하세요."
+        "유효하지 않은 OAuth 토큰입니다. CLAUDE_CODE_OAUTH_TOKEN을 확인하세요."
     ),
     ErrorCode.API_RATE_LIMIT_EXCEEDED: (
         "API 호출 한도를 초과했습니다. {retry_after}초 후 다시 시도하세요."

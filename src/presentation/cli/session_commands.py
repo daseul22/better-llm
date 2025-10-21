@@ -17,13 +17,13 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich import print as rprint
 
-from application.use_cases import (
+from src.application.use_cases import (
     SessionSearchUseCase,
     SessionReplayUseCase,
     SessionAnalyticsUseCase
 )
-from domain.models import SessionSearchCriteria
-from infrastructure.storage.repository_factory import create_session_repository
+from src.domain.models import SessionSearchCriteria
+from src.infrastructure.storage.repository_factory import create_session_repository
 
 console = Console()
 

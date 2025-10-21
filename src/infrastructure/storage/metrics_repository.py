@@ -7,8 +7,8 @@ In-Memory 방식으로 메트릭 저장 (추후 파일/DB로 확장 가능)
 from typing import Dict, Optional, List
 from datetime import datetime
 
-from domain.ports import IMetricsRepository
-from domain.models import WorkerMetrics, SessionMetrics
+from src.domain.ports import IMetricsRepository
+from src.domain.models import WorkerMetrics, SessionMetrics
 
 
 class InMemoryMetricsRepository(IMetricsRepository):

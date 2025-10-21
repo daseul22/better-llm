@@ -12,8 +12,8 @@ from queue import Queue, Empty, Full
 from dataclasses import dataclass, asdict
 import time
 
-from domain.models import WorkerMetrics
-from domain.ports import IMetricsRepository
+from src.domain.models import WorkerMetrics
+from src.domain.ports import IMetricsRepository
 from ..logging import get_logger
 
 logger = get_logger(__name__, component="AsyncMetricsCollector")

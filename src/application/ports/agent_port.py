@@ -7,7 +7,7 @@ IAgentClient: 에이전트 실행 클라이언트 인터페이스
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, List, Optional
 
-from domain.models import Message
+from src.domain.models import Message
 
 
 class IAgentClient(ABC):

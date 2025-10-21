@@ -15,20 +15,20 @@ import os
 from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from ..claude import WorkerAgent
-from domain.services import MetricsCollector
+from src.domain.services import MetricsCollector
 from ..config import JsonConfigLoader, get_project_root
 from ..logging import get_logger
 
 # Level 1 및 Level 2 모듈 Import
-from infrastructure.mcp.review_cycle_manager import ReviewCycleManager
-from infrastructure.mcp.commit_validator import CommitSafetyValidator
-from infrastructure.mcp.workflow_callback_handler import (
+from src.infrastructure.mcp.review_cycle_manager import ReviewCycleManager
+from src.infrastructure.mcp.commit_validator import CommitSafetyValidator
+from src.infrastructure.mcp.workflow_callback_handler import (
     WorkflowCallbackHandler,
     WorkflowEventType
 )
-from infrastructure.mcp.error_statistics_manager import ErrorStatisticsManager
-from infrastructure.mcp.parallel_executor import ParallelExecutor
-from infrastructure.mcp.worker_executor import WorkerExecutor, WorkerExecutionContext
+from src.infrastructure.mcp.error_statistics_manager import ErrorStatisticsManager
+from src.infrastructure.mcp.parallel_executor import ParallelExecutor
+from src.infrastructure.mcp.worker_executor import WorkerExecutor, WorkerExecutionContext
 
 logger = get_logger(__name__, component="WorkerTools")
 

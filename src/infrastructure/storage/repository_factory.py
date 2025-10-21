@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from application.ports import ISessionRepository, IApprovalRepository
+from src.application.ports import ISessionRepository, IApprovalRepository
 from .session_repository import JsonSessionRepository
 from .sqlite_session_repository import SqliteSessionRepository
 from .sqlite_approval_repository import SqliteApprovalRepository

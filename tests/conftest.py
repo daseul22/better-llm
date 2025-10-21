@@ -273,7 +273,6 @@ def mock_env_vars(monkeypatch):
         monkeypatch: pytest의 monkeypatch fixture
     """
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test_token_12345")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test_api_key_67890")
 
 
 @pytest.fixture(autouse=True)

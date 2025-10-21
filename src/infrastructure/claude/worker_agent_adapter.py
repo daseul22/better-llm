@@ -10,10 +10,10 @@ import sys
 from typing import List, AsyncIterator, Optional
 
 from .worker_client import WorkerAgent
-from application.ports import IAgentClient
-from domain.models import Message, AgentConfig
-from domain.services import ProjectContext
-from domain.exceptions import WorkerTimeoutError
+from src.application.ports import IAgentClient
+from src.domain.models import Message, AgentConfig
+from src.domain.services import ProjectContext
+from src.domain.exceptions import WorkerTimeoutError
 
 # Python 3.11+ vs 3.10 호환성
 if sys.version_info >= (3, 11):

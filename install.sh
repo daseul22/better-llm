@@ -128,38 +128,38 @@ check_environment() {
     echo ""
     print_info "환경변수 확인 중..."
 
-    # ANTHROPIC_API_KEY 체크
-    if [ -z "$ANTHROPIC_API_KEY" ]; then
-        print_warning "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다."
+    # CLAUDE_CODE_OAUTH_TOKEN 체크
+    if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+        print_warning "CLAUDE_CODE_OAUTH_TOKEN 환경변수가 설정되지 않았습니다."
         echo ""
-        echo "다음 명령어로 API 키를 설정하세요:"
+        echo "다음 명령어로 OAuth 토큰을 설정하세요:"
         echo ""
-        echo "  export ANTHROPIC_API_KEY='your-api-key-here'"
+        echo "  export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'"
         echo ""
         echo "영구 설정을 원하시면 ~/.bashrc 또는 ~/.zshrc에 추가하세요:"
         echo ""
-        echo "  echo \"export ANTHROPIC_API_KEY='your-api-key-here'\" >> ~/.bashrc"
-        echo "  echo \"export ANTHROPIC_API_KEY='your-api-key-here'\" >> ~/.zshrc"
+        echo "  echo \"export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'\" >> ~/.bashrc"
+        echo "  echo \"export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'\" >> ~/.zshrc"
         echo ""
 
-        read -p "지금 API 키를 입력하시겠습니까? (y/n): " setup_key
+        read -p "지금 OAuth 토큰을 입력하시겠습니까? (y/n): " setup_key
 
         if [ "$setup_key" = "y" ] || [ "$setup_key" = "Y" ]; then
-            read -sp "ANTHROPIC_API_KEY: " api_key
+            read -sp "CLAUDE_CODE_OAUTH_TOKEN: " oauth_token
             echo ""
-            export ANTHROPIC_API_KEY="$api_key"
+            export CLAUDE_CODE_OAUTH_TOKEN="$oauth_token"
 
             # 셸 설정 파일에 추가
             if [ -f ~/.zshrc ]; then
-                echo "export ANTHROPIC_API_KEY='$api_key'" >> ~/.zshrc
-                print_success "~/.zshrc에 API 키 추가됨"
+                echo "export CLAUDE_CODE_OAUTH_TOKEN='$oauth_token'" >> ~/.zshrc
+                print_success "~/.zshrc에 OAuth 토큰 추가됨"
             elif [ -f ~/.bashrc ]; then
-                echo "export ANTHROPIC_API_KEY='$api_key'" >> ~/.bashrc
-                print_success "~/.bashrc에 API 키 추가됨"
+                echo "export CLAUDE_CODE_OAUTH_TOKEN='$oauth_token'" >> ~/.bashrc
+                print_success "~/.bashrc에 OAuth 토큰 추가됨"
             fi
         fi
     else
-        print_success "ANTHROPIC_API_KEY 확인됨"
+        print_success "CLAUDE_CODE_OAUTH_TOKEN 확인됨"
     fi
 }
 
@@ -212,10 +212,10 @@ print_completion() {
     echo "  better-llm-cli --help"
     echo ""
 
-    if [ -z "$ANTHROPIC_API_KEY" ]; then
-        print_warning "주의: ANTHROPIC_API_KEY 환경변수를 설정해야 사용할 수 있습니다."
+    if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+        print_warning "주의: CLAUDE_CODE_OAUTH_TOKEN 환경변수를 설정해야 사용할 수 있습니다."
         echo ""
-        echo "  export ANTHROPIC_API_KEY='your-api-key-here'"
+        echo "  export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'"
         echo ""
     fi
 

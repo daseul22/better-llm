@@ -89,8 +89,8 @@ Presentation → Application → Domain ← Infrastructure
 # 1. 의존성 설치
 pip install -r requirements.txt
 
-# 2. API 키 설정
-export ANTHROPIC_API_KEY='your-api-key-here'
+# 2. OAuth 토큰 설정
+export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
 
 # 3. 구문 검사 (코드 변경 후)
 python3 -m py_compile src/*.py *.py
@@ -387,9 +387,9 @@ python test_worker_tools.py
 
 ## 문제 해결
 
-### "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다"
+### "CLAUDE_CODE_OAUTH_TOKEN 환경변수가 설정되지 않았습니다"
 ```bash
-export ANTHROPIC_API_KEY='your-api-key-here'
+export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
 ```
 
 ### "Claude CLI not found"

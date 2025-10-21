@@ -9,8 +9,8 @@ ApprovalHistoryUseCase: 승인 이력 조회
 
 from typing import List, Optional, Tuple
 from ..ports.approval_port import IApprovalRepository
-from domain.models.approval import ApprovalRequest, ApprovalResponse, ApprovalStatus, ApprovalType
-from domain.models.feedback import Feedback
+from src.domain.models.approval import ApprovalRequest, ApprovalResponse, ApprovalStatus, ApprovalType
+from src.domain.models.feedback import Feedback
 
 
 def _validate_session_id(session_id: str) -> None:

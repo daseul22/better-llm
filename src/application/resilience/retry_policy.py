@@ -9,8 +9,8 @@ import logging
 import random
 from typing import Any, Callable, TypeVar, Coroutine, Type, Tuple, AsyncIterator
 
-from domain.interfaces.retry_policy import IRetryPolicy
-from domain.exceptions import (
+from src.domain.interfaces.retry_policy import IRetryPolicy
+from src.domain.exceptions import (
     WorkerTimeoutError,
     RetryableError,
 )

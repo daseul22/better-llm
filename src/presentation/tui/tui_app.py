@@ -24,11 +24,11 @@ from rich.markdown import Markdown
 from rich.text import Text
 from rich.table import Table
 
-from domain.models import SessionResult
-from domain.models.session import SessionStatus
-from domain.services import ConversationHistory, ProjectContextAnalyzer, MetricsCollector
-from infrastructure.claude import ManagerAgent
-from infrastructure.mcp import (
+from src.domain.models import SessionResult
+from src.domain.models.session import SessionStatus
+from src.domain.services import ConversationHistory, ProjectContextAnalyzer, MetricsCollector
+from src.infrastructure.claude import ManagerAgent
+from src.infrastructure.mcp import (
     initialize_workers,
     create_worker_tools_server,
     get_error_statistics,
@@ -37,21 +37,21 @@ from infrastructure.mcp import (
     set_workflow_callback,
     set_worker_output_callback,
 )
-from infrastructure.config import (
+from src.infrastructure.config import (
     validate_environment,
     get_project_root,
     JsonConfigLoader,
 )
-from infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
-from infrastructure.logging import get_logger, log_exception_silently
-from presentation.cli.utils import (
+from src.infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
+from src.infrastructure.logging import get_logger, log_exception_silently, configure_structlog
+from src.presentation.cli.utils import (
     generate_session_id,
     save_session_history,
     validate_user_input,
     sanitize_user_input,
     save_metrics_report,
 )
-from presentation.cli.feedback import TUIFeedbackWidget, FeedbackType
+from src.presentation.cli.feedback import TUIFeedbackWidget, FeedbackType
 from .widgets import (
     HelpModal,
     SearchModal,
@@ -346,8 +346,8 @@ class OrchestratorTUI(App):
             # 환경 검증
             validate_environment()
             work_dir = os.getcwd()
-            api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-            api_key_status = "설정됨" if (api_key and len(api_key) > 10) else "미설정"
+            oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+            token_status = "설정됨" if (oauth_token and len(oauth_token) > 10) else "미설정"
 
             # Worker Agent들 초기화
             config_path = get_project_root() / "config" / "agent_config.json"
@@ -1148,20 +1148,22 @@ class OrchestratorTUI(App):
         self.write_log("")
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """입력 변경 이벤트 (InputHandler로 위임)."""
-        self.input_handler.handle_input_changed(event)
+        """입력 변경 이벤트 - 현재는 사용하지 않음."""
+        # InputHandler는 슬래시 명령어 처리용이므로 여기서는 사용하지 않음
+        pass
 
     def on_resize(self, event: events.Resize) -> None:
         """화면 크기 변경 이벤트 (LayoutManager로 위임)."""
-        self.layout_manager.handle_resize(event)
+        self.layout_manager.calculate_layout((event.size.width, event.size.height))
 
     def update_layout_for_size(self, width: int, height: int) -> None:
         """레이아웃 크기 업데이트 (LayoutManager로 위임)."""
-        self.layout_manager.update_layout_for_size(width, height)
+        self.layout_manager.calculate_layout((width, height))
 
     def _apply_layout_mode(self) -> None:
-        """레이아웃 모드 적용 (LayoutManager로 위임)."""
-        self.layout_manager.apply_layout_mode()
+        """레이아웃 모드 적용."""
+        # LayoutManager.calculate_layout이 이미 레이아웃을 적용하므로 추가 작업 불필요
+        pass
 
     def _update_status_bar(self) -> None:
         """
@@ -1237,13 +1239,16 @@ class OrchestratorTUI(App):
             pass  # 위젯이 아직 없으면 무시
 
     def on_workflow_update(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
-        """워크플로우 상태 업데이트 콜백 (WorkflowUIManager로 위임)."""
-        self.workflow_ui_manager.handle_workflow_update(worker_name, status, error)
+        """워크플로우 상태 업데이트 콜백."""
+        # WorkflowVisualizer 위젯을 직접 업데이트
+        self._update_workflow_ui(worker_name, status, error)
 
     def _update_workflow_ui(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
-        """워크플로우 UI 업데이트 (WorkflowUIManager로 위임)."""
+        """워크플로우 UI 업데이트."""
         try:
-            self.workflow_ui_manager.update_workflow_ui(worker_name, status, error)
+            # WorkflowVisualizer 위젯 업데이트
+            workflow_visualizer = self.query_one("#workflow-visualizer", WorkflowVisualizer)
+            workflow_visualizer.update_worker_status(worker_name, status, error)
 
             # Worker 실행 시작 시 새 탭 생성 및 등록
             if status == "running":
@@ -1258,20 +1263,95 @@ class OrchestratorTUI(App):
             logger.warning(f"워크플로우 업데이트 실패: {e}")
 
     def _create_worker_tab(self, worker_name: str) -> None:
-        """Worker 탭 생성 (WorkerOutputManager로 위임)."""
-        self.worker_output_manager.create_worker_tab(worker_name)
+        """Worker 탭 생성."""
+        try:
+            # 이미 생성된 탭이 있으면 스킵
+            if worker_name in self.active_workers:
+                return
+
+            # RichLog 생성
+            worker_log = RichLog(
+                id=f"worker-log-{worker_name}",
+                markup=True,
+                highlight=True,
+                wrap=True
+            )
+            self.active_workers[worker_name] = worker_log
+
+            # WorkerTabPane 생성 및 추가
+            worker_tabs = self.query_one("#worker-tabs", TabbedContent)
+
+            # "No active workers" 탭 제거
+            try:
+                no_workers_tab = self.query_one("#no-workers-tab", TabPane)
+                worker_tabs.remove_children([no_workers_tab])
+            except NoMatches:
+                pass  # 이미 제거됨
+
+            # 새 탭 추가
+            tab = WorkerTabPane(
+                f"{worker_name.capitalize()} ▶️",
+                worker_log,
+                id=f"worker-tab-{worker_name}"
+            )
+            worker_tabs.add_pane(tab)
+            worker_tabs.active = f"worker-tab-{worker_name}"
+
+            logger.info(f"Worker 탭 생성: {worker_name}")
+
+        except Exception as e:
+            logger.error(f"Worker 탭 생성 실패: {worker_name} - {e}")
 
     def _update_worker_tab_status(self, worker_name: str, status: str) -> None:
-        """Worker 탭 상태 업데이트 (WorkerOutputManager로 위임)."""
-        self.worker_output_manager.update_worker_tab_status(worker_name, status)
+        """Worker 탭 상태 업데이트."""
+        try:
+            if worker_name not in self.active_workers:
+                return
+
+            # 탭 제목 업데이트 (Textual API 제약으로 인해 재생성 방식 사용)
+            worker_tabs = self.query_one("#worker-tabs", TabbedContent)
+
+            # 상태 이모지 결정
+            status_emoji = {
+                "completed": "✅",
+                "failed": "❌",
+                "running": "▶️"
+            }.get(status, "⏸️")
+
+            # 기존 탭 제목 업데이트 (Textual의 TabPane.label 사용)
+            try:
+                tab = self.query_one(f"#worker-tab-{worker_name}", TabPane)
+                # TabPane의 label 속성 직접 수정 (공식 API)
+                new_title = f"{worker_name.capitalize()} {status_emoji}"
+                # Textual 0.47+에서는 tab.label로 접근 가능
+                if hasattr(tab, 'label'):
+                    tab.label = new_title
+                logger.info(f"Worker 탭 상태 업데이트: {worker_name} -> {status}")
+            except NoMatches:
+                logger.warning(f"Worker 탭을 찾을 수 없음: {worker_name}")
+
+        except Exception as e:
+            logger.error(f"Worker 탭 상태 업데이트 실패: {worker_name} - {e}")
 
     def on_worker_output(self, worker_name: str, chunk: str) -> None:
-        """Worker 출력 콜백 (WorkerOutputManager로 위임)."""
-        self.worker_output_manager.handle_worker_output(worker_name, chunk)
+        """Worker 출력 콜백."""
+        self._write_worker_output(worker_name, chunk)
 
     def _write_worker_output(self, worker_name: str, chunk: str) -> None:
-        """Worker 출력 작성 (WorkerOutputManager로 위임)."""
-        self.worker_output_manager.write_worker_output(worker_name, chunk)
+        """Worker 출력 작성."""
+        try:
+            if worker_name not in self.active_workers:
+                logger.warning(f"Worker 탭을 찾을 수 없음: {worker_name}")
+                return
+
+            worker_log = self.active_workers[worker_name]
+            worker_log.write(chunk)
+
+            # WorkerOutputManager에도 기록 (히스토리 관리)
+            self.worker_output_manager.stream_output(worker_name, chunk)
+
+        except Exception as e:
+            logger.error(f"Worker 출력 작성 실패: {worker_name} - {e}")
 
     def update_worker_status_timer(self) -> None:
         """타이머: Worker Tool 실행 시간 업데이트 (0.5초마다 호출)"""
@@ -1338,7 +1418,18 @@ class OrchestratorTUI(App):
 
     def update_metrics_panel(self) -> None:
         """메트릭 패널 업데이트 (MetricsUIManager로 위임)."""
-        self.metrics_ui_manager.update_metrics_display()
+        try:
+            metrics_panel = self.query_one("#metrics-panel", Static)
+            # 현재 메트릭 수집기에서 메트릭 가져오기
+            metrics = self.metrics_collector.get_all_metrics()
+            if metrics:
+                # MetricsUIManager의 render_dashboard() 사용
+                dashboard = self.metrics_ui_manager.render_dashboard(metrics)
+                metrics_panel.update(dashboard)
+            else:
+                metrics_panel.update("📊 메트릭 없음")
+        except Exception as e:
+            logger.warning(f"메트릭 패널 업데이트 실패: {e}")
 
     def apply_output_mode(self) -> None:
         """
@@ -1808,12 +1899,196 @@ class OrchestratorTUI(App):
             if self.settings.enable_notifications and self.settings.notify_on_error:
                 self.notify(f"세션 전환 실패: {e}", severity="error")
 
+    async def action_interrupt_or_quit(self) -> None:
+        """Ctrl+C: 작업 중단 또는 종료"""
+        try:
+            # 현재 작업이 실행 중이면 중단
+            if self.current_task and not self.current_task.done():
+                self.current_task.cancel()
+                self.timer_active = False
+                self.update_worker_status("⚠️ 작업 중단됨")
+
+                status_info = self.query_one("#status-info", Static)
+                status_info.update("Interrupted")
+
+                self.write_log("")
+                self.write_log("[bold yellow]⚠️ 작업이 중단되었습니다[/bold yellow]")
+                self.write_log("")
+
+                # Ctrl+C 카운터 초기화
+                self.ctrl_c_count = 0
+                self.last_ctrl_c_time = 0
+                return
+
+            # 작업이 없으면 종료 확인 (2초 내에 두 번 누르면 종료)
+            current_time = time.time()
+            if current_time - self.last_ctrl_c_time < 2.0:
+                self.ctrl_c_count += 1
+            else:
+                self.ctrl_c_count = 1
+
+            self.last_ctrl_c_time = current_time
+
+            if self.ctrl_c_count >= 2:
+                # 종료
+                self.exit()
+            else:
+                # 첫 번째 Ctrl+C: 종료 안내
+                if self.settings.enable_notifications:
+                    self.notify(
+                        "종료하려면 Ctrl+C를 한 번 더 누르세요",
+                        severity="warning"
+                    )
+
+        except Exception as e:
+            logger.error(f"작업 중단/종료 실패: {e}")
+
+    async def action_show_help(self) -> None:
+        """?: 도움말 표시"""
+        try:
+            await self.push_screen(HelpModal())
+        except Exception as e:
+            logger.error(f"도움말 표시 실패: {e}")
+            self.write_log(TUIFeedbackWidget.create_panel(
+                "도움말 표시 실패", FeedbackType.ERROR, details=str(e)
+            ))
+
+    async def action_show_settings(self) -> None:
+        """F2: 설정 표시"""
+        try:
+            result = await self.push_screen(SettingsModal(self.settings))
+            if result:
+                # 설정이 변경됨
+                self.settings = result
+                TUIConfig.save(self.settings)
+
+                # 설정 적용
+                self.show_metrics_panel = self.settings.show_metrics_panel
+                self.show_workflow_panel = self.settings.show_workflow_panel
+                self.show_worker_status = self.settings.show_worker_status
+
+                self.apply_metrics_panel_visibility()
+                self.apply_workflow_panel_visibility()
+                self.apply_worker_status_visibility()
+
+                if self.settings.enable_notifications:
+                    self.notify("설정이 저장되었습니다", severity="information")
+
+        except Exception as e:
+            logger.error(f"설정 표시 실패: {e}")
+            if self.settings.enable_notifications and self.settings.notify_on_error:
+                self.notify(f"설정 오류: {e}", severity="error")
+
+    async def action_toggle_metrics_panel(self) -> None:
+        """Ctrl+M: 메트릭 패널 토글"""
+        try:
+            self.show_metrics_panel = not self.show_metrics_panel
+            self.apply_metrics_panel_visibility()
+
+            # 설정 저장
+            self.settings.show_metrics_panel = self.show_metrics_panel
+            TUIConfig.save(self.settings)
+
+            status = "표시" if self.show_metrics_panel else "숨김"
+            if self.settings.enable_notifications:
+                self.notify(f"메트릭 패널: {status}", severity="information")
+
+        except Exception as e:
+            logger.error(f"메트릭 패널 토글 실패: {e}")
+
+    async def action_toggle_workflow_panel(self) -> None:
+        """F4: 워크플로우 패널 토글"""
+        try:
+            self.show_workflow_panel = not self.show_workflow_panel
+            self.apply_workflow_panel_visibility()
+
+            # 설정 저장
+            self.settings.show_workflow_panel = self.show_workflow_panel
+            TUIConfig.save(self.settings)
+
+            status = "표시" if self.show_workflow_panel else "숨김"
+            if self.settings.enable_notifications:
+                self.notify(f"워크플로우 패널: {status}", severity="information")
+
+        except Exception as e:
+            logger.error(f"워크플로우 패널 토글 실패: {e}")
+
+    async def action_toggle_worker_status(self) -> None:
+        """F5: Worker 상태 패널 토글"""
+        try:
+            self.show_worker_status = not self.show_worker_status
+            self.apply_worker_status_visibility()
+
+            # 설정 저장
+            self.settings.show_worker_status = self.show_worker_status
+            TUIConfig.save(self.settings)
+
+            status = "표시" if self.show_worker_status else "숨김"
+            if self.settings.enable_notifications:
+                self.notify(f"Worker 상태 패널: {status}", severity="information")
+
+        except Exception as e:
+            logger.error(f"Worker 상태 패널 토글 실패: {e}")
+
+    async def action_history_up(self) -> None:
+        """Up: 이전 입력 히스토리"""
+        try:
+            task_input = self.query_one("#task-input", MultilineInput)
+            previous = self.input_history.get_previous()
+            if previous:
+                task_input.value = previous
+
+        except Exception as e:
+            logger.error(f"히스토리 이동 실패: {e}")
+
+    async def action_history_down(self) -> None:
+        """Down: 다음 입력 히스토리"""
+        try:
+            task_input = self.query_one("#task-input", MultilineInput)
+            next_item = self.input_history.get_next()
+            if next_item:
+                task_input.value = next_item
+            else:
+                # 히스토리 끝에 도달하면 입력 지우기
+                task_input.clear()
+
+        except Exception as e:
+            logger.error(f"히스토리 이동 실패: {e}")
+
+    async def action_toggle_output_mode(self) -> None:
+        """Ctrl+O: Manager/Worker 출력 전환"""
+        try:
+            # 출력 모드 전환
+            if self.output_mode == "manager":
+                # Worker 모드로 전환
+                if not self.active_workers:
+                    # 활성 Worker가 없으면 알림만 표시
+                    if self.settings.enable_notifications:
+                        self.notify(
+                            "실행 중인 Worker가 없습니다",
+                            severity="warning"
+                        )
+                    return
+
+                self.output_mode = "worker"
+            else:
+                # Manager 모드로 전환
+                self.output_mode = "manager"
+
+            # UI 업데이트
+            self.apply_output_mode()
+
+            # 알림 표시
+            mode_name = "Manager 출력" if self.output_mode == "manager" else "Worker 출력"
+            if self.settings.enable_notifications:
+                self.notify(f"출력 모드: {mode_name}", severity="information")
+
+        except Exception as e:
+            logger.error(f"출력 모드 전환 실패: {e}")
+
 
 def main():
     """메인 함수"""
-    # 구조화된 로깅 설정
-    from infrastructure.logging import configure_structlog
-
     # 환경변수에서 로깅 설정 로드
     log_level = os.getenv("LOG_LEVEL", "INFO")
     log_format = os.getenv("LOG_FORMAT", "json")
@@ -1827,9 +2102,27 @@ def main():
         enable_json=(log_format == "json")
     )
 
-    # 앱 실행
+    # 앱 실행 (터미널 상태 복원 보장)
     app = OrchestratorTUI()
-    app.run()
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        # Ctrl+C로 종료 시 정상 종료 처리
+        pass
+    except Exception as e:
+        logger.error(f"TUI 실행 중 에러 발생: {e}", exc_info=True)
+        raise
+    finally:
+        # 터미널 상태 복원 (마우스 트래킹 모드 해제)
+        import sys
+        # ANSI escape codes for disabling mouse tracking
+        sys.stdout.write('\033[?1000l')  # Disable mouse tracking
+        sys.stdout.write('\033[?1003l')  # Disable all mouse tracking
+        sys.stdout.write('\033[?1015l')  # Disable urxvt mouse mode
+        sys.stdout.write('\033[?1006l')  # Disable SGR mouse mode
+        sys.stdout.write('\033[?25h')    # Show cursor
+        sys.stdout.write('\033[?1004l')  # Disable focus events
+        sys.stdout.flush()
 
 
 if __name__ == "__main__":

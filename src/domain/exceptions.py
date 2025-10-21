@@ -16,7 +16,7 @@ Examples:
 from typing import Optional
 
 # Better-LLM 시스템 예외 (error_handler에서 import)
-from domain.errors.error_handler import (
+from src.domain.errors.error_handler import (
     BetterLLMError,
     WorkerError,
     ConfigError,
@@ -29,8 +29,8 @@ from domain.errors.error_handler import (
     handle_error,
     ERROR_CLASS_MAPPING,
 )
-from domain.errors.error_codes import ErrorCode
-from domain.errors.error_messages import (
+from src.domain.errors.error_codes import ErrorCode
+from src.domain.errors.error_messages import (
     get_error_message,
     format_error_message,
     ERROR_MESSAGES,

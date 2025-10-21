@@ -11,7 +11,7 @@ import os
 from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import ClaudeAgentOptions
 
-from domain.models import Message
+from src.domain.models import Message
 from ..config import get_claude_cli_path
 from ..logging import get_logger, log_exception_silently
 from .sdk_executor import (

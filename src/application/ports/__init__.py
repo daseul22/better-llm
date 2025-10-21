@@ -12,7 +12,7 @@ from .template_port import ITemplateRepository, ITemplateEngine
 from .approval_port import IApprovalRepository
 
 # Re-export from domain.ports (Clean Architecture DIP)
-from domain.ports import IMetricsRepository
+from src.domain.ports import IMetricsRepository
 
 __all__ = [
     "IAgentClient",

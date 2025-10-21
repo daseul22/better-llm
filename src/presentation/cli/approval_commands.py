@@ -15,13 +15,13 @@ from rich.text import Text
 from datetime import datetime
 from typing import Optional
 
-from application.use_cases import (
+from src.application.use_cases import (
     GetPendingApprovalsUseCase,
     ApprovalHistoryUseCase,
     ProcessApprovalResponseUseCase
 )
-from domain.models.approval import ApprovalStatus, ApprovalType
-from infrastructure.storage import create_approval_repository
+from src.domain.models.approval import ApprovalStatus, ApprovalType
+from src.infrastructure.storage import create_approval_repository
 
 console = Console()
 logger = logging.getLogger(__name__)

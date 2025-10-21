@@ -9,9 +9,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Callable, TypeVar, Coroutine
 
-from domain.interfaces.circuit_breaker import ICircuitBreaker
-from domain.models.circuit_breaker import CircuitState, CircuitBreakerState
-from domain.exceptions import CircuitOpenError
+from src.domain.interfaces.circuit_breaker import ICircuitBreaker
+from src.domain.models.circuit_breaker import CircuitState, CircuitBreakerState
+from src.domain.exceptions import CircuitOpenError
 
 
 logger = logging.getLogger(__name__)

@@ -11,13 +11,13 @@ from collections import defaultdict, deque
 import asyncio
 from datetime import datetime
 
-from domain.models.parallel_task import (
+from src.domain.models.parallel_task import (
     TaskExecutionPlan,
     ParallelTask,
     TaskExecutionResult
 )
-from domain.models.task import TaskStatus
-from infrastructure.logging import get_logger
+from src.domain.models.task import TaskStatus
+from src.infrastructure.logging import get_logger
 
 logger = get_logger(__name__, component="ParallelExecutor")
 

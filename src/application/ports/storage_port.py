@@ -9,8 +9,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, List
 
-from domain.models import SessionResult, SessionMetadata, SessionSearchCriteria, SessionDetail
-from domain.services import ConversationHistory, ProjectContext
+from src.domain.models import SessionResult, SessionMetadata, SessionSearchCriteria, SessionDetail
+from src.domain.services import ConversationHistory, ProjectContext
 
 
 class ISessionRepository(ABC):

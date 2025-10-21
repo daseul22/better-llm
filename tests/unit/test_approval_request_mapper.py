@@ -10,9 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from domain.models.approval import ApprovalRequest, ApprovalStatus, ApprovalType
-from infrastructure.storage.sqlite_approval_repository import SqliteApprovalRepository
-from infrastructure.storage.sqlite_session_repository import SqliteSessionRepository
+from src.domain.models.approval import ApprovalRequest, ApprovalStatus, ApprovalType
+from src.infrastructure.storage.sqlite_approval_repository import SqliteApprovalRepository
+from src.infrastructure.storage.sqlite_session_repository import SqliteSessionRepository
 
 
 @pytest.fixture

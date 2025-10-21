@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from ..ports.template_port import ITemplateRepository, ITemplateEngine
-from domain.models.template import (
+from src.domain.models.template import (
     Template,
     TemplateCategory,
     TemplateNotFoundError,

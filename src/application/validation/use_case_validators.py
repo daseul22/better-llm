@@ -6,7 +6,7 @@ Use Case 공통 검증 헬퍼.
 """
 
 from typing import List, Optional
-from domain.exceptions import PreconditionFailedError, ValidationError
+from src.domain.exceptions import PreconditionFailedError, ValidationError
 
 
 class UseCaseValidator:

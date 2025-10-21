@@ -10,8 +10,8 @@ from typing import Dict, Any, List
 
 from jinja2 import Template as Jinja2Template, Environment, TemplateError
 
-from application.ports.template_port import ITemplateEngine
-from domain.models.template import (
+from src.application.ports.template_port import ITemplateEngine
+from src.domain.models.template import (
     Template,
     TemplateValidationError,
     TemplateRenderError

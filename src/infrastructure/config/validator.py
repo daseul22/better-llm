@@ -24,30 +24,24 @@ logger = logging.getLogger(__name__)
 
 def validate_environment() -> None:
     """
-    환경 변수 검증 (ANTHROPIC_API_KEY 또는 CLAUDE_CODE_OAUTH_TOKEN)
+    환경 변수 검증 (CLAUDE_CODE_OAUTH_TOKEN)
 
     .env 파일이 있으면 자동으로 로드합니다.
 
-    Claude Agent SDK는 두 가지 인증 방식을 지원합니다:
-    - ANTHROPIC_API_KEY: API 키 기반 (pay-as-you-go)
-    - CLAUDE_CODE_OAUTH_TOKEN: OAuth 토큰 기반 (구독 사용자)
+    OAuth 토큰 기반 인증만 사용합니다 (Claude 구독 사용자).
 
     Raises:
-        ValueError: 인증 정보가 설정되지 않은 경우
+        ValueError: OAuth 토큰이 설정되지 않은 경우
     """
     # .env 파일 로드 (있을 경우)
     load_dotenv()
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
     oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
 
-    if not api_key and not oauth_token:
+    if not oauth_token:
         raise ValueError(
-            "인증 정보가 설정되지 않았습니다.\n"
-            "다음 중 하나의 방법으로 설정하세요:\n\n"
-            "방법 1 - API 키 (pay-as-you-go):\n"
-            "  export ANTHROPIC_API_KEY='sk-ant-...'\n\n"
-            "방법 2 - OAuth 토큰 (Claude 구독 사용자):\n"
+            "CLAUDE_CODE_OAUTH_TOKEN이 설정되지 않았습니다.\n"
+            "다음 방법으로 설정하세요:\n\n"
             "  export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token'\n\n"
             "또는 .env 파일에 추가하세요."
         )

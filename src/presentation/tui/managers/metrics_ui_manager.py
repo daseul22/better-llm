@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from collections import deque
 
-from infrastructure.logging import get_logger
+from src.infrastructure.logging import get_logger
 
 logger = get_logger(__name__, component="MetricsUIManager")
 
