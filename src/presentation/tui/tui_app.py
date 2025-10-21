@@ -69,6 +69,7 @@ from .utils import (
     TUIConfig,
     TUISettings,
     MessageRenderer,
+    WorkerOutputParser,
 )
 from .managers import (
     SessionManager,
@@ -315,8 +316,8 @@ class OrchestratorTUI(App):
     async def on_mount(self) -> None:
         """앱 마운트 시 초기화"""
         await self.initialize_orchestrator()
-        # 타이머: 0.5초마다 Worker Tool 실행 시간 업데이트
-        self.set_interval(0.5, self.update_worker_status_timer)
+        # 타이머: 0.2초마다 Worker Tool 실행 시간 업데이트
+        self.set_interval(0.2, self.update_worker_status_timer)
         # 타이머: 1초마다 메트릭 대시보드 업데이트
         self.set_interval(1.0, self.update_metrics_panel)
         # 타이머: 1초마다 토큰 사용량 업데이트
@@ -327,6 +328,8 @@ class OrchestratorTUI(App):
         self.apply_workflow_panel_visibility()
         # Worker 상태 패널 초기 상태 적용
         self.apply_worker_status_visibility()
+        # 출력 모드 초기 상태 적용 (Manager 출력 표시, Worker 출력 숨김)
+        self.apply_output_mode()
         # 초기 레이아웃 업데이트
         self.update_layout_for_size(self.size.width, self.size.height)
         # 자동 포커스: task-input 위젯에 포커스 설정
@@ -1272,8 +1275,8 @@ class OrchestratorTUI(App):
             # RichLog 생성
             worker_log = RichLog(
                 id=f"worker-log-{worker_name}",
-                markup=True,
-                highlight=True,
+                markup=True,  # 정제된 출력에서 Rich 마크업 사용
+                highlight=False,  # Worker 출력은 구문 강조 비활성화
                 wrap=True
             )
             self.active_workers[worker_name] = worker_log
@@ -1338,16 +1341,23 @@ class OrchestratorTUI(App):
         self._write_worker_output(worker_name, chunk)
 
     def _write_worker_output(self, worker_name: str, chunk: str) -> None:
-        """Worker 출력 작성."""
+        """Worker 출력 작성 (파싱 및 정제 적용)."""
         try:
             if worker_name not in self.active_workers:
                 logger.warning(f"Worker 탭을 찾을 수 없음: {worker_name}")
                 return
 
-            worker_log = self.active_workers[worker_name]
-            worker_log.write(chunk)
+            # Worker 출력 파싱 및 정제
+            formatted_chunk = WorkerOutputParser.format_for_display(chunk, worker_name)
 
-            # WorkerOutputManager에도 기록 (히스토리 관리)
+            worker_log = self.active_workers[worker_name]
+            # markup=False로 설정했으므로 Rich 마크업을 사용하려면 직접 처리 필요
+            # 하지만 markup=False이므로 플레인 텍스트로 표시됨
+            # 정제된 내용만 표시
+            if formatted_chunk and formatted_chunk.strip():
+                worker_log.write(formatted_chunk)
+
+            # WorkerOutputManager에도 기록 (히스토리 관리, 원본 유지)
             self.worker_output_manager.stream_output(worker_name, chunk)
 
         except Exception as e:
@@ -1364,13 +1374,48 @@ class OrchestratorTUI(App):
             spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
             spinner = spinner_frames[int(elapsed * 2) % len(spinner_frames)]
 
-            # status-info에 실행 시간 표시
+            # WorkflowVisualizer에서 실행 중인 워커 정보 가져오기
+            workflow_visualizer = self.query_one("#workflow-visualizer", WorkflowVisualizer)
+            running_workers = workflow_visualizer.get_running_workers()
+
+            # status-info에 실행 시간 및 워커 정보 표시
             status_info = self.query_one("#status-info", Static)
-            status_info.update(f"{spinner} Running... ⏱️  {elapsed:.1f}s")
+
+            if running_workers:
+                # 실행 중인 워커가 있으면 워커 정보 표시
+                worker_name, worker_elapsed = running_workers[0]  # 첫 번째 워커만 표시
+                worker_emoji = {
+                    "planner": "🧠",
+                    "coder": "💻",
+                    "reviewer": "🔍",
+                    "tester": "🧪",
+                    "committer": "📝",
+                }.get(worker_name.lower(), "🔧")
+
+                status_info.update(
+                    f"{spinner} Running... ⏱️ {elapsed:.1f}s • "
+                    f"{worker_emoji} {worker_name.capitalize()} ({worker_elapsed:.1f}s)"
+                )
+            else:
+                # 워커 정보 없으면 기본 표시
+                status_info.update(f"{spinner} Running... ⏱️  {elapsed:.1f}s")
 
             # worker-status는 표시되어 있을 때만 업데이트
             if self.show_worker_status:
-                self.update_worker_status(f"{spinner} Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
+                if running_workers:
+                    worker_name, worker_elapsed = running_workers[0]
+                    worker_emoji = {
+                        "planner": "🧠",
+                        "coder": "💻",
+                        "reviewer": "🔍",
+                        "tester": "🧪",
+                        "committer": "📝",
+                    }.get(worker_name.lower(), "🔧")
+                    self.update_worker_status(
+                        f"{spinner} {worker_emoji} {worker_name.capitalize()} 실행 중... ⏱️  {worker_elapsed:.1f}s"
+                    )
+                else:
+                    self.update_worker_status(f"{spinner} Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
         except Exception:
             pass
 
@@ -2061,7 +2106,11 @@ class OrchestratorTUI(App):
             # 출력 모드 전환
             if self.output_mode == "manager":
                 # Worker 모드로 전환
-                if not self.active_workers:
+                # WorkflowVisualizer에서 실행 중인 워커 확인 (active_workers 대신)
+                workflow_visualizer = self.query_one("#workflow-visualizer", WorkflowVisualizer)
+                has_workers = workflow_visualizer.has_running_workers() or bool(self.active_workers)
+
+                if not has_workers:
                     # 활성 Worker가 없으면 알림만 표시
                     if self.settings.enable_notifications:
                         self.notify(

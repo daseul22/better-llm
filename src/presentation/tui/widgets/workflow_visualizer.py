@@ -174,7 +174,7 @@ class WorkflowVisualizer(ScrollableContainer):
     def update_worker_status(
         self,
         worker_name: str,
-        status: WorkerStatus,
+        status: str,  # 문자열로 받아서 WorkerStatus Enum으로 변환
         error_message: Optional[str] = None
     ) -> None:
         """
@@ -182,25 +182,32 @@ class WorkflowVisualizer(ScrollableContainer):
 
         Args:
             worker_name: Worker 이름
-            status: 새로운 상태
+            status: 새로운 상태 (문자열: "running", "completed", "failed")
             error_message: 에러 메시지 (FAILED 상태일 때만)
         """
+        # 문자열을 WorkerStatus Enum으로 변환
+        try:
+            status_enum = WorkerStatus(status.lower())
+        except ValueError:
+            # 알 수 없는 상태는 PENDING으로 처리
+            status_enum = WorkerStatus.PENDING
+
         # 노드가 없으면 추가
         if worker_name not in self.nodes:
             self.add_worker(worker_name)
 
         node = self.nodes[worker_name]
         old_status = node.status
-        node.status = status
+        node.status = status_enum
 
         # 시간 기록
-        if status == WorkerStatus.RUNNING and old_status != WorkerStatus.RUNNING:
+        if status_enum == WorkerStatus.RUNNING and old_status != WorkerStatus.RUNNING:
             node.start_time = time.time()
-        elif status in (WorkerStatus.COMPLETED, WorkerStatus.FAILED):
+        elif status_enum in (WorkerStatus.COMPLETED, WorkerStatus.FAILED):
             node.end_time = time.time()
 
         # 에러 메시지 저장
-        if status == WorkerStatus.FAILED and error_message:
+        if status_enum == WorkerStatus.FAILED and error_message:
             node.error_message = error_message
 
         # TreeNode 레이블 업데이트
@@ -304,6 +311,28 @@ class WorkflowVisualizer(ScrollableContainer):
         node = self.nodes[worker_name]
         if node.status == WorkerStatus.RUNNING:
             self._update_tree_node(worker_name)
+
+    def get_running_workers(self) -> list[tuple[str, float]]:
+        """
+        현재 실행 중인 워커 목록 반환
+
+        Returns:
+            (워커 이름, 실행 시간) 튜플 리스트
+        """
+        running = []
+        for worker_name, node in self.nodes.items():
+            if node.status == WorkerStatus.RUNNING:
+                running.append((worker_name, node.get_duration()))
+        return running
+
+    def has_running_workers(self) -> bool:
+        """
+        실행 중인 워커가 있는지 확인
+
+        Returns:
+            실행 중인 워커가 있으면 True, 없으면 False
+        """
+        return any(node.status == WorkerStatus.RUNNING for node in self.nodes.values())
 
     def clear_workflow(self) -> None:
         """워크플로우 초기화"""

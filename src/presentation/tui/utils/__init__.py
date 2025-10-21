@@ -5,6 +5,7 @@ from .log_exporter import LogExporter
 from .autocomplete import AutocompleteEngine
 from .tui_config import TUIConfig, TUISettings
 from .message_renderer import MessageRenderer
+from .worker_output_parser import WorkerOutputParser
 
 __all__ = [
     "InputHistory",
@@ -13,4 +14,5 @@ __all__ = [
     "TUIConfig",
     "TUISettings",
     "MessageRenderer",
+    "WorkerOutputParser",
 ]

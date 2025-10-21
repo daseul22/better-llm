@@ -12,6 +12,7 @@ from textual import events
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.console import Group
 
 
 class HelpModal(ModalScreen):
@@ -114,23 +115,21 @@ class HelpModal(ModalScreen):
         for worker, desc in workers:
             worker_table.add_row(worker, desc)
 
-        # 전체 내용 조합
-        content = Text()
-        content.append("AI Orchestration System - 도움말\n\n", style="bold")
-        content.append("키 바인딩\n", style="bold yellow")
-        content.append_text(key_table)
-        content.append("\n\n")
-        content.append("슬래시 커맨드\n", style="bold yellow")
-        content.append_text(command_table)
-        content.append("\n\n")
-        content.append("사용 가능한 Worker Tools\n", style="bold yellow")
-        content.append_text(worker_table)
-        content.append("\n\n")
-        content.append("디버그 정보 표시\n", style="bold yellow")
-        content.append("환경변수 WORKER_DEBUG_INFO=true를 설정하면\n", style="dim")
-        content.append("각 Worker 실행 시 시스템 프롬프트와 컨텍스트를 표시합니다.\n", style="dim")
-        content.append("예: export WORKER_DEBUG_INFO=true\n\n", style="cyan")
-        content.append("Manager Agent가 자동으로 적절한 Worker Tool을 호출합니다.\n", style="dim")
+        # 전체 내용 조합 (Group으로 여러 렌더러블 객체 조합)
+        content = Group(
+            Text("AI Orchestration System - 도움말\n", style="bold"),
+            Text("키 바인딩", style="bold yellow"),
+            key_table,
+            Text("\n슬래시 커맨드", style="bold yellow"),
+            command_table,
+            Text("\n사용 가능한 Worker Tools", style="bold yellow"),
+            worker_table,
+            Text("\n디버그 정보 표시", style="bold yellow"),
+            Text("환경변수 WORKER_DEBUG_INFO=true를 설정하면\n"
+                 "각 Worker 실행 시 시스템 프롬프트와 컨텍스트를 표시합니다.\n", style="dim"),
+            Text("예: export WORKER_DEBUG_INFO=true\n", style="cyan"),
+            Text("Manager Agent가 자동으로 적절한 Worker Tool을 호출합니다.", style="dim"),
+        )
 
         return Panel(content, border_style="blue", title="[bold]도움말[/bold]")
 
