@@ -3,13 +3,18 @@ Worker 출력 파서 - Claude SDK Message 객체를 사람이 읽기 쉽게 정�
 
 Worker 출력은 Claude SDK의 raw Message 객체 형태로 전달되는데,
 이를 파싱하여 의미 있는 내용만 추출하고 포맷팅합니다.
+
+v2.0: JSON 파싱 지원, Rich Panel을 사용한 UI 개선
 """
 
 import re
-from typing import Optional
+import json
+from typing import Optional, Dict, Any, List
 from rich.text import Text
 from rich.panel import Panel
 from rich.syntax import Syntax
+from rich.table import Table
+from rich.console import RenderableType
 
 
 class WorkerOutputParser:
@@ -178,28 +183,174 @@ class WorkerOutputParser:
         return text.replace("[", r"\[").replace("]", r"\]")
 
     @classmethod
-    def format_for_display(cls, raw_output: str, worker_name: str) -> str:
+    def format_for_display(cls, raw_output: str, worker_name: str) -> RenderableType:
         """
-        Worker 출력을 화면에 표시하기 위해 최종 포맷팅
+        Worker 출력을 화면에 표시하기 위해 최종 포맷팅 (v2.0)
 
         Args:
             raw_output: Worker의 raw 출력
             worker_name: Worker 이름 (planner, coder 등)
 
         Returns:
-            최종 포맷팅된 출력
+            최종 포맷팅된 출력 (str 또는 Rich Renderable)
         """
-        # 파싱 시도
-        parsed = cls.parse(raw_output)
+        # 1단계: JSON 파싱 시도 (v2.0 새로운 기능)
+        json_result = cls._try_parse_json(raw_output)
+        if json_result:
+            return json_result
 
+        # 2단계: 정규식 파싱 시도 (기존 로직)
+        parsed = cls.parse(raw_output)
         if parsed:
             return parsed
+
+        # 3단계: 일반 텍스트 처리
+        # Rich 마크업 이스케이프 (파싱 에러 방지)
+        escaped = cls._escape_markup(raw_output)
+        # 너무 길면 자르기
+        if len(escaped) > 1000:
+            return f"[dim]{escaped[:1000]}...[/dim]"
         else:
-            # 파싱 실패 시 원본 반환 (디버그용)
-            # Rich 마크업 이스케이프 (파싱 에러 방지)
-            escaped = cls._escape_markup(raw_output)
-            # 너무 길면 자르기
-            if len(escaped) > 1000:
-                return f"[dim]{escaped[:1000]}...[/dim]"
-            else:
-                return f"[dim]{escaped}[/dim]"
+            return f"[dim]{escaped}[/dim]"
+
+    @classmethod
+    def _try_parse_json(cls, raw_output: str) -> Optional[RenderableType]:
+        """
+        JSON 형태의 출력을 파싱하여 Rich UI로 변환 (v2.0)
+
+        Args:
+            raw_output: 원본 출력
+
+        Returns:
+            Rich Renderable 또는 None (파싱 실패 시)
+        """
+        # JSON 객체/배열로 시작하는지 확인
+        stripped = raw_output.strip()
+        if not (stripped.startswith('{') or stripped.startswith('[')):
+            return None
+
+        try:
+            # JSON 파싱 시도
+            data = json.loads(stripped)
+
+            # Message 객체인 경우
+            if isinstance(data, dict):
+                return cls._render_message_object(data)
+
+            # 배열인 경우
+            elif isinstance(data, list):
+                # 여러 메시지가 있는 경우
+                results = []
+                for item in data:
+                    if isinstance(item, dict):
+                        results.append(cls._render_message_object(item))
+                # 결과가 있으면 첫 번째 반환
+                return results[0] if results else None
+
+        except json.JSONDecodeError:
+            # JSON 파싱 실패 시 None 반환
+            return None
+
+        return None
+
+    @classmethod
+    def _render_message_object(cls, message: Dict[str, Any]) -> RenderableType:
+        """
+        Message 객체를 Rich UI로 렌더링 (v2.0)
+
+        Args:
+            message: Message 객체 (dict)
+
+        Returns:
+            Rich Renderable
+        """
+        # AssistantMessage 처리
+        if 'content' in message and isinstance(message['content'], list):
+            contents = message['content']
+
+            # TextBlock 찾기
+            for content in contents:
+                if isinstance(content, dict):
+                    # TextBlock
+                    if content.get('type') == 'text' and 'text' in content:
+                        text = content['text']
+                        return Panel(
+                            Text(text, style="cyan"),
+                            title="[bold cyan]💬 사고 과정[/bold cyan]",
+                            border_style="cyan",
+                            padding=(1, 2)
+                        )
+
+                    # ToolUseBlock
+                    elif content.get('type') == 'tool_use':
+                        return cls._render_tool_use(content)
+
+        # ToolResultBlock 처리 (UserMessage의 content)
+        elif 'tool_use_id' in message:
+            return cls._render_tool_result(message)
+
+        # 파싱 실패 시 기본 표시
+        return f"[dim]{json.dumps(message, indent=2, ensure_ascii=False)}[/dim]"
+
+    @classmethod
+    def _render_tool_use(cls, tool_use: Dict[str, Any]) -> RenderableType:
+        """
+        Tool 호출을 Rich Panel로 렌더링 (v2.0)
+
+        Args:
+            tool_use: ToolUseBlock (dict)
+
+        Returns:
+            Rich Panel
+        """
+        tool_name = tool_use.get('name', 'Unknown')
+        tool_input = tool_use.get('input', {})
+        tool_id = tool_use.get('id', 'N/A')
+
+        # Tool Input을 예쁘게 포맷팅
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column("Key", style="yellow", width=15)
+        table.add_column("Value", style="white")
+
+        for key, value in tool_input.items():
+            # 값이 너무 길면 자르기
+            value_str = str(value)
+            if len(value_str) > 100:
+                value_str = value_str[:100] + "..."
+            table.add_row(key, value_str)
+
+        return Panel(
+            table,
+            title=f"[bold yellow]🔧 도구 호출: {tool_name}[/bold yellow]",
+            subtitle=f"[dim]ID: {tool_id[:16]}...[/dim]",
+            border_style="yellow",
+            padding=(1, 2)
+        )
+
+    @classmethod
+    def _render_tool_result(cls, tool_result: Dict[str, Any]) -> RenderableType:
+        """
+        Tool 결과를 Rich Panel로 렌더링 (v2.0)
+
+        Args:
+            tool_result: ToolResultBlock (dict)
+
+        Returns:
+            Rich Panel
+        """
+        tool_use_id = tool_result.get('tool_use_id', 'N/A')
+        content = tool_result.get('content', '')
+
+        # 결과가 너무 길면 자르기
+        if isinstance(content, str):
+            display_content = content if len(content) <= 500 else content[:500] + "\n..."
+        else:
+            display_content = str(content)
+
+        return Panel(
+            Text(display_content, style="green"),
+            title="[bold green]✅ 도구 결과[/bold green]",
+            subtitle=f"[dim]Tool ID: {tool_use_id[:16]}...[/dim]",
+            border_style="green",
+            padding=(1, 2)
+        )
