@@ -37,8 +37,8 @@ class ParallelTaskExecutor:
         executor = ParallelTaskExecutor(task_executor_func)
         result = await executor.execute(plan)
 
-        print(f"Success rate: {result.success_rate * 100}%")
-        print(f"Speedup: {result.speedup_factor}x")
+        logger.info(f"Success rate: {result.success_rate * 100}%")
+        logger.info(f"Speedup: {result.speedup_factor}x")
         ```
     """
 

@@ -155,9 +155,15 @@ class ErrorStatisticsManager:
                 logger.warning(f"Failed to save error to repository: {e}")
 
     def _save_to_repository(self, error_record: ErrorRecord) -> None:
-        """메트릭 저장소에 에러 기록 저장"""
-        # TODO: MetricsRepository 인터페이스에 맞게 구현
-        # 현재는 placeholder
+        """
+        메트릭 저장소에 에러 기록 저장
+
+        Note:
+            현재는 placeholder로 구현되어 있습니다.
+            향후 MetricsRepository 인터페이스가 정의되면 다음과 같이 구현할 수 있습니다:
+            - self.metrics_repository.save_error(error_record)
+            - 데이터베이스, 파일 시스템, 또는 외부 API로 저장
+        """
         pass
 
     def get_error_summary(self) -> ErrorSummary:

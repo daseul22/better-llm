@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+from rich import print as rich_print
+
 from .sqlite_session_repository import SqliteSessionRepository
 from src.domain.models import SessionResult, SessionStatus
 from src.domain.services import ConversationHistory
@@ -212,12 +214,12 @@ def migrate_sessions_cli(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
-    print(f"\n{'='*60}")
-    print("세션 데이터 마이그레이션: JSON → SQLite")
-    print(f"{'='*60}\n")
-    print(f"JSON 디렉토리: {json_dir}")
-    print(f"SQLite 경로: {db_path}")
-    print(f"Dry Run: {dry_run}\n")
+    rich_print(f"\n{'='*60}")
+    rich_print("세션 데이터 마이그레이션: JSON → SQLite")
+    rich_print(f"{'='*60}\n")
+    rich_print(f"JSON 디렉토리: {json_dir}")
+    rich_print(f"SQLite 경로: {db_path}")
+    rich_print(f"Dry Run: {dry_run}\n")
 
     # SQLite 리포지토리 생성
     sqlite_repo = SqliteSessionRepository(db_path=Path(db_path))
@@ -231,34 +233,34 @@ def migrate_sessions_cli(
     stats = migration.migrate_all(dry_run=dry_run)
 
     # 결과 출력
-    print(f"\n{'='*60}")
-    print("마이그레이션 결과")
-    print(f"{'='*60}\n")
-    print(f"총 파일 수: {stats['total_files']}")
-    print(f"성공: {stats['success']}")
-    print(f"실패: {stats['failed']}")
-    print(f"건너뜀: {stats['skipped']}")
+    rich_print(f"\n{'='*60}")
+    rich_print("마이그레이션 결과")
+    rich_print(f"{'='*60}\n")
+    rich_print(f"총 파일 수: {stats['total_files']}")
+    rich_print(f"성공: {stats['success']}")
+    rich_print(f"실패: {stats['failed']}")
+    rich_print(f"건너뜀: {stats['skipped']}")
 
     if stats['errors']:
-        print(f"\n에러 목록:")
+        rich_print(f"\n에러 목록:")
         for error in stats['errors']:
-            print(f"  - {error['file']}: {error['error']}")
+            rich_print(f"  - {error['file']}: {error['error']}")
 
     # 검증
     if not dry_run and stats['success'] > 0:
-        print(f"\n{'='*60}")
-        print("마이그레이션 검증")
-        print(f"{'='*60}\n")
+        rich_print(f"\n{'='*60}")
+        rich_print("마이그레이션 검증")
+        rich_print(f"{'='*60}\n")
 
         validation = migration.validate_migration()
-        print(f"JSON 파일 수: {validation['json_count']}")
-        print(f"SQLite 세션 수: {validation['sqlite_count']}")
-        print(f"검증 결과: {'✓ 성공' if validation['match'] else '✗ 실패'}")
+        rich_print(f"JSON 파일 수: {validation['json_count']}")
+        rich_print(f"SQLite 세션 수: {validation['sqlite_count']}")
+        rich_print(f"검증 결과: {'✓ 성공' if validation['match'] else '✗ 실패'}")
 
         if not validation['match']:
-            print(f"차이: {validation['difference']}")
+            rich_print(f"차이: {validation['difference']}")
 
-    print()
+    rich_print()
 
 
 if __name__ == "__main__":

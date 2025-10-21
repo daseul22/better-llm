@@ -414,15 +414,29 @@ class ParallelExecutor:
             completed_tasks: 롤백할 Task 리스트
 
         Note:
-            현재는 placeholder. 실제 구현 시 Git reset, 파일 복원 등 수행
+            현재는 placeholder로 구현되어 있습니다.
+            향후 실제 롤백 메커니즘이 필요한 경우 다음 방식으로 구현 가능합니다:
+
+            1. **Git 기반 롤백**
+               - 각 Task 시작 전 Git 커밋 또는 stash 생성
+               - 롤백 시 해당 커밋으로 reset
+               - 예: `git reset --hard <commit_hash>`
+
+            2. **파일 스냅샷 롤백**
+               - Task 시작 전 target_files의 백업 생성
+               - 롤백 시 백업에서 복원
+               - 예: `shutil.copy(backup_file, original_file)`
+
+            3. **데이터베이스 트랜잭션 롤백**
+               - 각 Task를 트랜잭션으로 관리
+               - 롤백 시 ROLLBACK 실행
+
+            현재는 Worker Agent가 Git 기반으로 동작하므로,
+            필요 시 git stash 또는 branch 기반 롤백을 권장합니다.
         """
         logger.info(f"Rolling back {len(completed_tasks)} tasks")
 
         for task in completed_tasks:
-            logger.info(f"Rollback task: {task.id}")
-            # TODO: 실제 롤백 로직 구현
-            # - Git reset
-            # - 파일 복원
-            # - 데이터베이스 트랜잭션 롤백 등
+            logger.info(f"Rollback task: {task.id} (not implemented)")
 
-        logger.info("Rollback completed")
+        logger.warning("Rollback completed (placeholder - no actual rollback performed)")

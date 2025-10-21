@@ -36,30 +36,79 @@ logger = get_logger(__name__, component="WorkerTools")
 
 
 # ============================================================================
-# 전역 변수 (Global State Management)
+# 전역 상태 관리 (Singleton Pattern)
 # ============================================================================
 
-# Worker Agent 인스턴스들
-_WORKER_AGENTS: Dict[str, WorkerAgent] = {}
+class WorkerToolsState:
+    """
+    Worker Tools의 상태를 관리하는 싱글톤 클래스
 
-# WorkerExecutor 인스턴스 (싱글톤 패턴)
-_WORKER_EXECUTOR: Optional[WorkerExecutor] = None
+    전역 변수를 캡슐화하여 상태 관리를 일원화합니다.
+    스레드 안전성을 보장하며, 테스트 시 상태 초기화가 용이합니다.
 
-# 메트릭 수집기 (선택적)
-_METRICS_COLLECTOR: Optional[MetricsCollector] = None
-_CURRENT_SESSION_ID: Optional[str] = None
+    Attributes:
+        worker_agents: Worker Agent 인스턴스 딕셔너리
+        worker_executor: WorkerExecutor 인스턴스
+        metrics_collector: 메트릭 수집기 (선택적)
+        current_session_id: 현재 세션 ID
+        worker_output_callback: Worker 출력 스트리밍 콜백
+        user_input_callback: 사용자 입력 콜백
+        interaction_enabled: Interaction 모드 활성화 여부
+        last_tool_results: Tool 실행 결과 리스트
 
-# Worker 출력 스트리밍 콜백 (TUI에서 설정)
-_WORKER_OUTPUT_CALLBACK: Optional[Callable] = None
+    Example:
+        >>> state = WorkerToolsState()
+        >>> state.worker_agents["coder"] = WorkerAgent(config)
+        >>> state.current_session_id = "session-123"
+    """
 
-# 사용자 입력 콜백 (CLI/TUI에서 설정)
-_USER_INPUT_CALLBACK: Optional[Callable] = None
+    _instance: Optional["WorkerToolsState"] = None
 
-# Interaction 설정 (system_config.json에서 로드)
-_INTERACTION_ENABLED: bool = False
+    def __new__(cls) -> "WorkerToolsState":
+        """싱글톤 인스턴스 생성"""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
 
-# Tool 실행 결과 추적 (Orchestrator가 히스토리에 추가하기 위해 사용)
-_LAST_TOOL_RESULTS: list[Dict[str, Any]] = []
+    def _initialize(self) -> None:
+        """상태 초기화"""
+        self.worker_agents: Dict[str, WorkerAgent] = {}
+        self.worker_executor: Optional[WorkerExecutor] = None
+        self.metrics_collector: Optional[MetricsCollector] = None
+        self.current_session_id: Optional[str] = None
+        self.worker_output_callback: Optional[Callable] = None
+        self.user_input_callback: Optional[Callable] = None
+        self.interaction_enabled: bool = False
+        self.last_tool_results: list[Dict[str, Any]] = []
+
+    @classmethod
+    def reset(cls) -> None:
+        """
+        싱글톤 인스턴스 초기화 (테스트용)
+
+        Note:
+            운영 환경에서는 사용하지 마세요.
+            테스트 시 상태를 깨끗하게 초기화하는 용도로만 사용합니다.
+        """
+        if cls._instance is not None:
+            cls._instance._initialize()
+            logger.warning("WorkerToolsState has been reset (test only)")
+
+
+# 전역 상태 인스턴스 (호환성 유지를 위한 헬퍼)
+_state = WorkerToolsState()
+
+# 하위 호환성을 위한 전역 변수 (Deprecated - 향후 제거 예정)
+# 기존 코드가 전역 변수에 직접 접근하는 경우를 위해 유지
+_WORKER_AGENTS: Dict[str, WorkerAgent] = _state.worker_agents
+_WORKER_EXECUTOR: Optional[WorkerExecutor] = _state.worker_executor
+_METRICS_COLLECTOR: Optional[MetricsCollector] = _state.metrics_collector
+_CURRENT_SESSION_ID: Optional[str] = _state.current_session_id
+_WORKER_OUTPUT_CALLBACK: Optional[Callable] = _state.worker_output_callback
+_USER_INPUT_CALLBACK: Optional[Callable] = _state.user_input_callback
+_INTERACTION_ENABLED: bool = _state.interaction_enabled
+_LAST_TOOL_RESULTS: list[Dict[str, Any]] = _state.last_tool_results
 
 
 # ============================================================================
@@ -206,14 +255,12 @@ def _load_interaction_config():
     없으면 system_config.json 값 사용,
     기본값: false
     """
-    global _INTERACTION_ENABLED
-
     try:
         # 환경변수 우선
         env_value = os.getenv("ENABLE_INTERACTIVE")
         if env_value is not None:
-            _INTERACTION_ENABLED = env_value.lower() in ("true", "1", "yes")
-            logger.info(f"✅ Interaction 모드: {_INTERACTION_ENABLED} (환경변수)")
+            _state.interaction_enabled = env_value.lower() in ("true", "1", "yes")
+            logger.info(f"✅ Interaction 모드: {_state.interaction_enabled} (환경변수)")
             return
 
         # system_config.json에서 로드
@@ -221,13 +268,13 @@ def _load_interaction_config():
 
         config = load_system_config()
         interaction = config.get("interaction", {})
-        _INTERACTION_ENABLED = interaction.get("enabled", False)
+        _state.interaction_enabled = interaction.get("enabled", False)
 
-        logger.info(f"✅ Interaction 모드: {_INTERACTION_ENABLED} (설정 파일)")
+        logger.info(f"✅ Interaction 모드: {_state.interaction_enabled} (설정 파일)")
 
     except Exception as e:
         logger.warning(f"interaction 설정 로드 실패: {e}. 기본값(false) 사용.")
-        _INTERACTION_ENABLED = False
+        _state.interaction_enabled = False
 
 
 # ============================================================================
@@ -241,8 +288,6 @@ def initialize_workers(config_path: Path):
     Args:
         config_path: Agent 설정 파일 경로
     """
-    global _WORKER_AGENTS, _WORKER_EXECUTOR, _PARALLEL_EXECUTOR, _INTERACTION_ENABLED
-
     # system_config.json에서 타임아웃 설정 로드
     _load_worker_timeouts_from_config()
 
@@ -268,7 +313,7 @@ def initialize_workers(config_path: Path):
 
     for config in worker_configs:
         worker = WorkerAgent(config)
-        _WORKER_AGENTS[config.name] = worker
+        _state.worker_agents[config.name] = worker
         logger.info(
             "Worker agent initialized",
             worker_name=config.name,
@@ -277,7 +322,7 @@ def initialize_workers(config_path: Path):
         )
 
     # WorkerExecutor 초기화 (Level 1 매니저들과 함께)
-    _WORKER_EXECUTOR = WorkerExecutor(
+    _state.worker_executor = WorkerExecutor(
         review_manager=ReviewCycleManager(max_cycles=max_cycles),
         commit_validator=CommitSafetyValidator(),
         callback_handler=WorkflowCallbackHandler(),
@@ -298,9 +343,8 @@ def set_metrics_collector(collector: MetricsCollector, session_id: str) -> None:
         collector: 메트릭 수집기
         session_id: 현재 세션 ID
     """
-    global _METRICS_COLLECTOR, _CURRENT_SESSION_ID
-    _METRICS_COLLECTOR = collector
-    _CURRENT_SESSION_ID = session_id
+    _state.metrics_collector = collector
+    _state.current_session_id = session_id
     logger.info("Metrics collector configured", session_id=session_id)
 
 
@@ -311,8 +355,7 @@ def update_session_id(session_id: str) -> None:
     Args:
         session_id: 새 세션 ID
     """
-    global _CURRENT_SESSION_ID
-    _CURRENT_SESSION_ID = session_id
+    _state.current_session_id = session_id
     logger.info("Session ID updated", session_id=session_id)
 
 
@@ -324,9 +367,7 @@ def set_workflow_callback(callback: Optional[Callable]) -> None:
         callback: 워크플로우 상태 업데이트 함수
                   시그니처: callback(worker_name: str, status: str, error: Optional[str])
     """
-    global _WORKER_EXECUTOR
-
-    if not _WORKER_EXECUTOR:
+    if not _state.worker_executor:
         logger.warning("WorkerExecutor not initialized, callback not set")
         return
 
@@ -340,13 +381,13 @@ def set_workflow_callback(callback: Optional[Callable]) -> None:
             )
 
         # 각 이벤트에 콜백 등록
-        _WORKER_EXECUTOR.callback_handler.register_callback(
+        _state.worker_executor.callback_handler.register_callback(
             WorkflowEventType.WORKER_RUNNING, wrapped_callback
         )
-        _WORKER_EXECUTOR.callback_handler.register_callback(
+        _state.worker_executor.callback_handler.register_callback(
             WorkflowEventType.WORKER_COMPLETED, wrapped_callback
         )
-        _WORKER_EXECUTOR.callback_handler.register_callback(
+        _state.worker_executor.callback_handler.register_callback(
             WorkflowEventType.WORKER_FAILED, wrapped_callback
         )
 
@@ -361,8 +402,7 @@ def set_worker_output_callback(callback: Optional[Callable]) -> None:
         callback: Worker 출력 스트리밍 함수
                   시그니처: callback(worker_name: str, chunk: str)
     """
-    global _WORKER_OUTPUT_CALLBACK
-    _WORKER_OUTPUT_CALLBACK = callback
+    _state.worker_output_callback = callback
     logger.info("✅ Worker 출력 스트리밍 콜백 설정 완료")
 
 
@@ -374,8 +414,7 @@ def set_user_input_callback(callback: Optional[Callable]) -> None:
         callback: 사용자 입력 함수
                   시그니처: callback(question: str, options: List[str] = None) -> str
     """
-    global _USER_INPUT_CALLBACK
-    _USER_INPUT_CALLBACK = callback
+    _state.user_input_callback = callback
     logger.info("✅ 사용자 입력 콜백 설정 완료")
 
 
@@ -394,10 +433,8 @@ def get_and_clear_tool_results() -> list[Dict[str, Any]]:
                 "result": str  # Worker 실행 결과 텍스트
             }
     """
-    global _LAST_TOOL_RESULTS
-
-    results = _LAST_TOOL_RESULTS.copy()
-    _LAST_TOOL_RESULTS.clear()
+    results = _state.last_tool_results.copy()
+    _state.last_tool_results.clear()
 
     logger.debug(
         "Tool results retrieved and cleared",
@@ -413,10 +450,8 @@ def reset_review_cycle() -> None:
 
     새 작업 시작 시 호출하여 이전 작업의 review count가 누적되지 않도록 합니다.
     """
-    global _WORKER_EXECUTOR
-
-    if _WORKER_EXECUTOR:
-        _WORKER_EXECUTOR.reset_review_cycle()
+    if _state.worker_executor:
+        _state.worker_executor.reset_review_cycle()
         logger.info("🔄 Review cycle has been reset")
     else:
         logger.warning("WorkerExecutor not initialized, cannot reset review cycle")
@@ -433,10 +468,8 @@ def get_error_statistics() -> Dict[str, Any]:
     Returns:
         각 Worker의 시도/실패 통계 및 에러율
     """
-    global _WORKER_EXECUTOR
-
-    if _WORKER_EXECUTOR:
-        return _WORKER_EXECUTOR.get_error_summary()
+    if _state.worker_executor:
+        return _state.worker_executor.get_error_summary()
 
     # 폴백: WorkerExecutor가 초기화되지 않은 경우 빈 통계 반환
     logger.warning("WorkerExecutor not initialized, returning empty statistics")
@@ -447,10 +480,8 @@ def reset_error_statistics():
     """
     에러 통계 초기화
     """
-    global _WORKER_EXECUTOR
-
-    if _WORKER_EXECUTOR:
-        _WORKER_EXECUTOR.reset_error_statistics()
+    if _state.worker_executor:
+        _state.worker_executor.reset_error_statistics()
         logger.info("✅ 에러 통계 초기화 완료")
     else:
         logger.warning("WorkerExecutor not initialized, cannot reset statistics")
@@ -559,27 +590,25 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과 (요약만 포함)
     """
-    global _LAST_TOOL_RESULTS
-
     context = WorkerExecutionContext(
         worker_name="planner",
         task_description=args["task_description"],
         use_retry=True,
         timeout=_WORKER_TIMEOUTS["planner"],
-        session_id=_CURRENT_SESSION_ID,
-        metrics_collector=_METRICS_COLLECTOR,
-        worker_agent=_WORKER_AGENTS.get("planner"),
-        worker_output_callback=_WORKER_OUTPUT_CALLBACK
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get("planner"),
+        worker_output_callback=_state.worker_output_callback
     )
-    result = await _WORKER_EXECUTOR.execute(context)
+    result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화 (전체 출력 저장 및 요약 추출)
-    result = _save_and_summarize_output("planner", result, _CURRENT_SESSION_ID)
+    result = _save_and_summarize_output("planner", result, _state.current_session_id)
 
     # Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해)
     if result.get("content") and len(result["content"]) > 0:
         result_text = result["content"][0].get("text", "")
-        _LAST_TOOL_RESULTS.append({
+        _state.last_tool_results.append({
             "tool_name": "execute_planner_task",
             "worker_name": "planner",
             "result": result_text
@@ -608,27 +637,25 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과 (요약만 포함)
     """
-    global _LAST_TOOL_RESULTS
-
     context = WorkerExecutionContext(
         worker_name="coder",
         task_description=args["task_description"],
         use_retry=False,
         timeout=_WORKER_TIMEOUTS["coder"],
-        session_id=_CURRENT_SESSION_ID,
-        metrics_collector=_METRICS_COLLECTOR,
-        worker_agent=_WORKER_AGENTS.get("coder"),
-        worker_output_callback=_WORKER_OUTPUT_CALLBACK
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get("coder"),
+        worker_output_callback=_state.worker_output_callback
     )
-    result = await _WORKER_EXECUTOR.execute(context)
+    result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("coder", result, _CURRENT_SESSION_ID)
+    result = _save_and_summarize_output("coder", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
         result_text = result["content"][0].get("text", "")
-        _LAST_TOOL_RESULTS.append({
+        _state.last_tool_results.append({
             "tool_name": "execute_coder_task",
             "worker_name": "coder",
             "result": result_text
@@ -657,27 +684,25 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과 (요약만 포함)
     """
-    global _LAST_TOOL_RESULTS
-
     context = WorkerExecutionContext(
         worker_name="tester",
         task_description=args["task_description"],
         use_retry=False,
         timeout=_WORKER_TIMEOUTS["tester"],
-        session_id=_CURRENT_SESSION_ID,
-        metrics_collector=_METRICS_COLLECTOR,
-        worker_agent=_WORKER_AGENTS.get("tester"),
-        worker_output_callback=_WORKER_OUTPUT_CALLBACK
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get("tester"),
+        worker_output_callback=_state.worker_output_callback
     )
-    result = await _WORKER_EXECUTOR.execute(context)
+    result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("tester", result, _CURRENT_SESSION_ID)
+    result = _save_and_summarize_output("tester", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
         result_text = result["content"][0].get("text", "")
-        _LAST_TOOL_RESULTS.append({
+        _state.last_tool_results.append({
             "tool_name": "execute_tester_task",
             "worker_name": "tester",
             "result": result_text
@@ -718,27 +743,25 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
         - 최대 횟수 초과 시 자동으로 실행이 중단되며, 수동 검토가 필요합니다.
         - 새 작업 시작 시(Planner 또는 Coder 호출) Review cycle이 자동 초기화됩니다.
     """
-    global _LAST_TOOL_RESULTS
-
     context = WorkerExecutionContext(
         worker_name="reviewer",
         task_description=args["task_description"],
         use_retry=False,
         timeout=_WORKER_TIMEOUTS["reviewer"],
-        session_id=_CURRENT_SESSION_ID,
-        metrics_collector=_METRICS_COLLECTOR,
-        worker_agent=_WORKER_AGENTS.get("reviewer"),
-        worker_output_callback=_WORKER_OUTPUT_CALLBACK
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get("reviewer"),
+        worker_output_callback=_state.worker_output_callback
     )
-    result = await _WORKER_EXECUTOR.execute(context)
+    result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("reviewer", result, _CURRENT_SESSION_ID)
+    result = _save_and_summarize_output("reviewer", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
         result_text = result["content"][0].get("text", "")
-        _LAST_TOOL_RESULTS.append({
+        _state.last_tool_results.append({
             "tool_name": "execute_reviewer_task",
             "worker_name": "reviewer",
             "result": result_text
@@ -767,27 +790,25 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과 (요약만 포함)
     """
-    global _LAST_TOOL_RESULTS
-
     context = WorkerExecutionContext(
         worker_name="committer",
         task_description=args["task_description"],
         use_retry=False,
         timeout=_WORKER_TIMEOUTS["committer"],
-        session_id=_CURRENT_SESSION_ID,
-        metrics_collector=_METRICS_COLLECTOR,
-        worker_agent=_WORKER_AGENTS.get("committer"),
-        worker_output_callback=_WORKER_OUTPUT_CALLBACK
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get("committer"),
+        worker_output_callback=_state.worker_output_callback
     )
-    result = await _WORKER_EXECUTOR.execute(context)  # 보안 검증은 내부에서 처리됨
+    result = await _state.worker_executor.execute(context)  # 보안 검증은 내부에서 처리됨
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("committer", result, _CURRENT_SESSION_ID)
+    result = _save_and_summarize_output("committer", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
         result_text = result["content"][0].get("text", "")
-        _LAST_TOOL_RESULTS.append({
+        _state.last_tool_results.append({
             "tool_name": "execute_committer_task",
             "worker_name": "committer",
             "result": result_text
@@ -816,27 +837,25 @@ async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과 (요약만 포함)
     """
-    global _LAST_TOOL_RESULTS
-
     context = WorkerExecutionContext(
         worker_name="ideator",
         task_description=args["task_description"],
         use_retry=True,
         timeout=_WORKER_TIMEOUTS["ideator"],
-        session_id=_CURRENT_SESSION_ID,
-        metrics_collector=_METRICS_COLLECTOR,
-        worker_agent=_WORKER_AGENTS.get("ideator"),
-        worker_output_callback=_WORKER_OUTPUT_CALLBACK
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get("ideator"),
+        worker_output_callback=_state.worker_output_callback
     )
-    result = await _WORKER_EXECUTOR.execute(context)
+    result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("ideator", result, _CURRENT_SESSION_ID)
+    result = _save_and_summarize_output("ideator", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
         result_text = result["content"][0].get("text", "")
-        _LAST_TOOL_RESULTS.append({
+        _state.last_tool_results.append({
             "tool_name": "execute_ideator_task",
             "worker_name": "ideator",
             "result": result_text
@@ -865,27 +884,25 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과 (요약만 포함)
     """
-    global _LAST_TOOL_RESULTS
-
     context = WorkerExecutionContext(
         worker_name="product_manager",
         task_description=args["task_description"],
         use_retry=True,
         timeout=_WORKER_TIMEOUTS["product_manager"],
-        session_id=_CURRENT_SESSION_ID,
-        metrics_collector=_METRICS_COLLECTOR,
-        worker_agent=_WORKER_AGENTS.get("product_manager"),
-        worker_output_callback=_WORKER_OUTPUT_CALLBACK
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get("product_manager"),
+        worker_output_callback=_state.worker_output_callback
     )
-    result = await _WORKER_EXECUTOR.execute(context)
+    result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("product_manager", result, _CURRENT_SESSION_ID)
+    result = _save_and_summarize_output("product_manager", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
         result_text = result["content"][0].get("text", "")
-        _LAST_TOOL_RESULTS.append({
+        _state.last_tool_results.append({
             "tool_name": "execute_product_manager_task",
             "worker_name": "product_manager",
             "result": result_text
@@ -926,10 +943,8 @@ async def ask_user(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         {"content": [{"type": "text", "text": "사용자 응답"}]}
     """
-    global _INTERACTION_ENABLED, _USER_INPUT_CALLBACK
-
     # Interaction 모드가 비활성화된 경우
-    if not _INTERACTION_ENABLED:
+    if not _state.interaction_enabled:
         logger.warning("[ask_user] Interaction 모드가 비활성화되어 있습니다.")
         return {
             "content": [{
@@ -941,7 +956,7 @@ async def ask_user(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # 사용자 입력 콜백이 설정되지 않은 경우
-    if not _USER_INPUT_CALLBACK:
+    if not _state.user_input_callback:
         logger.error("[ask_user] 사용자 입력 콜백이 설정되지 않았습니다.")
         return {
             "content": [{
@@ -964,7 +979,7 @@ async def ask_user(args: Dict[str, Any]) -> Dict[str, Any]:
         loop = asyncio.get_event_loop()
         user_response = await loop.run_in_executor(
             None,
-            _USER_INPUT_CALLBACK,
+            _state.user_input_callback,
             question,
             options
         )
@@ -1033,7 +1048,7 @@ async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
         # Coder Worker를 task_executor로 래핑
         async def coder_task_executor(task: ParallelTask) -> str:
             """단일 Task 실행 (Coder Worker 호출)"""
-            coder_agent = _WORKER_AGENTS.get("coder")
+            coder_agent = _state.worker_agents.get("coder")
             if not coder_agent:
                 raise RuntimeError("Coder Agent를 찾을 수 없습니다")
 
@@ -1047,8 +1062,8 @@ async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
             async for chunk in coder_agent.execute_task(task_description):
                 result += chunk
                 # Worker 출력 콜백 호출 (TUI 스트리밍)
-                if _WORKER_OUTPUT_CALLBACK:
-                    _WORKER_OUTPUT_CALLBACK("coder", chunk)
+                if _state.worker_output_callback:
+                    _state.worker_output_callback("coder", chunk)
 
             return result
 
@@ -1112,8 +1127,7 @@ async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         # Tool 결과 저장
-        global _LAST_TOOL_RESULTS
-        _LAST_TOOL_RESULTS.append({
+        _state.last_tool_results.append({
             "tool_name": "execute_parallel_tasks",
             "worker_name": "parallel_executor",
             "result": result_text

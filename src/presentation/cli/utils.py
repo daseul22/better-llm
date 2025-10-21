@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
+from rich import print as rich_print
+
 from src.infrastructure.config import get_data_dir
 
 
@@ -146,11 +148,11 @@ def print_header(title: str, width: int = 60) -> None:
         title: 헤더 제목
         width: 전체 너비
     """
-    print()
-    print("┌" + "─" * (width - 2) + "┐")
-    print(f"│ {title:<{width - 4}} │")
-    print("└" + "─" * (width - 2) + "┘")
-    print()
+    rich_print()
+    rich_print("┌" + "─" * (width - 2) + "┐")
+    rich_print(f"│ {title:<{width - 4}} │")
+    rich_print("└" + "─" * (width - 2) + "┘")
+    rich_print()
 
 
 def print_footer(
@@ -170,17 +172,17 @@ def print_footer(
         files_modified: 수정된 파일 수
         filepath: 저장된 히스토리 파일 경로
     """
-    print()
-    print("┌" + "─" * 58 + "┐")
-    print("│ " + "작업 완료".ljust(56) + " │")
-    print("├" + "─" * 58 + "┤")
-    print(f"│ 세션 ID: {session_id:<45} │")
-    print(f"│ 총 턴: {total_turns:<48} │")
-    print(f"│ 소요 시간: {duration:.1f}초{' ' * (48 - len(f'{duration:.1f}'))}│")
-    print(f"│ 수정된 파일: {files_modified}개{' ' * (45 - len(str(files_modified)))}│")
-    print(f"│ 히스토리: {filepath.name:<44} │")
-    print("└" + "─" * 58 + "┘")
-    print()
+    rich_print()
+    rich_print("┌" + "─" * 58 + "┐")
+    rich_print("│ " + "작업 완료".ljust(56) + " │")
+    rich_print("├" + "─" * 58 + "┤")
+    rich_print(f"│ 세션 ID: {session_id:<45} │")
+    rich_print(f"│ 총 턴: {total_turns:<48} │")
+    rich_print(f"│ 소요 시간: {duration:.1f}초{' ' * (48 - len(f'{duration:.1f}'))}│")
+    rich_print(f"│ 수정된 파일: {files_modified}개{' ' * (45 - len(str(files_modified)))}│")
+    rich_print(f"│ 히스토리: {filepath.name:<44} │")
+    rich_print("└" + "─" * 58 + "┘")
+    rich_print()
 
 
 def validate_user_input(user_input: str, max_length: int = 5000) -> Tuple[bool, Optional[str]]:

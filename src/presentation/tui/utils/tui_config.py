@@ -5,9 +5,12 @@ TUI 설정 관리 모듈
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -91,7 +94,7 @@ class TUIConfig:
                 return TUISettings()
 
         except Exception as e:
-            print(f"설정 로드 실패 (기본값 사용): {e}")
+            logger.warning(f"설정 로드 실패 (기본값 사용): {e}")
             return TUISettings()
 
     @staticmethod
@@ -120,7 +123,7 @@ class TUIConfig:
             return True
 
         except Exception as e:
-            print(f"설정 저장 실패: {e}")
+            logger.error(f"설정 저장 실패: {e}")
             return False
 
     @staticmethod
