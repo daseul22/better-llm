@@ -101,7 +101,8 @@ class OrchestratorTUI(App):
 
     BINDINGS = [
         # 기본 동작
-        # Ctrl+R은 MultilineInput 위젯에서 처리 (바인딩 충돌 방지)
+        # Enter는 MultilineInput 위젯에서 제출로 처리
+        # Ctrl+R은 MultilineInput 위젯에서 줄바꿈으로 처리
         Binding("ctrl+c", "interrupt_or_quit", "중단/종료"),
         Binding("ctrl+n", "new_session", "새 세션"),
         Binding("ctrl+s", "save_log", "로그 저장"),
@@ -354,7 +355,7 @@ class OrchestratorTUI(App):
         logger.info("TUI 앱 종료 완료")
 
     async def on_multiline_input_submitted(self, event: MultilineInput.Submitted) -> None:
-        """Ctrl+R 입력 시 작업 실행"""
+        """Enter 입력 시 작업 실행"""
         logger.info(f"🟢 [TUI] on_multiline_input_submitted 호출됨! event.value={event.value!r}")
 
         if not self.initialized:

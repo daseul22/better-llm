@@ -43,7 +43,7 @@ class TestMultilineInputSubmit:
         messages = []
         widget.post_message = lambda msg: messages.append(msg)
 
-        # Enter 키 이벤트 (character는 \r로 설정)
+        # Enter 키 이벤트
         event = Key(key="enter", character="\r")
         event.prevent_default = MagicMock()
         event.stop = MagicMock()
@@ -58,23 +58,40 @@ class TestMultilineInputSubmit:
         event.stop.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_submit_empty_text(self):
-        """빈 텍스트 제출 시에도 Submitted 메시지 발생."""
+    async def test_submit_empty_text_ignored(self):
+        """빈 텍스트 Enter 제출 시 무시됨 (Submitted 메시지 발생 안함)."""
         widget = MultilineInput()
         widget.text = ""
 
         messages = []
         widget.post_message = lambda msg: messages.append(msg)
 
+        # Enter 키 이벤트
         event = Key(key="enter", character="\r")
         event.prevent_default = MagicMock()
         event.stop = MagicMock()
 
         await widget.on_key(event)
 
-        assert len(messages) == 1
-        assert isinstance(messages[0], MultilineInput.Submitted)
-        assert messages[0].value == ""
+        # 빈 입력은 무시되므로 Submitted 메시지가 발생하지 않음
+        assert len(messages) == 0
+        # prevent_default/stop은 호출됨 (on_key에서 호출)
+        event.prevent_default.assert_called_once()
+        event.stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ctrl_r_inserts_newline(self):
+        """Ctrl+R 키로 줄바꿈 삽입 (BINDINGS에서 처리)."""
+        # 이 테스트는 BINDINGS가 action_insert_newline을 호출하는지 확인하는 것이므로
+        # 직접 action을 호출하여 테스트
+        widget = MultilineInput()
+        widget.text = "test"
+
+        # action_insert_newline 호출
+        widget.action_insert_newline()
+
+        # 텍스트 끝에 개행이 추가되었는지 확인
+        assert "\n" in widget.text
 
 
 class TestMultilineInputHistory:
