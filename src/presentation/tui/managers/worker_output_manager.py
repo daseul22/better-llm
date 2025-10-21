@@ -8,7 +8,7 @@ Worker 출력 관리 책임:
 """
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable, Deque
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -55,16 +55,16 @@ class WorkerOutputManager:
 
     def __init__(self, max_history_size: int = 1000) -> None:
         """
-        WorkerOutputManager 초기화
+        WorkerOutputManager 초기화.
 
         Args:
             max_history_size: 각 Worker별 최대 히스토리 크기 (기본값: 1000)
         """
-        self._output_history: Dict[str, deque[OutputLine]] = {}
-        self._all_output: deque[OutputLine] = deque(maxlen=max_history_size)
-        self._max_history_size = max_history_size
+        self._output_history: Dict[str, Deque[OutputLine]] = {}
+        self._all_output: Deque[OutputLine] = deque(maxlen=max_history_size)
+        self._max_history_size: int = max_history_size
         self._line_counter: Dict[str, int] = {}
-        self._subscribers: Dict[str, List[callable]] = {}
+        self._subscribers: Dict[str, List[Callable[[OutputLine], None]]] = {}
         logger.info(f"WorkerOutputManager initialized (max_history: {max_history_size})")
 
     def stream_output(self, worker_id: str, output: str) -> None:
@@ -305,7 +305,7 @@ class WorkerOutputManager:
     def subscribe(
         self,
         worker_id: str,
-        callback: callable
+        callback: Callable[[OutputLine], None]
     ) -> None:
         """
         특정 Worker의 출력을 실시간으로 구독합니다.
@@ -316,7 +316,7 @@ class WorkerOutputManager:
 
         Example:
             >>> manager = WorkerOutputManager()
-            >>> def on_output(line):
+            >>> def on_output(line: OutputLine) -> None:
             ...     print(f"Received: {line.content}")
             >>> manager.subscribe("coder", on_output)
             >>> manager.stream_output("coder", "New output")
@@ -330,7 +330,7 @@ class WorkerOutputManager:
     def unsubscribe(
         self,
         worker_id: str,
-        callback: callable
+        callback: Callable[[OutputLine], None]
     ) -> None:
         """
         Worker 출력 구독을 취소합니다.
@@ -341,7 +341,7 @@ class WorkerOutputManager:
 
         Example:
             >>> manager = WorkerOutputManager()
-            >>> def on_output(line):
+            >>> def on_output(line: OutputLine) -> None:
             ...     print(line.content)
             >>> manager.subscribe("coder", on_output)
             >>> manager.unsubscribe("coder", on_output)

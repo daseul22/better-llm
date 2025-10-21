@@ -29,7 +29,7 @@ class UpdateManager:
     - 토큰 사용량 업데이트 (1초마다)
     """
 
-    def __init__(self, app: "OrchestratorTUI"):
+    def __init__(self, app: "OrchestratorTUI") -> None:
         """
         초기화.
 
@@ -48,8 +48,9 @@ class UpdateManager:
         try:
             worker_status = self.app.query_one("#worker-status", Static)
             worker_status.update(message)
-        except Exception:
-            pass  # 위젯이 아직 없으면 무시
+        except Exception as e:
+            # 위젯이 아직 마운트되지 않았거나 접근 불가능한 경우 (정상적인 초기화 과정)
+            logger.debug(f"Worker status widget not available, skipping update: {e}")
 
     def update_worker_status_timer(self) -> None:
         """
@@ -106,8 +107,10 @@ class UpdateManager:
                     )
                 else:
                     self.update_worker_status(f"{spinner} Manager Agent 실행 중... ⏱️  {elapsed:.1f}s")
-        except Exception:
-            pass
+        except Exception as e:
+            # 타이머 업데이트 중 예외 발생 (위젯 접근 실패 등)
+            # 타이머는 계속 실행되므로 debug 레벨로 로깅
+            logger.debug(f"Worker status timer update failed: {e}")
 
     def update_token_info(self) -> None:
         """

@@ -13,6 +13,14 @@
 - 문서화 개선 (설치 가이드, 빠른 시작, 사용법, 문제 해결)
 
 ### Changed
+- **TUI 리팩토링 (2025-01-20)**
+  - SessionManager 캡슐화 강화
+  - 세션 생성 로직 중앙화 (팩토리 메서드 패턴)
+  - 순환 의존성 제거 (의존성 역전 원칙 적용)
+  - 복잡한 메서드 분리 (switch_to_session 56줄 → 27줄)
+  - 타입 힌팅 완성 (mypy 에러 0개 달성)
+  - 예외 처리 개선 (try-except: pass 패턴 제거)
+  - 프로퍼티 캐싱 최적화 (LRU 캐시 적용)
 - README.md 개선 (Quick Start, 문서 링크 추가)
 - CONTRIBUTING.md 작성 (기여 가이드)
 

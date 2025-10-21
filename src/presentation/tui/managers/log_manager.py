@@ -74,18 +74,18 @@ class LogManager:
                     content.width = effective_width
 
             except (AttributeError, ValueError) as e:
-                # 크기 계산 실패 시 로깅 후 기본 동작
-                logger.warning(f"로그 너비 계산 실패: {e}, 기본 동작 사용")
+                # 크기 계산 실패 시 로깅 후 기본 동작 (위젯 초기화 중 발생 가능)
+                logger.debug(f"로그 너비 계산 실패 (초기화 중일 수 있음): {e}")
             except Exception as e:
                 # 기타 예외 시 로깅 후 기본 동작
-                logger.warning(f"로그 렌더링 중 예외: {e}, 기본 동작 사용")
+                logger.warning(f"로그 렌더링 중 예상치 못한 예외: {e}", exc_info=True)
 
             output_log.write(content)
             # 로그 버퍼에도 추가
             self._track_log_output(str(content))
         except Exception as e:
-            # write_log 자체가 실패하면 로깅만 하고 넘어감
-            logger.error(f"로그 출력 실패: {e}")
+            # write_log 자체가 실패하면 로깅만 하고 넘어감 (critical한 에러)
+            logger.error(f"로그 출력 실패: {e}", exc_info=True)
 
     def _track_log_output(self, content: str) -> None:
         """

@@ -51,6 +51,7 @@ class SessionData:
         metrics_collector: 메트릭 수집기
         status: 세션 상태
         end_time: 세션 종료 시간 (옵셔널)
+        input_buffer: 입력 버퍼 (기본값: 빈 문자열)
     """
     session_id: str
     history: ConversationHistory
@@ -60,6 +61,7 @@ class SessionData:
     metrics_collector: MetricsCollector
     status: SessionStatus = SessionStatus.COMPLETED
     end_time: Optional[float] = None
+    input_buffer: str = ""
 
     def __repr__(self) -> str:
         return f"SessionData(id={self.session_id}, status={self.status})"
@@ -120,18 +122,10 @@ class SessionManager:
             logger.error(f"Session already exists: {session_id}")
             raise ValueError(f"Session with ID '{session_id}' already exists")
 
-        # 세션 데이터 생성
-        metrics_repository = InMemoryMetricsRepository()
-        metrics_collector = MetricsCollector(metrics_repository)
-
-        session_data = SessionData(
+        # Phase 1 - Step 1.2: 중앙화된 팩토리 메서드 사용
+        session_data = self.create_session_data(
             session_id=session_id,
-            history=ConversationHistory(),
-            log_lines=[],
-            start_time=time.time(),
-            metrics_repository=metrics_repository,
-            metrics_collector=metrics_collector,
-            status=SessionStatus.COMPLETED,
+            user_request=session_config.user_request
         )
 
         self._sessions[session_id] = session_data
@@ -551,36 +545,20 @@ class SessionManager:
             empty_index = len(self._session_list)
             empty_session_id = f"empty-{empty_index}"
 
-            # 빈 세션 생성
-            metrics_repository = InMemoryMetricsRepository()
-            metrics_collector = MetricsCollector(metrics_repository)
-
-            empty_session = SessionData(
+            # Phase 1 - Step 1.2: 중앙화된 팩토리 메서드 사용
+            empty_session = self.create_session_data(
                 session_id=empty_session_id,
-                history=ConversationHistory(),
-                log_lines=[],
-                start_time=time.time(),
-                metrics_repository=metrics_repository,
-                metrics_collector=metrics_collector,
-                status=SessionStatus.COMPLETED,
+                user_request=""
             )
 
             self._sessions[empty_session_id] = empty_session
             self._session_list.append(empty_session)
             logger.info(f"Created empty session at index {empty_index}: {empty_session_id}")
 
-        # 원하는 인덱스에 세션 생성
-        metrics_repository = InMemoryMetricsRepository()
-        metrics_collector = MetricsCollector(metrics_repository)
-
-        session_data = SessionData(
+        # Phase 1 - Step 1.2: 중앙화된 팩토리 메서드 사용
+        session_data = self.create_session_data(
             session_id=session_id,
-            history=ConversationHistory(),
-            log_lines=[],
-            start_time=time.time(),
-            metrics_repository=metrics_repository,
-            metrics_collector=metrics_collector,
-            status=SessionStatus.COMPLETED,
+            user_request=user_request
         )
 
         # 기존 세션이 있다면 딕셔너리에서 제거
@@ -635,3 +613,176 @@ class SessionManager:
             f"Updated session at index {index}: "
             f"{old_session.session_id} -> {session_data.session_id}"
         )
+
+    # === Phase 1 - Step 1.2: 세션 생성 로직 중앙화 ===
+
+    def create_session_data(
+        self,
+        session_id: str,
+        user_request: str = "",
+        initial_messages: Optional[list[dict]] = None
+    ) -> SessionData:
+        """
+        세션 데이터를 생성합니다 (팩토리 메서드).
+
+        모든 세션 생성이 이 메서드를 통해 이루어져야 합니다.
+        metrics, history 등이 일관되게 초기화됩니다.
+
+        Args:
+            session_id: 세션 ID
+            user_request: 사용자 요청 (기본값: "")
+            initial_messages: 초기 메시지 목록 (기본값: None)
+
+        Returns:
+            SessionData: 생성된 세션 데이터
+
+        Example:
+            >>> manager = SessionManager()
+            >>> session = manager.create_session_data(
+            ...     session_id="test-001",
+            ...     user_request="Implement feature X"
+            ... )
+            >>> print(session.session_id)
+            test-001
+        """
+        # ConversationHistory 초기화
+        history = ConversationHistory()
+        if initial_messages:
+            for msg in initial_messages:
+                history.add_message(msg["role"], msg["content"])
+
+        # Metrics 초기화
+        metrics_repository = InMemoryMetricsRepository()
+        metrics_collector = MetricsCollector(metrics_repository)
+
+        # SessionData 생성
+        session_data = SessionData(
+            session_id=session_id,
+            history=history,
+            log_lines=[],
+            start_time=time.time(),
+            metrics_repository=metrics_repository,
+            metrics_collector=metrics_collector,
+            status=SessionStatus.COMPLETED,
+            input_buffer=""
+        )
+
+        logger.debug(f"Created session data: {session_id}")
+        return session_data
+
+    # === Phase 1 - Step 1.1: 캡슐화 강화 메서드 ===
+
+    def get_session(self, session_id: str) -> Optional[SessionData]:
+        """
+        세션을 안전하게 가져옵니다.
+
+        Args:
+            session_id: 조회할 세션 ID
+
+        Returns:
+            세션 데이터 (없으면 None)
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config = SessionConfig(session_id="test-001", user_request="Test")
+            >>> manager.start_session(config)
+            >>> session = manager.get_session("test-001")
+            >>> print(session is not None)
+            True
+        """
+        return self._sessions.get(session_id)
+
+    def update_session_input(self, session_id: str, input_text: str) -> bool:
+        """
+        세션의 입력 버퍼를 업데이트합니다.
+
+        Args:
+            session_id: 세션 ID
+            input_text: 업데이트할 입력 텍스트
+
+        Returns:
+            bool: 성공 여부
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config = SessionConfig(session_id="test-001", user_request="Test")
+            >>> manager.start_session(config)
+            >>> success = manager.update_session_input("test-001", "Hello")
+            >>> print(success)
+            True
+        """
+        session = self.get_session(session_id)
+        if session:
+            session.input_buffer = input_text
+            logger.debug(f"Updated input buffer for session {session_id}")
+            return True
+        logger.warning(f"Session not found: {session_id}")
+        return False
+
+    def add_message_to_session(self, session_id: str, role: str, content: str) -> bool:
+        """
+        세션에 메시지를 추가합니다.
+
+        Args:
+            session_id: 세션 ID
+            role: 메시지 역할 (user, assistant, system)
+            content: 메시지 내용
+
+        Returns:
+            추가 성공 여부
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config = SessionConfig(session_id="test-001", user_request="Test")
+            >>> manager.start_session(config)
+            >>> success = manager.add_message_to_session("test-001", "user", "Hello")
+            >>> print(success)
+            True
+        """
+        session = self.get_session(session_id)
+        if session:
+            session.history.add_message(role, content)
+            logger.debug(f"Added {role} message to session {session_id}")
+            return True
+        logger.warning(f"Session not found: {session_id}")
+        return False
+
+    def replace_session_at_index(self, index: int, session_data: SessionData) -> bool:
+        """
+        특정 인덱스의 세션을 완전히 교체합니다.
+
+        Args:
+            index: 세션 인덱스
+            session_data: 새로운 세션 데이터
+
+        Returns:
+            교체 성공 여부
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config = SessionConfig(session_id="test-001", user_request="Test")
+            >>> manager.start_session(config)
+            >>> new_session = SessionData(...)
+            >>> success = manager.replace_session_at_index(0, new_session)
+            >>> print(success)
+            True
+        """
+        if index < 0 or index >= len(self._session_list):
+            logger.error(f"Invalid session index: {index}")
+            return False
+
+        old_session = self._session_list[index]
+
+        # 기존 세션을 딕셔너리에서 제거
+        if old_session.session_id in self._sessions:
+            del self._sessions[old_session.session_id]
+
+        # 새 세션 저장
+        self._sessions[session_data.session_id] = session_data
+        self._session_list[index] = session_data
+
+        logger.info(
+            f"Replaced session at index {index}: "
+            f"{old_session.session_id} -> {session_data.session_id}"
+        )
+        return True

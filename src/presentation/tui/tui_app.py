@@ -10,7 +10,7 @@ import time
 import logging
 import os
 from pathlib import Path
-from typing import Optional, List, Tuple, Union, Dict
+from typing import Optional, List, Tuple, Union, Dict, Any, Callable
 from enum import Enum
 
 from textual.app import App, ComposeResult
@@ -149,7 +149,7 @@ class OrchestratorTUI(App):
         Binding("ctrl+3", "switch_to_session_3", "세션 3"),
     ]
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         # 멀티 세션 관리는 SessionManager가 담당 (Phase 1.4)
         # self.sessions와 self.active_session_index는 제거되고
@@ -157,12 +157,12 @@ class OrchestratorTUI(App):
 
         # 현재 세션 참조 (편의를 위한 프로퍼티)
         self.manager: Optional[ManagerAgent] = None
-        self.initialized = False
-        self.current_task = None  # 현재 실행 중인 asyncio Task
-        self.task_start_time = None  # 작업 시작 시간
-        self.timer_active = False  # 타이머 활성화 여부
-        self.ctrl_c_count = 0  # Ctrl+C 누른 횟수
-        self.last_ctrl_c_time = 0  # 마지막 Ctrl+C 누른 시간
+        self.initialized: bool = False
+        self.current_task: Optional[Any] = None  # 현재 실행 중인 asyncio Task
+        self.task_start_time: Optional[float] = None  # 작업 시작 시간
+        self.timer_active: bool = False  # 타이머 활성화 여부
+        self.ctrl_c_count: int = 0  # Ctrl+C 누른 횟수
+        self.last_ctrl_c_time: float = 0  # 마지막 Ctrl+C 누른 시간
 
         # 새로운 기능 - Phase 1~4
         self.input_history = InputHistory(max_size=100)  # 히스토리 네비게이션
@@ -177,6 +177,10 @@ class OrchestratorTUI(App):
         self.terminal_width: int = 120
         self.terminal_height: int = 30
         self.metrics_panel_hidden_by_layout: bool = False  # 레이아웃에 의해 강제로 숨겨졌는지 여부
+
+        # Phase 3.3: 프로퍼티 캐싱 (세션 관련 프로퍼티)
+        self._cached_current_session: Optional[SessionData] = None
+        self._cached_session_index: int = -1
 
         # 자동 완성 엔진
         project_root = get_project_root()
@@ -215,20 +219,63 @@ class OrchestratorTUI(App):
         self.callback_handlers = CallbackHandlers(self)
 
         # 슬래시 커맨드 핸들러 초기화
-        self.slash_command_handler = SlashCommandHandler(self)
+        self.slash_command_handler = SlashCommandHandler(
+            session_manager=self.session_manager,
+            query_one_func=self.query_one,
+            write_log_func=self.write_log,
+            action_show_help_func=self.action_show_help,
+            action_toggle_metrics_panel_func=self.action_toggle_metrics_panel,
+            action_search_log_func=self.action_search_log,
+            perform_search_func=self.perform_search,
+            load_session_func=self.load_session,
+            update_status_bar_func=self._update_status_bar,
+        )
 
         # 작업 실행 핸들러 초기화
         self.task_runner = TaskRunner(self)
 
         # 액션 핸들러 초기화 (Phase 1.3)
         from src.presentation.tui.actions.action_handler import ActionHandler
-        self.action_handler = ActionHandler(self)
+        self.action_handler = ActionHandler(
+            session_manager=self.session_manager,
+            update_manager=self.update_manager,
+            settings=self.settings,
+            input_history=self.input_history,
+            manager=self.manager,
+            query_one_func=self.query_one,
+            write_log_func=self.write_log,
+            notify_func=self.notify,
+            switch_to_session_func=self.switch_to_session,
+            load_session_func=self.load_session,
+            perform_search_func=self.perform_search,
+            push_screen_func=self.push_screen,
+            apply_metrics_panel_visibility_func=self.apply_metrics_panel_visibility,
+            apply_workflow_panel_visibility_func=self.apply_workflow_panel_visibility,
+            apply_worker_status_visibility_func=self.apply_worker_status_visibility,
+            apply_output_mode_func=self.apply_output_mode,
+            update_status_bar_func=self._update_status_bar,
+            exit_func=self.exit,
+            display_error_statistics_func=self._display_error_statistics,
+            invalidate_session_cache_func=self.invalidate_session_cache,  # Phase 3.3
+        )
 
     @property
     def current_session(self) -> SessionData:
-        """현재 활성 세션 데이터 반환 (Phase 1.4: SessionManager 위임)"""
+        """
+        현재 활성 세션 데이터 반환 (Phase 1.4: SessionManager 위임).
+
+        Phase 3.3: 프로퍼티 캐싱 적용 (세션 인덱스 기반).
+        """
         active_index = self.session_manager.get_active_session_index()
-        return self.session_manager.get_session_by_index(active_index)
+
+        # 캐시가 유효한 경우 (세션 인덱스가 동일)
+        if self._cached_session_index == active_index and self._cached_current_session is not None:
+            return self._cached_current_session
+
+        # 캐시 갱신
+        self._cached_session_index = active_index
+        self._cached_current_session = self.session_manager.get_session_by_index(active_index)
+        return self._cached_current_session
 
     @property
     def session_id(self) -> str:
@@ -254,6 +301,15 @@ class OrchestratorTUI(App):
     def start_time(self) -> float:
         """현재 세션 시작 시간 반환"""
         return self.current_session.start_time
+
+    def invalidate_session_cache(self) -> None:
+        """
+        세션 캐시 무효화 (Phase 3.3).
+
+        세션이 전환되거나 세션 데이터가 변경될 때 호출해야 합니다.
+        """
+        self._cached_current_session = None
+        self._cached_session_index = -1
 
     def compose(self) -> ComposeResult:
         """UI 구성 (UIComposer로 위임)"""
@@ -325,22 +381,67 @@ class OrchestratorTUI(App):
 
     async def handle_slash_command(self, command: str) -> None:
         """슬래시 명령 처리 (SlashCommandHandler로 위임)"""
+        self.slash_command_handler.sync_state_from_tui(log_lines=self.log_lines)
         await self.slash_command_handler.handle_slash_command(command)
+
+    def _sync_action_handler_state(self) -> None:
+        """ActionHandler에 TUI 상태 동기화"""
+        self.action_handler.sync_state_from_tui(
+            ctrl_c_count=self.ctrl_c_count,
+            last_ctrl_c_time=self.last_ctrl_c_time,
+            current_task=self.current_task,
+            timer_active=self.timer_active,
+            search_query=self.search_query,
+            show_metrics_panel=self.show_metrics_panel,
+            show_workflow_panel=self.show_workflow_panel,
+            show_worker_status=self.show_worker_status,
+            output_mode=self.output_mode,
+            active_workers=self.active_workers,
+            current_worker_tab=self.current_worker_tab,
+            log_lines=self.log_lines,
+        )
+
+    def _apply_action_handler_state(self) -> None:
+        """ActionHandler의 상태를 TUI로 반영"""
+        state_updates = self.action_handler.get_state_updates()
+        self.ctrl_c_count = state_updates["ctrl_c_count"]
+        self.last_ctrl_c_time = state_updates["last_ctrl_c_time"]
+        self.current_task = state_updates["current_task"]
+        self.timer_active = state_updates["timer_active"]
+        self.search_query = state_updates["search_query"]
+        self.show_metrics_panel = state_updates["show_metrics_panel"]
+        self.show_workflow_panel = state_updates["show_workflow_panel"]
+        self.show_worker_status = state_updates["show_worker_status"]
+        self.output_mode = state_updates["output_mode"]
+        self.current_worker_tab = state_updates["current_worker_tab"]
 
     async def action_new_session(self) -> None:
         """Ctrl+N: 새 세션 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_new_session()
+        self._apply_action_handler_state()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """입력 변경 이벤트 - 현재는 사용하지 않음."""
         pass
 
     def on_resize(self, event: events.Resize) -> None:
-        """화면 크기 변경 이벤트 (LayoutManager로 위임)."""
+        """
+        화면 크기 변경 이벤트 (LayoutManager로 위임).
+
+        Args:
+            event: Resize 이벤트 객체
+        """
         self.layout_manager.calculate_layout((event.size.width, event.size.height))
 
     def update_layout_for_size(self, width: int, height: int) -> None:
-        """레이아웃 크기 업데이트 (LayoutManager로 위임)."""
+        """
+        레이아웃 크기 업데이트 (LayoutManager로 위임).
+
+        Args:
+            width: 터미널 너비
+            height: 터미널 높이
+        """
         self.layout_manager.calculate_layout((width, height))
 
     def _apply_layout_mode(self) -> None:
@@ -390,8 +491,12 @@ class OrchestratorTUI(App):
                 metrics_container.remove_class("hidden")
             else:
                 metrics_container.add_class("hidden")
-        except Exception:
-            pass  # 위젯이 아직 없으면 무시
+        except NoMatches:
+            # 위젯이 아직 마운트되지 않은 경우 (정상적인 초기화 과정)
+            logger.debug("Metrics container not yet mounted, skipping visibility update")
+        except Exception as e:
+            # 예상치 못한 에러
+            logger.error(f"Failed to apply metrics panel visibility: {e}", exc_info=True)
 
     def apply_workflow_panel_visibility(self) -> None:
         """워크플로우 패널 표시/숨김 상태 적용"""
@@ -401,8 +506,12 @@ class OrchestratorTUI(App):
                 workflow_container.remove_class("hidden")
             else:
                 workflow_container.add_class("hidden")
-        except Exception:
-            pass  # 위젯이 아직 없으면 무시
+        except NoMatches:
+            # 위젯이 아직 마운트되지 않은 경우 (정상적인 초기화 과정)
+            logger.debug("Workflow container not yet mounted, skipping visibility update")
+        except Exception as e:
+            # 예상치 못한 에러
+            logger.error(f"Failed to apply workflow panel visibility: {e}", exc_info=True)
 
     def apply_worker_status_visibility(self) -> None:
         """Worker 상태 패널 표시/숨김 상태 적용"""
@@ -412,15 +521,32 @@ class OrchestratorTUI(App):
                 worker_status_container.remove_class("hidden")
             else:
                 worker_status_container.add_class("hidden")
-        except Exception:
-            pass  # 위젯이 아직 없으면 무시
+        except NoMatches:
+            # 위젯이 아직 마운트되지 않은 경우 (정상적인 초기화 과정)
+            logger.debug("Worker status container not yet mounted, skipping visibility update")
+        except Exception as e:
+            # 예상치 못한 에러
+            logger.error(f"Failed to apply worker status visibility: {e}", exc_info=True)
 
     def on_workflow_update(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
-        """워크플로우 상태 업데이트 콜백 (CallbackHandlers로 위임)."""
+        """
+        워크플로우 상태 업데이트 콜백 (CallbackHandlers로 위임).
+
+        Args:
+            worker_name: Worker 이름
+            status: 상태 문자열
+            error: 에러 메시지 (선택적)
+        """
         self.callback_handlers.on_workflow_update(worker_name, status, error)
 
     def on_worker_output(self, worker_name: str, chunk: str) -> None:
-        """Worker 출력 콜백 (CallbackHandlers로 위임)."""
+        """
+        Worker 출력 콜백 (CallbackHandlers로 위임).
+
+        Args:
+            worker_name: Worker 이름
+            chunk: 출력 청크
+        """
         self.callback_handlers.on_worker_output(worker_name, chunk)
 
     def apply_output_mode(self) -> None:
@@ -445,15 +571,21 @@ class OrchestratorTUI(App):
 
     async def action_save_log(self) -> None:
         """Ctrl+S: 로그 저장 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_save_log()
+        self._apply_action_handler_state()
 
     async def action_show_session_browser(self) -> None:
         """Ctrl+L: 세션 브라우저 표시 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_show_session_browser()
+        self._apply_action_handler_state()
 
     async def action_search_log(self) -> None:
         """Ctrl+F: 로그 검색 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_search_log()
+        self._apply_action_handler_state()
 
     async def perform_search(self, query: str) -> None:
         """
@@ -543,21 +675,20 @@ class OrchestratorTUI(App):
             with open(session_file, "r", encoding="utf-8") as f:
                 session_data = json.load(f)
 
-            # 새 세션 생성 및 히스토리 복원 (Phase 1.4: SessionManager 사용)
-            loaded_session = SessionData(
+            # Phase 1 - Step 1.2: 중앙화된 팩토리 메서드 사용
+            initial_messages = session_data.get("history", [])
+            loaded_session = self.session_manager.create_session_data(
                 session_id=session_id,
-                history=ConversationHistory(),
-                log_lines=[],
-                start_time=time.time(),
-                metrics_repository=InMemoryMetricsRepository(),
-                metrics_collector=MetricsCollector(InMemoryMetricsRepository())
+                user_request="Loaded session",
+                initial_messages=initial_messages
             )
-            for msg in session_data.get("history", []):
-                loaded_session.history.add_message(msg["role"], msg["content"])
 
             # 현재 세션 교체
             active_index = self.session_manager.get_active_session_index()
             self.session_manager.update_session_at_index(active_index, loaded_session)
+
+            # Phase 3.3: 세션 캐시 무효화 (세션 데이터 변경 시)
+            self.invalidate_session_cache()
 
             # 세션 ID 업데이트
             update_session_id(session_id)
@@ -633,27 +764,131 @@ class OrchestratorTUI(App):
 
     async def action_show_error_stats(self) -> None:
         """F6 키: 에러 통계 표시 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_show_error_stats()
+        self._apply_action_handler_state()
 
     async def action_next_worker_tab(self) -> None:
         """Ctrl+Tab: 다음 워커 탭으로 전환 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_next_worker_tab()
+        self._apply_action_handler_state()
 
     async def action_prev_worker_tab(self) -> None:
         """Ctrl+Shift+Tab: 이전 워커 탭으로 전환 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_prev_worker_tab()
+        self._apply_action_handler_state()
 
     async def action_switch_to_session_1(self) -> None:
         """Ctrl+1: 세션 1로 전환 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_switch_to_session_1()
+        self._apply_action_handler_state()
 
     async def action_switch_to_session_2(self) -> None:
         """Ctrl+2: 세션 2로 전환 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_switch_to_session_2()
+        self._apply_action_handler_state()
 
     async def action_switch_to_session_3(self) -> None:
         """Ctrl+3: 세션 3로 전환 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_switch_to_session_3()
+        self._apply_action_handler_state()
+
+    def _ensure_session_exists(self, index: int) -> None:
+        """
+        세션이 존재하지 않으면 생성.
+
+        Args:
+            index: 세션 인덱스 (0, 1, 2)
+        """
+        while self.session_manager.get_session_count() <= index:
+            new_session_id = generate_session_id()
+            new_index = self.session_manager.get_session_count()
+            self.session_manager.create_session_at_index(new_index, new_session_id)
+
+    def _is_already_active_session(self, index: int) -> bool:
+        """
+        이미 활성 세션인지 확인.
+
+        Args:
+            index: 세션 인덱스 (0, 1, 2)
+
+        Returns:
+            이미 활성 세션이면 True, 아니면 False
+        """
+        active_index = self.session_manager.get_active_session_index()
+        return active_index == index
+
+    def _switch_session_in_manager(self, index: int) -> None:
+        """
+        SessionManager를 통해 세션 전환.
+
+        Args:
+            index: 세션 인덱스 (0, 1, 2)
+        """
+        self.session_manager.switch_to_session(index)
+
+    def _restore_session_ui(self) -> None:
+        """세션 UI 복원 (로그, 메트릭, 상태바 등)."""
+        # Phase 3.3: 세션 캐시 무효화 (세션 전환 시)
+        self.invalidate_session_cache()
+
+        # UI 업데이트: 로그 교체
+        output_log = self.query_one("#output-log", RichLog)
+        output_log.clear()
+
+        # 현재 세션 로그 복원
+        for log_line in self.current_session.log_lines:
+            output_log.write(log_line)
+
+        # 메트릭 수집기 업데이트
+        set_metrics_collector(self.current_session.metrics_collector, self.session_id)
+        update_session_id(self.session_id)
+
+        # Manager Agent 토큰 사용량 초기화 (세션별로 독립적)
+        if self.manager:
+            self.manager.reset_token_usage()
+
+        # 상태바 업데이트
+        self._update_status_bar()
+
+    def _notify_session_switch_success(self, index: int) -> None:
+        """
+        세션 전환 성공 알림.
+
+        Args:
+            index: 세션 인덱스 (0, 1, 2)
+        """
+        if self.settings.enable_notifications:
+            self.notify(
+                f"세션 {index + 1}로 전환 (ID: {self.session_id[:8]}...)",
+                severity="information"
+            )
+
+    def _notify_already_active_session(self, index: int) -> None:
+        """
+        이미 활성 세션임을 알림.
+
+        Args:
+            index: 세션 인덱스 (0, 1, 2)
+        """
+        if self.settings.enable_notifications:
+            self.notify(f"이미 세션 {index + 1}입니다", severity="information")
+
+    def _handle_session_switch_error(self, error: Exception) -> None:
+        """
+        세션 전환 에러 처리.
+
+        Args:
+            error: 발생한 예외
+        """
+        logger.error(f"세션 전환 실패: {error}")
+        if self.settings.enable_notifications and self.settings.notify_on_error:
+            self.notify(f"세션 전환 실패: {error}", severity="error")
 
     async def switch_to_session(self, index: int) -> None:
         """
@@ -663,93 +898,83 @@ class OrchestratorTUI(App):
             index: 세션 인덱스 (0=Ctrl+1, 1=Ctrl+2, 2=Ctrl+3)
         """
         try:
-            # 세션이 아직 없으면 생성 (Phase 1.4: SessionManager 사용)
-            while self.session_manager.get_session_count() <= index:
-                new_session_id = generate_session_id()
-                new_index = self.session_manager.get_session_count()
-                self.session_manager.create_session_at_index(new_index, new_session_id)
+            # 세션이 아직 없으면 생성
+            self._ensure_session_exists(index)
 
             # 이미 현재 세션이면 무시
-            active_index = self.session_manager.get_active_session_index()
-            if active_index == index:
-                if self.settings.enable_notifications:
-                    self.notify(f"이미 세션 {index + 1}입니다", severity="information")
+            if self._is_already_active_session(index):
+                self._notify_already_active_session(index)
                 return
 
             # 세션 전환
-            old_index = active_index
-            self.session_manager.switch_to_session(index)
+            self._switch_session_in_manager(index)
 
-            # UI 업데이트: 로그 교체
-            output_log = self.query_one("#output-log", RichLog)
-            output_log.clear()
-
-            # 현재 세션 로그 복원
-            for log_line in self.current_session.log_lines:
-                output_log.write(log_line)
-
-            # 메트릭 수집기 업데이트
-            set_metrics_collector(self.current_session.metrics_collector, self.session_id)
-            update_session_id(self.session_id)
-
-            # Manager Agent 토큰 사용량 초기화 (세션별로 독립적)
-            if self.manager:
-                self.manager.reset_token_usage()
-
-            # 상태바 업데이트
-            self._update_status_bar()
+            # UI 업데이트
+            self._restore_session_ui()
 
             # 알림 표시
-            if self.settings.enable_notifications:
-                self.notify(
-                    f"세션 {index + 1}로 전환 (ID: {self.session_id[:8]}...)",
-                    severity="information"
-                )
+            self._notify_session_switch_success(index)
 
         except Exception as e:
-            logger.error(f"세션 전환 실패: {e}")
-            if self.settings.enable_notifications and self.settings.notify_on_error:
-                self.notify(f"세션 전환 실패: {e}", severity="error")
+            self._handle_session_switch_error(e)
 
     async def action_interrupt_or_quit(self) -> None:
         """Ctrl+C: 작업 중단 또는 종료 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_interrupt_or_quit()
+        self._apply_action_handler_state()
 
     async def action_show_help(self) -> None:
         """?: 도움말 표시 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_show_help()
+        self._apply_action_handler_state()
 
     async def action_show_settings(self) -> None:
         """F2: 설정 표시 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_show_settings()
+        self._apply_action_handler_state()
 
     async def action_toggle_metrics_panel(self) -> None:
         """Ctrl+M: 메트릭 패널 토글 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_toggle_metrics_panel()
+        self._apply_action_handler_state()
 
     async def action_toggle_workflow_panel(self) -> None:
         """F4: 워크플로우 패널 토글 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_toggle_workflow_panel()
+        self._apply_action_handler_state()
 
     async def action_toggle_worker_status(self) -> None:
         """F5: Worker 상태 패널 토글 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_toggle_worker_status()
+        self._apply_action_handler_state()
 
     async def action_history_up(self) -> None:
         """Up: 이전 입력 히스토리 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_history_up()
+        self._apply_action_handler_state()
 
     async def action_history_down(self) -> None:
         """Down: 다음 입력 히스토리 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_history_down()
+        self._apply_action_handler_state()
 
     async def action_toggle_output_mode(self) -> None:
         """Ctrl+O: Manager/Worker 출력 전환 (ActionHandler로 위임)"""
+        self._sync_action_handler_state()
         await self.action_handler.action_toggle_output_mode()
+        self._apply_action_handler_state()
 
 
-def main():
-    """메인 함수"""
+def main() -> None:
+    """메인 함수."""
     # 환경변수에서 로깅 설정 로드
     log_level = os.getenv("LOG_LEVEL", "INFO")
     log_format = os.getenv("LOG_FORMAT", "json")

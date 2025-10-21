@@ -7,7 +7,7 @@ OrchestratorTUI의 초기화 로직을 분리하여
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Tuple, List, Any
 
 from textual.widgets import Static, RichLog
 
@@ -45,7 +45,7 @@ class InitializationManager:
     - 콜백 설정
     """
 
-    def __init__(self, app: "OrchestratorTUI"):
+    def __init__(self, app: "OrchestratorTUI") -> None:
         """
         초기화.
 
@@ -115,7 +115,7 @@ class InitializationManager:
         token_status = "설정됨" if (oauth_token and len(oauth_token) > 10) else "미설정"
         logger.info(f"환경 검증 완료: work_dir={work_dir}, oauth_token={token_status}")
 
-    async def _initialize_workers(self) -> tuple[list[str], int]:
+    async def _initialize_workers(self) -> Tuple[List[str], int]:
         """
         Worker Agent들 초기화.
 
@@ -145,7 +145,7 @@ class InitializationManager:
         logger.info(f"Worker 초기화 완료: {worker_count}개 ({worker_list})")
         return worker_names, worker_count
 
-    async def _initialize_manager(self, worker_tools_server) -> bool:
+    async def _initialize_manager(self, worker_tools_server: Any) -> bool:
         """
         Manager Agent 초기화.
 

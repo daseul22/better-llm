@@ -21,6 +21,7 @@ Better-LLM 프로젝트의 개발 히스토리, 구현 상세, 리팩토링 기�
 - [**Import 수정**](refactoring/import-fixes.md) - Import 경로 문제 해결 및 개선
 - [**Phase 1 리팩토링**](refactoring/phase1.md) - 초기 리팩토링 작업 요약
 - [**구현 요약**](refactoring/implementation-summary.md) - 전체 구현 요약 및 통합
+- [**TUI 리팩토링 2025**](refactoring/tui-refactoring-2025.md) - TUI App Critical 이슈 해결 및 품질 개선
 
 ## 관련 문서
 

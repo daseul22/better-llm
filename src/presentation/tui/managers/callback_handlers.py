@@ -136,7 +136,8 @@ class CallbackHandlers:
                 no_workers_tab = self.app.query_one("#no-workers-tab", TabPane)
                 worker_tabs.remove_children([no_workers_tab])
             except NoMatches:
-                pass  # 이미 제거됨
+                # 탭이 이미 제거되었거나 존재하지 않음 (정상적인 경우)
+                logger.debug("No workers tab already removed or doesn't exist")
 
             # 새 탭 추가
             tab = WorkerTabPane(

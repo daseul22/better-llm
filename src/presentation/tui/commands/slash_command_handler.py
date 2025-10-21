@@ -5,7 +5,7 @@ OrchestratorTUI의 슬래시 커맨드 처리 로직을 분리하여
 단일 책임 원칙(SRP)을 준수합니다.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Any, Dict, List
 from pathlib import Path
 
 from textual.widgets import RichLog, Static
@@ -21,7 +21,7 @@ from src.presentation.cli.utils import generate_session_id
 from src.presentation.cli.feedback import TUIFeedbackWidget, FeedbackType
 
 if TYPE_CHECKING:
-    from ..tui_app import OrchestratorTUI, SessionData
+    from src.presentation.tui.managers import SessionManager
 
 logger = get_logger(__name__, component="SlashCommandHandler")
 
@@ -32,16 +32,60 @@ class SlashCommandHandler:
 
     OrchestratorTUI의 슬래시 커맨드 처리 로직을 분리하여
     단일 책임 원칙(SRP)을 준수합니다.
+
+    의존성 역전 원칙(DIP)을 적용하여 TUI App 전체가 아닌
+    필요한 Manager들과 메서드만 참조합니다.
     """
 
-    def __init__(self, tui_app: 'OrchestratorTUI'):
+    def __init__(
+        self,
+        session_manager: 'SessionManager',
+        query_one_func: Callable[..., Any],
+        write_log_func: Callable[..., None],
+        action_show_help_func: Callable[[], Any],
+        action_toggle_metrics_panel_func: Callable[[], Any],
+        action_search_log_func: Callable[[], Any],
+        perform_search_func: Callable[[str], Any],
+        load_session_func: Callable[[str], Any],
+        update_status_bar_func: Callable[[], None],
+    ) -> None:
         """
         초기화
 
         Args:
-            tui_app: OrchestratorTUI 인스턴스 (의존성 주입)
+            session_manager: SessionManager 인스턴스
+            query_one_func: query_one 메서드 참조
+            write_log_func: write_log 메서드 참조
+            action_show_help_func: action_show_help 메서드 참조
+            action_toggle_metrics_panel_func: action_toggle_metrics_panel 메서드 참조
+            action_search_log_func: action_search_log 메서드 참조
+            perform_search_func: perform_search 메서드 참조
+            load_session_func: load_session 메서드 참조
+            update_status_bar_func: _update_status_bar 메서드 참조
         """
-        self.tui_app = tui_app
+        self.session_manager = session_manager
+
+        # 메서드 참조 (callable)
+        self.query_one = query_one_func
+        self.write_log = write_log_func
+        self.action_show_help = action_show_help_func
+        self.action_toggle_metrics_panel = action_toggle_metrics_panel_func
+        self.action_search_log = action_search_log_func
+        self.perform_search = perform_search_func
+        self.load_session = load_session_func
+        self.update_status_bar = update_status_bar_func
+
+        # 상태 관리용 속성
+        self.log_lines: List[str] = []
+
+    def sync_state_from_tui(self, log_lines: List[str]) -> None:
+        """
+        TUI App의 상태를 SlashCommandHandler로 동기화
+
+        Args:
+            log_lines: 로그 라인 리스트
+        """
+        self.log_lines = log_lines
 
     async def handle_slash_command(self, command: str) -> None:
         """
@@ -60,7 +104,7 @@ class SlashCommandHandler:
             >>> await handler.handle_slash_command("/help")
             >>> await handler.handle_slash_command("/search error")
         """
-        task_input = self.tui_app.query_one("#task-input")
+        task_input = self.query_one("#task-input")
         task_input.clear()
 
         cmd, _, args = command.partition(" ")
@@ -98,9 +142,9 @@ class SlashCommandHandler:
                 f"알 수 없는 커맨드: {cmd}", FeedbackType.WARNING,
                 details=available_commands
             )
-            self.tui_app.write_log("")
-            self.tui_app.write_log(warning_panel)
-            self.tui_app.write_log("")
+            self.write_log("")
+            self.write_log(warning_panel)
+            self.write_log("")
 
     async def _handle_help_command(self) -> None:
         """
@@ -116,10 +160,10 @@ class SlashCommandHandler:
             Exception: 도움말 모달 표시 실패 시
         """
         try:
-            await self.tui_app.action_show_help()
+            await self.action_show_help()
         except Exception as e:
             logger.error(f"도움말 표시 실패: {e}")
-            self.tui_app.write_log(TUIFeedbackWidget.create_panel(
+            self.write_log(TUIFeedbackWidget.create_panel(
                 "도움말 표시 실패", FeedbackType.ERROR, details=str(e)
             ))
 
@@ -137,10 +181,10 @@ class SlashCommandHandler:
             Exception: 메트릭 패널 토글 실패 시
         """
         try:
-            await self.tui_app.action_toggle_metrics_panel()
+            await self.action_toggle_metrics_panel()
         except Exception as e:
             logger.error(f"메트릭 패널 토글 실패: {e}")
-            self.tui_app.write_log(TUIFeedbackWidget.create_panel(
+            self.write_log(TUIFeedbackWidget.create_panel(
                 "메트릭 패널 토글 실패", FeedbackType.ERROR, details=str(e)
             ))
 
@@ -163,13 +207,13 @@ class SlashCommandHandler:
         try:
             if not keyword.strip():
                 # 키워드가 없으면 검색 모달 표시
-                await self.tui_app.action_search_log()
+                await self.action_search_log()
             else:
                 # 키워드가 있으면 즉시 검색 수행
-                await self.tui_app.perform_search(keyword)
+                await self.perform_search(keyword)
         except Exception as e:
             logger.error(f"검색 실패: {e}")
-            self.tui_app.write_log(TUIFeedbackWidget.create_panel(
+            self.write_log(TUIFeedbackWidget.create_panel(
                 "검색 실패", FeedbackType.ERROR, details=str(e)
             ))
 
@@ -187,16 +231,16 @@ class SlashCommandHandler:
             Exception: 로그 화면 지우기 실패 시
         """
         try:
-            output_log = self.tui_app.query_one("#output-log", RichLog)
+            output_log = self.query_one("#output-log", RichLog)
             output_log.clear()
-            self.tui_app.log_lines.clear()
+            self.log_lines.clear()
 
             success_panel = TUIFeedbackWidget.create_panel(
                 "로그 화면이 지워졌습니다", FeedbackType.SUCCESS
             )
-            self.tui_app.write_log("")
-            self.tui_app.write_log(success_panel)
-            self.tui_app.write_log("")
+            self.write_log("")
+            self.write_log(success_panel)
+            self.write_log("")
         except Exception as e:
             logger.error(f"로그 화면 지우기 실패: {e}")
 
@@ -221,14 +265,14 @@ class SlashCommandHandler:
                 warning_panel = TUIFeedbackWidget.create_panel(
                     "사용법: /load <session_id>", FeedbackType.WARNING
                 )
-                self.tui_app.write_log("")
-                self.tui_app.write_log(warning_panel)
-                self.tui_app.write_log("")
+                self.write_log("")
+                self.write_log(warning_panel)
+                self.write_log("")
             else:
-                await self.tui_app.load_session(session_id)
+                await self.load_session(session_id)
         except Exception as e:
             logger.error(f"세션 로드 실패: {e}")
-            self.tui_app.write_log(TUIFeedbackWidget.create_panel(
+            self.write_log(TUIFeedbackWidget.create_panel(
                 "세션 로드 실패", FeedbackType.ERROR, details=str(e)
             ))
 
@@ -248,73 +292,91 @@ class SlashCommandHandler:
         Example:
             >>> await self._handle_init_command("")
         """
-        worker_status = self.tui_app.query_one("#worker-status", Static)
-        status_info = self.tui_app.query_one("#status-info", Static)
+        worker_status = self.query_one("#worker-status", Static)
+        status_info = self.query_one("#status-info", Static)
 
         try:
             # 인자 파싱 (현재는 사용하지 않음)
             parsed_args = self._parse_init_args(args)
 
-            self.tui_app.write_log("")
-            self.tui_app.write_log(Panel(
+            self.write_log("")
+            self.write_log(Panel(
                 "[bold cyan]🔍 프로젝트 분석 시작...[/bold cyan]",
                 border_style="cyan"
             ))
-            self.tui_app.write_log("")
+            self.write_log("")
 
             worker_status.update("🔍 프로젝트 구조 분석 중...")
             status_info.update("Analyzing...")
 
             project_root = get_project_root()
-            self.tui_app.write_log("[dim]프로젝트 루트:[/dim] " + str(project_root))
-            self.tui_app.write_log("[dim]파일 스캔 중...[/dim]")
+            self.write_log("[dim]프로젝트 루트:[/dim] " + str(project_root))
+            self.write_log("[dim]파일 스캔 중...[/dim]")
 
             analyzer = ProjectContextAnalyzer(project_root)
             context = analyzer.analyze()
 
-            self.tui_app.write_log("")
-            self.tui_app.write_log("[bold green]✅ 분석 완료[/bold green]")
-            self.tui_app.write_log("")
+            self.write_log("")
+            self.write_log("[bold green]✅ 분석 완료[/bold green]")
+            self.write_log("")
 
             # 분석 결과 테이블 렌더링
             result_table = self._render_project_analysis_table(context)
-            self.tui_app.write_log(Panel(
+            self.write_log(Panel(
                 result_table,
                 title="[bold cyan]분석 결과[/bold cyan]",
                 border_style="cyan"
             ))
-            self.tui_app.write_log("")
+            self.write_log("")
 
-            self.tui_app.write_log("[dim]컨텍스트 저장 중...[/dim]")
+            self.write_log("[dim]컨텍스트 저장 중...[/dim]")
             worker_status.update("💾 컨텍스트 저장 중...")
 
             # 컨텍스트 저장
             context_file = self._save_project_context(context)
 
-            self.tui_app.write_log(f"[green]✅ 저장 완료:[/green] {context_file.name}")
-            self.tui_app.write_log("")
+            self.write_log(f"[green]✅ 저장 완료:[/green] {context_file.name}")
+            self.write_log("")
 
-            self.tui_app.write_log("[dim]새 세션 시작...[/dim]")
+            self.write_log("[dim]새 세션 시작...[/dim]")
             new_session_id = generate_session_id()
 
-            # SessionData 클래스를 동적으로 가져옴
-            from ..tui_app import SessionData
-            new_session = SessionData(new_session_id)
-            self.tui_app.sessions[self.tui_app.active_session_index] = new_session
+            # Phase 1 - Step 1.1: SessionManager의 캡슐화된 메서드 사용
+            from src.presentation.tui.managers.session_manager import SessionConfig
 
-            update_session_id(self.tui_app.session_id)
-            set_metrics_collector(self.tui_app.metrics_collector, self.tui_app.session_id)
+            # 현재 활성 인덱스의 세션을 새 세션으로 교체
+            active_index = self.session_manager.get_active_session_index()
 
-            self.tui_app._update_status_bar()
+            # 기존 세션 삭제
+            old_session = self.session_manager.get_session_by_index(active_index)
+            self.session_manager.delete_session(old_session.session_id)
 
-            self.tui_app.write_log("")
-            self.tui_app.write_log(Panel(
+            # 새 세션 생성
+            new_session_data = self.session_manager.create_session_at_index(
+                active_index,
+                new_session_id,
+                f"Project initialization: {context.project_name}"
+            )
+
+            # 세션 전환
+            self.session_manager.switch_to_session(active_index)
+
+            # 현재 세션 정보 가져오기
+            current_session = self.session_manager.get_session_by_index(active_index)
+
+            update_session_id(current_session.session_id)
+            set_metrics_collector(current_session.metrics_collector, current_session.session_id)
+
+            self.update_status_bar()
+
+            self.write_log("")
+            self.write_log(Panel(
                 f"[bold green]✅ 초기화 완료[/bold green]\n\n"
-                f"Session ID: {self.tui_app.session_id}\n"
+                f"Session ID: {current_session.session_id}\n"
                 f"Context: {context.project_name} ({context.architecture})",
                 border_style="green"
             ))
-            self.tui_app.write_log("")
+            self.write_log("")
 
             worker_status.update("✅ 초기화 완료")
             status_info.update("Ready")
@@ -325,15 +387,15 @@ class SlashCommandHandler:
                 "프로젝트 초기화 실패", FeedbackType.ERROR,
                 details=f"{str(e)}\n\n{traceback.format_exc()}"
             )
-            self.tui_app.write_log("")
-            self.tui_app.write_log(error_panel)
-            self.tui_app.write_log("")
+            self.write_log("")
+            self.write_log(error_panel)
+            self.write_log("")
             worker_status.update("❌ 오류")
             status_info.update("Error")
 
-    def _parse_init_args(self, args: str) -> dict[str, str]:
+    def _parse_init_args(self, args: str) -> Dict[str, str]:
         """
-        /init 명령 인자 파싱 (--path, --name, --description 등)
+        /init 명령 인자 파싱 (--path, --name, --description 등).
 
         Args:
             args: 명령줄 인자 문자열
@@ -348,7 +410,7 @@ class SlashCommandHandler:
             >>> self._parse_init_args("--path /tmp --name myproject")
             {'path': '/tmp', 'name': 'myproject'}
         """
-        parsed_args = {}
+        parsed_args: Dict[str, str] = {}
         if not args:
             return parsed_args
 
@@ -369,9 +431,9 @@ class SlashCommandHandler:
 
         return parsed_args
 
-    def _render_project_analysis_table(self, context: ProjectContextAnalyzer) -> Table:
+    def _render_project_analysis_table(self, context: Any) -> Table:
         """
-        프로젝트 분석 결과를 Rich Table로 렌더링
+        프로젝트 분석 결과를 Rich Table로 렌더링.
 
         Args:
             context: 프로젝트 컨텍스트 분석 결과
@@ -384,7 +446,7 @@ class SlashCommandHandler:
 
         Example:
             >>> table = self._render_project_analysis_table(context)
-            >>> self.tui_app.write_log(table)
+            >>> self.write_log(table)
         """
         result_table = Table(
             show_header=False,
@@ -402,9 +464,9 @@ class SlashCommandHandler:
 
         return result_table
 
-    def _save_project_context(self, context: ProjectContextAnalyzer) -> Path:
+    def _save_project_context(self, context: Any) -> Path:
         """
-        프로젝트 컨텍스트를 파일 시스템에 저장
+        프로젝트 컨텍스트를 파일 시스템에 저장.
 
         Args:
             context: 프로젝트 컨텍스트 분석 결과
