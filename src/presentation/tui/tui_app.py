@@ -145,13 +145,13 @@ class OrchestratorTUI(App):
         Binding("ctrl+s", "save_log", "로그 저장"),
         Binding("ctrl+l", "show_session_browser", "세션"),
 
-        # 검색 (수정됨!)
-        Binding("/", "search_log", "검색"),
-        Binding("ctrl+f", "search_log", "검색", show=False),
+        # 검색 (한글 모드 지원)
+        Binding("/", "search_log", "검색", show=False),  # 한글 모드에서 작동 안 함
+        Binding("ctrl+f", "search_log", "검색"),  # Footer에 표시 (한글 모드 OK)
 
-        # 도움말 (수정됨!)
-        Binding("?", "show_help", "도움말"),
-        Binding("ctrl+h", "show_help", "도움말", show=False),
+        # 도움말 (한글 모드 지원)
+        Binding("?", "show_help", "도움말", show=False),  # 한글 모드에서 작동 안 함
+        Binding("ctrl+h", "show_help", "도움말"),  # Footer에 표시 (한글 모드 OK)
         Binding("f1", "show_help", "도움말", show=False),
 
         # 설정
@@ -396,6 +396,9 @@ class OrchestratorTUI(App):
             # 컴팩트한 초기화 완료 메시지
             self.write_log("")
             self.write_log(f"[bold green]🚀 준비 완료[/bold green] [dim]• Workers: {worker_count}개 • Model: {manager_model}[/dim]")
+            self.write_log("")
+            self.write_log("[dim]💡 Tip: Ctrl+H (도움말) | Ctrl+F (검색) | Ctrl+M (메트릭) | Ctrl+O (Worker 출력)[/dim]")
+            self.write_log("[dim]     한글 입력 모드에서는 Ctrl 조합 키를 사용하세요[/dim]")
             self.write_log("")
 
         except Exception as e:
