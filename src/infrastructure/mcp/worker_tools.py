@@ -11,6 +11,7 @@ from typing import Any, Dict, Callable, Optional
 from pathlib import Path
 import logging
 import os
+import asyncio
 
 from claude_agent_sdk import tool, create_sdk_mcp_server
 
@@ -49,6 +50,54 @@ _CURRENT_SESSION_ID: Optional[str] = None
 
 # Worker 출력 스트리밍 콜백 (TUI에서 설정)
 _WORKER_OUTPUT_CALLBACK: Optional[Callable] = None
+
+
+# ============================================================================
+# 헬퍼 함수
+# ============================================================================
+
+async def retry_with_backoff(func: Callable, worker_name: str, max_retries: int = 3) -> Any:
+    """
+    지수 백오프를 사용하여 함수를 재시도합니다.
+
+    Args:
+        func: 실행할 비동기 함수
+        worker_name: Worker 이름 (로깅용)
+        max_retries: 최대 재시도 횟수 (기본값: 3)
+
+    Returns:
+        func의 실행 결과
+
+    Raises:
+        Exception: 모든 재시도가 실패한 경우 마지막 예외를 발생
+
+    Example:
+        >>> async def my_task():
+        ...     return await some_operation()
+        >>> result = await retry_with_backoff(my_task, "coder", max_retries=3)
+    """
+    last_exception = None
+
+    for attempt in range(max_retries):
+        try:
+            return await func()
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries - 1:
+                # 지수 백오프: 2^attempt 초 (1초, 2초, 4초, ...)
+                wait_time = 2 ** attempt
+                logger.warning(
+                    f"[{worker_name}] 실행 실패 (시도 {attempt + 1}/{max_retries}). "
+                    f"{wait_time}초 후 재시도... 에러: {e}"
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(
+                    f"[{worker_name}] 모든 재시도 실패 ({max_retries}번 시도)"
+                )
+
+    # 모든 재시도 실패 시 마지막 예외 발생
+    raise last_exception
 
 
 # ============================================================================

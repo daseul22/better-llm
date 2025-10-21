@@ -70,6 +70,7 @@ class SessionManager:
     TUI 세션 관리자
 
     세션의 생명주기를 관리하고 상태를 추적합니다.
+    멀티 세션을 지원하며 인덱스 기반 세션 전환이 가능합니다.
 
     Example:
         >>> manager = SessionManager()
@@ -85,7 +86,9 @@ class SessionManager:
     def __init__(self) -> None:
         """SessionManager 초기화"""
         self._sessions: Dict[str, SessionData] = {}
+        self._session_list: list[SessionData] = []  # 인덱스 기반 접근을 위한 리스트
         self._active_session_id: Optional[str] = None
+        self._active_session_index: int = 0
         logger.info("SessionManager initialized")
 
     def start_session(self, session_config: SessionConfig) -> str:
@@ -132,7 +135,9 @@ class SessionManager:
         )
 
         self._sessions[session_id] = session_data
+        self._session_list.append(session_data)
         self._active_session_id = session_id
+        self._active_session_index = len(self._session_list) - 1
 
         logger.info(
             f"Session started: {session_id} "
@@ -397,3 +402,236 @@ class SessionManager:
         session_data = self._sessions[session_id]
         end_time = session_data.end_time or time.time()
         return end_time - session_data.start_time
+
+    # === 멀티 세션 관리 메서드 (Phase 1.4) ===
+
+    def get_all_sessions(self) -> list[SessionData]:
+        """
+        모든 세션을 리스트로 반환합니다.
+
+        Returns:
+            세션 데이터 리스트 (인덱스 순서 유지)
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config1 = SessionConfig(session_id="test-001", user_request="Test 1")
+            >>> config2 = SessionConfig(session_id="test-002", user_request="Test 2")
+            >>> manager.start_session(config1)
+            >>> manager.start_session(config2)
+            >>> sessions = manager.get_all_sessions()
+            >>> print(len(sessions))
+            2
+        """
+        return self._session_list
+
+    def get_session_by_index(self, index: int) -> SessionData:
+        """
+        인덱스로 세션 데이터를 조회합니다.
+
+        Args:
+            index: 세션 인덱스
+
+        Returns:
+            세션 데이터 객체
+
+        Raises:
+            IndexError: 잘못된 인덱스인 경우
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config = SessionConfig(session_id="test-001", user_request="Test")
+            >>> manager.start_session(config)
+            >>> session = manager.get_session_by_index(0)
+            >>> print(session.session_id)
+            test-001
+        """
+        if index < 0 or index >= len(self._session_list):
+            logger.error(f"Invalid session index: {index}")
+            raise IndexError(f"Session index {index} out of range")
+
+        return self._session_list[index]
+
+    def get_session_count(self) -> int:
+        """
+        세션 개수를 반환합니다.
+
+        Returns:
+            세션 개수
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config1 = SessionConfig(session_id="test-001", user_request="Test 1")
+            >>> config2 = SessionConfig(session_id="test-002", user_request="Test 2")
+            >>> manager.start_session(config1)
+            >>> manager.start_session(config2)
+            >>> count = manager.get_session_count()
+            >>> print(count)
+            2
+        """
+        return len(self._session_list)
+
+    def get_active_session_index(self) -> int:
+        """
+        현재 활성화된 세션의 인덱스를 반환합니다.
+
+        Returns:
+            활성 세션 인덱스
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config = SessionConfig(session_id="test-001", user_request="Test")
+            >>> manager.start_session(config)
+            >>> index = manager.get_active_session_index()
+            >>> print(index)
+            0
+        """
+        return self._active_session_index
+
+    def switch_to_session(self, index: int) -> str:
+        """
+        세션을 전환합니다.
+
+        Args:
+            index: 전환할 세션 인덱스
+
+        Returns:
+            전환된 세션 ID
+
+        Raises:
+            IndexError: 잘못된 인덱스인 경우
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config1 = SessionConfig(session_id="test-001", user_request="Test 1")
+            >>> config2 = SessionConfig(session_id="test-002", user_request="Test 2")
+            >>> manager.start_session(config1)
+            >>> manager.start_session(config2)
+            >>> session_id = manager.switch_to_session(0)
+            >>> print(session_id)
+            test-001
+        """
+        if index < 0 or index >= len(self._session_list):
+            logger.error(f"Invalid session index: {index}")
+            raise IndexError(f"Session index {index} out of range")
+
+        self._active_session_index = index
+        session_data = self._session_list[index]
+        self._active_session_id = session_data.session_id
+
+        logger.info(f"Switched to session {index}: {session_data.session_id}")
+        return session_data.session_id
+
+    def create_session_at_index(
+        self,
+        index: int,
+        session_id: str,
+        user_request: str = ""
+    ) -> SessionData:
+        """
+        특정 인덱스에 세션을 생성합니다.
+
+        인덱스가 현재 세션 개수보다 크면 빈 세션들을 자동으로 생성합니다.
+
+        Args:
+            index: 세션 인덱스
+            session_id: 세션 ID
+            user_request: 사용자 요청 (기본값: "")
+
+        Returns:
+            생성된 세션 데이터
+
+        Example:
+            >>> manager = SessionManager()
+            >>> session = manager.create_session_at_index(2, "test-003")
+            >>> print(manager.get_session_count())
+            3
+        """
+        # 인덱스가 현재 세션 개수보다 크면 빈 세션들을 생성
+        while len(self._session_list) <= index:
+            empty_index = len(self._session_list)
+            empty_session_id = f"empty-{empty_index}"
+
+            # 빈 세션 생성
+            metrics_repository = InMemoryMetricsRepository()
+            metrics_collector = MetricsCollector(metrics_repository)
+
+            empty_session = SessionData(
+                session_id=empty_session_id,
+                history=ConversationHistory(),
+                log_lines=[],
+                start_time=time.time(),
+                metrics_repository=metrics_repository,
+                metrics_collector=metrics_collector,
+                status=SessionStatus.COMPLETED,
+            )
+
+            self._sessions[empty_session_id] = empty_session
+            self._session_list.append(empty_session)
+            logger.info(f"Created empty session at index {empty_index}: {empty_session_id}")
+
+        # 원하는 인덱스에 세션 생성
+        metrics_repository = InMemoryMetricsRepository()
+        metrics_collector = MetricsCollector(metrics_repository)
+
+        session_data = SessionData(
+            session_id=session_id,
+            history=ConversationHistory(),
+            log_lines=[],
+            start_time=time.time(),
+            metrics_repository=metrics_repository,
+            metrics_collector=metrics_collector,
+            status=SessionStatus.COMPLETED,
+        )
+
+        # 기존 세션이 있다면 딕셔너리에서 제거
+        old_session = self._session_list[index]
+        if old_session.session_id in self._sessions:
+            del self._sessions[old_session.session_id]
+
+        # 새 세션 저장
+        self._sessions[session_id] = session_data
+        self._session_list[index] = session_data
+
+        logger.info(f"Created session at index {index}: {session_id}")
+        return session_data
+
+    def update_session_at_index(
+        self,
+        index: int,
+        session_data: SessionData
+    ) -> None:
+        """
+        특정 인덱스의 세션 데이터를 업데이트합니다.
+
+        Args:
+            index: 세션 인덱스
+            session_data: 새로운 세션 데이터
+
+        Raises:
+            IndexError: 잘못된 인덱스인 경우
+
+        Example:
+            >>> manager = SessionManager()
+            >>> config = SessionConfig(session_id="test-001", user_request="Test")
+            >>> manager.start_session(config)
+            >>> new_data = SessionData(...)
+            >>> manager.update_session_at_index(0, new_data)
+        """
+        if index < 0 or index >= len(self._session_list):
+            logger.error(f"Invalid session index: {index}")
+            raise IndexError(f"Session index {index} out of range")
+
+        old_session = self._session_list[index]
+
+        # 기존 세션을 딕셔너리에서 제거
+        if old_session.session_id in self._sessions:
+            del self._sessions[old_session.session_id]
+
+        # 새 세션 저장
+        self._sessions[session_data.session_id] = session_data
+        self._session_list[index] = session_data
+
+        logger.info(
+            f"Updated session at index {index}: "
+            f"{old_session.session_id} -> {session_data.session_id}"
+        )

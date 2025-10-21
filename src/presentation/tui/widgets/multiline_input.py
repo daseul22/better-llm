@@ -1,5 +1,5 @@
 """
-Multiline Input Widget - Enter로 제출, Shift+Enter로 줄바꿈
+Multiline Input Widget - Ctrl+R로 제출, Enter는 줄바꿈
 
 TextArea 기반 커스텀 위젯으로 입력 히스토리 기능 포함
 """
@@ -9,6 +9,7 @@ from typing import Optional
 from textual.widgets import TextArea
 from textual.message import Message
 from textual import events
+from textual.binding import Binding
 
 
 class MultilineInput(TextArea):
@@ -16,15 +17,20 @@ class MultilineInput(TextArea):
     멀티라인 입력을 지원하는 커스텀 TextArea 위젯.
 
     Features:
-        - Enter: 제출 (Submitted 메시지 발생)
-        - Shift+Enter: 줄바꿈
+        - Ctrl+R: 제출 (Submitted 메시지 발생)
+        - Enter: 줄바꿈 (TextArea 기본 동작)
         - Up/Down: 입력 히스토리 탐색 (외부에서 처리)
         - Tab: 자동 완성 (AutocompleteRequested 메시지 발생)
     """
 
+    # Ctrl+R로 제출
+    BINDINGS = [
+        Binding("ctrl+r", "submit_input", "Submit", show=False, priority=True),
+    ]
+
     class Submitted(Message):
         """
-        Enter 키로 입력이 제출되었을 때 발생하는 메시지.
+        Ctrl+R로 입력이 제출되었을 때 발생하는 메시지.
 
         Attributes:
             value (str): 제출된 텍스트 (전체 내용)
@@ -100,26 +106,42 @@ class MultilineInput(TextArea):
             language=None,  # 구문 강조 비활성화
         )
 
+    def action_submit_input(self) -> None:
+        """
+        Ctrl+R 액션: 입력 제출.
+
+        BINDINGS에서 호출됩니다.
+        입력창 초기화는 이벤트 핸들러에서 처리합니다.
+        """
+        from src.infrastructure.logging import get_logger
+        logger = get_logger(__name__)
+
+        logger.info(f"🔴 [MultilineInput] action_submit_input 호출됨! text={self.text!r}")
+
+        # 빈 입력은 무시
+        if not self.text.strip():
+            logger.warning(f"⚠️ [MultilineInput] 빈 입력 무시")
+            return
+
+        # Submitted 메시지 전송
+        logger.info(f"📤 [MultilineInput] Submitted 메시지 전송: {self.text!r}")
+        self.post_message(self.Submitted(self.text))
+        logger.info(f"✅ [MultilineInput] Submitted 메시지 전송 완료")
+
     async def on_key(self, event: events.Key) -> None:
         """
         키 입력 이벤트 처리.
 
-        Enter: 제출 (일반 Enter만)
-        Shift+Enter: 줄바꿈 (TextArea 기본 동작)
-        Up/Down: 히스토리 탐색 (첫/마지막 줄에서만)
+        Enter: 줄바꿈 (TextArea 기본 동작 유지)
+        Ctrl+R: 제출 (BINDINGS에서 처리)
         Tab: 자동 완성
+        Up/Down: 히스토리 탐색 (첫/마지막 줄에서만)
 
         Args:
             event: 키 입력 이벤트
         """
-        # Enter 키 단독 (Shift 없이) - 제출
-        if event.key == "enter":
-            self.post_message(self.Submitted(self.text))
-            event.prevent_default()
-            event.stop()
-            return
         # Tab 키 - 자동 완성
-        elif event.key == "tab":
+        if event.key == "tab":
             self.post_message(self.AutocompleteRequested(self.text))
             event.prevent_default()
             event.stop()
@@ -144,7 +166,8 @@ class MultilineInput(TextArea):
                 event.prevent_default()
                 self.post_message(self.HistoryDown())
                 return
-        # Shift+Enter 및 기타 키는 기본 동작 유지
+        # Enter 키는 기본 동작 유지 (줄바꿈)
+        # 기타 키도 기본 동작 유지 (TextArea 기본 처리)
 
     def clear(self) -> None:
         """입력 내용을 모두 지웁니다."""

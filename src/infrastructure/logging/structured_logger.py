@@ -93,11 +93,11 @@ def configure_structlog(
     # 메인 로그: 10MB (모든 레벨의 로그)
     # 에러 로그: 5MB (ERROR 이상만 필터링되므로 용량 적음)
     # 디버그 로그: 20MB (상세 정보가 많아 용량 증가)
+    # 터미널 출력 제거: 파일에만 로그 기록
     logging.basicConfig(
         format="%(message)s",
         level=getattr(logging, log_level.upper()),
         handlers=[
-            logging.StreamHandler(sys.stdout),
             logging.handlers.RotatingFileHandler(
                 log_path / "better-llm.log",
                 maxBytes=10 * 1024 * 1024,  # 10MB

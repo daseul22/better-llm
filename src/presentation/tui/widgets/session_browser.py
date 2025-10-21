@@ -236,8 +236,7 @@ class SessionBrowserModal(ModalScreen):
         # 선택한 세션 ID 가져오기
         session_id, _, _, _ = self.session_data[table.cursor_row]
 
-        # 삭제 확인 요청
-        from .delete_confirm_modal import DeleteConfirmModal
+        # 삭제 확인 요청 (DeleteConfirmModal은 같은 파일에 정의됨)
         result = await self.app.push_screen(DeleteConfirmModal(session_id))
 
         if result:
