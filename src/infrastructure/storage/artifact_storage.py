@@ -144,13 +144,13 @@ class ArtifactStorage:
         Worker 출력에서 요약 섹션만 추출
 
         "## 📋 [XXX 요약 - Manager 전달용]" 섹션을 찾아서 반환합니다.
-        요약 섹션이 없으면 None을 반환합니다.
+        요약 섹션이 없으면 처음 1000자만 반환합니다.
 
         Args:
             full_output: Worker 전체 출력
 
         Returns:
-            요약 섹션 또는 None (요약 실패)
+            요약 섹션 또는 잘린 출력 + 경고
 
         Example:
             >>> storage = ArtifactStorage()
@@ -160,28 +160,39 @@ class ArtifactStorage:
             ... else:
             ...     print("요약 실패")
         """
-        # 요약 섹션 패턴 (여러 변형 지원)
+        # 여러 패턴 시도 (견고성 향상)
         patterns = [
-            # 정확한 패턴: ## 📋 [XXX 요약 - Manager 전달용]
-            r'##\s*📋\s*\[.*?요약\s*-\s*Manager\s*전달용\]',
-            # 관대한 패턴: ## [XXX 요약]
-            r'##\s*\[.*?요약.*?\]',
-            # 대체 패턴: # 요약
-            r'#\s*요약',
-            # 영문 패턴: ## Summary
-            r'##?\s*Summary',
+            # 패턴 1: 이모지 포함 (원본)
+            r'##\s*📋\s*\[.+?요약\s*-\s*Manager\s*전달용\]',
+            # 패턴 2: 이모지 없이 (폴백)
+            r'##\s*\[.+?요약\s*-\s*Manager\s*전달용\]',
+            # 패턴 3: 대괄호 없이
+            r'##\s*📋.*?요약.*?Manager.*?전달용',
+            # 패턴 4: 영문 대체 (PLANNER 요약, CODER 요약 등)
+            r'##\s*📋\s*\[[A-Z]+\s*요약\s*-\s*Manager\s*전달용\]',
         ]
 
-        for pattern in patterns:
+        # 디버깅: 출력 샘플 로그
+        sample = full_output[:500].replace('\n', '\\n')
+        logger.debug(
+            "Attempting to extract summary",
+            output_size=len(full_output),
+            output_sample=sample
+        )
+
+        # 각 패턴 시도
+        for i, pattern in enumerate(patterns, 1):
             match = re.search(pattern, full_output, re.MULTILINE | re.IGNORECASE)
+
             if match:
                 # 요약 섹션 시작 위치부터 끝까지
                 summary_start = match.start()
                 summary = full_output[summary_start:].strip()
 
-                logger.debug(
-                    "Summary extracted",
-                    pattern=pattern,
+                logger.info(
+                    "Summary extracted successfully",
+                    pattern_index=i,
+                    matched_text=match.group()[:100],
                     original_size=len(full_output),
                     summary_size=len(summary),
                     reduction_ratio=f"{(1 - len(summary)/len(full_output))*100:.1f}%"
@@ -189,13 +200,26 @@ class ArtifactStorage:
 
                 return summary
 
-        # 요약 섹션을 찾지 못함 (None 반환)
+        # 모든 패턴 실패 시
         logger.warning(
-            "Summary section not found in worker output",
+            "Summary section not found with any pattern, truncating output",
             output_size=len(full_output),
-            output_preview=full_output[:200] + "..." if len(full_output) > 200 else full_output
+            tried_patterns=len(patterns)
         )
-        return None
+
+        # 처음 1000자 + 경고 메시지
+        truncated = full_output[:1000]
+        if len(full_output) > 1000:
+            truncated += f"\n\n... (총 {len(full_output):,}자 중 {1000}자만 표시)"
+
+        warning_msg = (
+            "\n\n⚠️ **경고: Worker가 요약 섹션을 출력하지 않았습니다.**\n"
+            "- 전체 로그는 artifact 파일에 저장되어 있습니다.\n"
+            "- Worker 프롬프트에 '## 📋 [XXX 요약 - Manager 전달용]' 섹션이 있는지 확인하세요.\n"
+            f"- 출력 크기: {len(full_output):,}자\n"
+        )
+
+        return truncated + warning_msg
 
     def cleanup_old_artifacts(self, days: int = 7) -> int:
         """

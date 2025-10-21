@@ -19,7 +19,8 @@
     "coder_timeout": 600,
     "reviewer_timeout": 600,
     "tester_timeout": 600,
-    "committer_timeout": 600
+    "committer_timeout": 180,
+    "documenter_timeout": 300
   },
   "workflow_limits": {
     "max_retry_cycles": 3,

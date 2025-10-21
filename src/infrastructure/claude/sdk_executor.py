@@ -163,8 +163,24 @@ class WorkerResponseHandler(SDKResponseHandler):
         if text:
             yield text
         else:
-            # 예상과 다른 형식일 경우 문자열 변환
-            yield str(response)
+            # 예상과 다른 형식일 경우 JSON으로 직렬화
+            # (파서가 JSON을 파싱해서 보기 좋게 표시할 수 있도록)
+            import json
+            try:
+                # response 객체를 JSON으로 변환 (pydantic 모델인 경우)
+                if hasattr(response, 'model_dump'):
+                    response_dict = response.model_dump()
+                elif hasattr(response, 'dict'):
+                    response_dict = response.dict()
+                elif hasattr(response, '__dict__'):
+                    response_dict = response.__dict__
+                else:
+                    response_dict = {'raw': str(response)}
+
+                yield json.dumps(response_dict, ensure_ascii=False, indent=2)
+            except Exception:
+                # JSON 변환 실패 시 문자열로 폴백
+                yield str(response)
 
 
 class ManagerSDKExecutor:

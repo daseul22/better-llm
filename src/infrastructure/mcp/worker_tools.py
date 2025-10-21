@@ -199,6 +199,7 @@ _WORKER_TIMEOUTS = {
     "committer": _get_timeout_from_env("committer", 180),
     "ideator": _get_timeout_from_env("ideator", 300),
     "product_manager": _get_timeout_from_env("product_manager", 300),
+    "documenter": _get_timeout_from_env("documenter", 300),
 }
 
 
@@ -239,6 +240,9 @@ def _load_worker_timeouts_from_config():
         )
         _WORKER_TIMEOUTS["product_manager"] = _get_timeout_from_env(
             "product_manager", timeouts.get("product_manager_timeout", 300)
+        )
+        _WORKER_TIMEOUTS["documenter"] = _get_timeout_from_env(
+            "documenter", timeouts.get("documenter_timeout", 300)
         )
 
         logger.debug(f"Worker 타임아웃 설정 로드 완료: {_WORKER_TIMEOUTS}")
@@ -1012,6 +1016,53 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+@tool(
+    "execute_documenter_task",
+    "Documenter Agent에게 작업을 할당합니다. 문서 생성 및 업데이트를 담당합니다.",
+    {
+        "task_description": {
+            "type": "string",
+            "description": "작업 설명"
+        }
+    }
+)
+async def execute_documenter_task(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Documenter Agent 실행
+
+    Args:
+        args: {"task_description": "작업 설명"}
+
+    Returns:
+        Agent 실행 결과 (요약만 포함)
+    """
+    context = WorkerExecutionContext(
+        worker_name="documenter",
+        task_description=args["task_description"],
+        use_retry=False,
+        timeout=_WORKER_TIMEOUTS["documenter"],
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get("documenter"),
+        worker_output_callback=_state.worker_output_callback
+    )
+    result = await _state.worker_executor.execute(context)
+
+    # Artifact Storage 활성화
+    result = _save_and_summarize_output("documenter", result, _state.current_session_id)
+
+    # Tool 결과 저장
+    if result.get("content") and len(result["content"]) > 0:
+        result_text = result["content"][0].get("text", "")
+        _state.last_tool_results.append({
+            "tool_name": "execute_documenter_task",
+            "worker_name": "documenter",
+            "result": result_text
+        })
+
+    return result
+
+
 # ============================================================================
 # Human-in-the-Loop Tool
 # ============================================================================
@@ -1283,6 +1334,7 @@ def create_worker_tools_server():
             execute_committer_task,
             execute_ideator_task,
             execute_product_manager_task,
+            execute_documenter_task,
             ask_user,
             execute_parallel_tasks
         ]

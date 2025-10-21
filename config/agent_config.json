@@ -75,6 +75,19 @@
         "grep"
       ],
       "model": "claude-sonnet-4-5-20250929"
+    },
+    {
+      "name": "documenter",
+      "role": "문서 생성 및 업데이트",
+      "system_prompt_file": "prompts/documenter.txt",
+      "tools": [
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929"
     }
   ]
 }
