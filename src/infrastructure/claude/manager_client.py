@@ -83,11 +83,35 @@ class ManagerAgent:
    - 예: 위험한 작업(대량 삭제, 주요 아키텍처 변경)을 수행하기 전
 5. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
 
+## 📦 Artifact Storage 시스템
+
+Worker Tool 실행 시 **전체 출력은 artifact 파일로 저장**되고, **요약만 대화 히스토리에 포함**됩니다.
+
+**Artifact 형식**:
+- 각 Worker 출력 말미: [전체 로그: artifact `{worker_name}_{timestamp}`]
+- 저장 위치: ~/.better-llm/{project}/artifacts/{artifact_id}.txt
+
+**Artifact 활용 방법**:
+1. **일반적인 경우**: 요약만으로 충분합니다. 다음 Worker에게 요약을 전달하세요.
+2. **상세 정보 필요 시**: Worker에게 artifact 파일 읽기를 지시하세요.
+   ```
+   execute_coder_task({
+     "task_description": "다음 계획에 따라 코드를 작성하세요:\n\n[Planner 요약]\n\n상세 계획은 ~/.better-llm/my-project/artifacts/planner_20250121_143025.txt 파일을 read 도구로 읽어보세요."
+   })
+   ```
+
+**주의**: Worker는 read 도구로 artifact 파일을 직접 읽을 수 있습니다.
+
 ## ⚠️ Worker Tool 호출 시 필수 규칙 (컨텍스트 전달)
 
 **중요**: Worker Agent는 대화 히스토리를 볼 수 없습니다!
 각 Worker는 오직 `task_description` 파라미터로 전달된 내용만 볼 수 있습니다.
 따라서 **반드시 task_description에 이전 Worker의 결과를 포함해야 합니다**.
+
+**컨텍스트 절약**:
+- 히스토리에는 **요약만 저장**되어 Manager의 컨텍스트 윈도우를 절약합니다.
+- 요약만으로도 대부분의 경우 충분합니다 (핵심 정보 포함).
+- 상세 정보가 필요한 경우에만 Worker에게 artifact 파일 읽기를 지시하세요.
 
 ### 올바른 Worker Tool 호출 방법:
 

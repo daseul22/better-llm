@@ -19,6 +19,7 @@ from ..claude import WorkerAgent
 from src.domain.services import MetricsCollector
 from ..config import JsonConfigLoader, get_project_root
 from ..logging import get_logger
+from ..storage import get_artifact_storage
 
 # Level 1 및 Level 2 모듈 Import
 from src.infrastructure.mcp.review_cycle_manager import ReviewCycleManager
@@ -481,6 +482,60 @@ def log_error_summary():
 
 
 # ============================================================================
+# Artifact Storage Helper
+# ============================================================================
+
+def _save_and_summarize_output(
+    worker_name: str,
+    result: Dict[str, Any],
+    session_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Worker 출력을 artifact로 저장하고 요약 추출
+
+    Args:
+        worker_name: Worker 이름
+        result: Worker 실행 결과 (raw_output 포함)
+        session_id: 세션 ID (선택적)
+
+    Returns:
+        요약이 적용된 결과
+    """
+    if not result.get("raw_output"):
+        # raw_output이 없으면 그대로 반환
+        return result
+
+    artifact_storage = get_artifact_storage()
+
+    # 1. 전체 출력을 artifact로 저장
+    full_output = result["raw_output"]
+    artifact_id = artifact_storage.save_artifact(
+        worker_name=worker_name,
+        full_output=full_output,
+        session_id=session_id
+    )
+
+    # 2. 요약 섹션 추출
+    summary = artifact_storage.extract_summary(full_output)
+
+    # 3. Manager에게는 요약 + artifact_id만 전달
+    summary_with_ref = f"{summary}\n\n**[전체 로그: artifact `{artifact_id}`]**"
+    result_with_summary = {
+        "content": [{"type": "text", "text": summary_with_ref}]
+    }
+
+    logger.info(
+        f"{worker_name.capitalize()} output saved to artifact",
+        artifact_id=artifact_id,
+        full_size=len(full_output),
+        summary_size=len(summary),
+        reduction=f"{(1 - len(summary)/len(full_output))*100:.1f}%"
+    )
+
+    return result_with_summary
+
+
+# ============================================================================
 # MCP Tool 함수들 (7개 Worker Tools)
 # ============================================================================
 
@@ -502,7 +557,7 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
         args: {"task_description": "작업 설명"}
 
     Returns:
-        Agent 실행 결과
+        Agent 실행 결과 (요약만 포함)
     """
     global _LAST_TOOL_RESULTS
 
@@ -517,6 +572,9 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
     result = await _WORKER_EXECUTOR.execute(context)
+
+    # Artifact Storage 활성화 (전체 출력 저장 및 요약 추출)
+    result = _save_and_summarize_output("planner", result, _CURRENT_SESSION_ID)
 
     # Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해)
     if result.get("content") and len(result["content"]) > 0:
@@ -548,7 +606,7 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
         args: {"task_description": "작업 설명"}
 
     Returns:
-        Agent 실행 결과
+        Agent 실행 결과 (요약만 포함)
     """
     global _LAST_TOOL_RESULTS
 
@@ -563,6 +621,9 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
     result = await _WORKER_EXECUTOR.execute(context)
+
+    # Artifact Storage 활성화
+    result = _save_and_summarize_output("coder", result, _CURRENT_SESSION_ID)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -594,7 +655,7 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
         args: {"task_description": "작업 설명"}
 
     Returns:
-        Agent 실행 결과
+        Agent 실행 결과 (요약만 포함)
     """
     global _LAST_TOOL_RESULTS
 
@@ -609,6 +670,9 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
     result = await _WORKER_EXECUTOR.execute(context)
+
+    # Artifact Storage 활성화
+    result = _save_and_summarize_output("tester", result, _CURRENT_SESSION_ID)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -668,6 +732,9 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     )
     result = await _WORKER_EXECUTOR.execute(context)
 
+    # Artifact Storage 활성화
+    result = _save_and_summarize_output("reviewer", result, _CURRENT_SESSION_ID)
+
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
         result_text = result["content"][0].get("text", "")
@@ -698,23 +765,8 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
         args: {"task_description": "작업 설명"}
 
     Returns:
-        Agent 실행 결과
+        Agent 실행 결과 (요약만 포함)
     """
-    # 보안 검증 수행
-    is_safe, error_msg = await _WORKER_EXECUTOR.commit_validator.validate()
-    if not is_safe:
-        logger.warning(f"[Committer Tool] 커밋 거부 (민감 정보 감지): {error_msg}")
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": f"❌ 커밋 거부 (보안 검증 실패):\n\n{error_msg}"
-                }
-            ]
-        }
-
-    logger.info("[Committer Tool] 보안 검증 통과 - Committer Agent 실행")
-
     global _LAST_TOOL_RESULTS
 
     context = WorkerExecutionContext(
@@ -727,7 +779,10 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_agent=_WORKER_AGENTS.get("committer"),
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
-    result = await _WORKER_EXECUTOR.execute(context)
+    result = await _WORKER_EXECUTOR.execute(context)  # 보안 검증은 내부에서 처리됨
+
+    # Artifact Storage 활성화
+    result = _save_and_summarize_output("committer", result, _CURRENT_SESSION_ID)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -759,7 +814,7 @@ async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
         args: {"task_description": "작업 설명"}
 
     Returns:
-        Agent 실행 결과
+        Agent 실행 결과 (요약만 포함)
     """
     global _LAST_TOOL_RESULTS
 
@@ -774,6 +829,9 @@ async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
     result = await _WORKER_EXECUTOR.execute(context)
+
+    # Artifact Storage 활성화
+    result = _save_and_summarize_output("ideator", result, _CURRENT_SESSION_ID)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -805,7 +863,7 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
         args: {"task_description": "작업 설명"}
 
     Returns:
-        Agent 실행 결과
+        Agent 실행 결과 (요약만 포함)
     """
     global _LAST_TOOL_RESULTS
 
@@ -820,6 +878,9 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
     result = await _WORKER_EXECUTOR.execute(context)
+
+    # Artifact Storage 활성화
+    result = _save_and_summarize_output("product_manager", result, _CURRENT_SESSION_ID)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:

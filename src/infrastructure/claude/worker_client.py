@@ -177,9 +177,9 @@ class WorkerAgent:
         Raises:
             Exception: 작업 실행 실패 시
         """
-        # 디버그 정보 출력 (기본 활성화)
-        # WORKER_DEBUG_INFO=false로 설정하면 비활성화
-        show_debug_info = os.getenv("WORKER_DEBUG_INFO", "true").lower() in (
+        # 디버그 정보 출력 (기본 비활성화 - 컨텍스트 절약)
+        # WORKER_DEBUG_INFO=true로 설정하면 활성화
+        show_debug_info = os.getenv("WORKER_DEBUG_INFO", "false").lower() in (
             "true", "1", "yes"
         )
         if show_debug_info:

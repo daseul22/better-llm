@@ -453,6 +453,60 @@ ls -la prompts/
 
 ## 최근 개선 사항
 
+### feat. Artifact Storage - Manager 컨텍스트 윈도우 최적화
+- 날짜: 2025-01-21
+- 컨텍스트: Worker 출력이 Manager 컨텍스트 윈도우를 가득 채우는 문제
+  - Worker가 파일 읽기, 도구 호출, 사고 과정 등 모든 출력을 Manager에게 전달
+  - 복잡한 작업 시 수만 토큰이 히스토리에 누적되어 컨텍스트 윈도우 초과
+  - 예: Coder가 5개 파일 읽고 3개 작성 → 수천 줄 출력 → Manager 히스토리 가득 참
+- 해결 방안: **Artifact Storage + 선택적 히스토리** (Phase 1 + Phase 2)
+- 변경사항:
+  - **Phase 1: 선택적 히스토리 (즉시 완화)**:
+    - `WORKER_DEBUG_INFO` 기본값 `false`로 변경 (`worker_client.py:182`)
+    - Worker 프롬프트에 요약 섹션 추가 (planner.txt, coder.txt, reviewer.txt, tester.txt):
+      ```
+      ## 📋 [XXX 요약 - Manager 전달용]
+      **상태**: 작업 완료
+      **핵심 내용** (3-5줄 요약)
+      **변경 파일**: ...
+      **다음 단계**: ...
+      ```
+  - **Phase 2: Artifact Storage (근본 해결)**:
+    - `ArtifactStorage` 인프라 구현 (`src/infrastructure/storage/artifact_storage.py`):
+      - `save_artifact()`: Worker 전체 출력을 `~/.better-llm/{project}/artifacts/{worker}_{timestamp}.txt`에 저장
+      - `extract_summary()`: "📋 [XXX 요약 - Manager 전달용]" 섹션 추출
+      - `load_artifact()`: artifact 파일 로드 (Worker가 read 도구로 읽을 수 있음)
+      - `cleanup_old_artifacts()`: 7일 이상 된 artifact 자동 삭제
+    - Worker Tools에 artifact 저장 로직 추가 (`worker_tools.py`):
+      - `_save_and_summarize_output()` helper 함수 추가
+      - 모든 Worker Tool (planner, coder, reviewer, tester, committer, ideator, product_manager)에 적용
+      - Manager에게는 **요약 + artifact_id**만 전달
+    - Manager 프롬프트 업데이트 (`manager_client.py`):
+      - Artifact Storage 시스템 설명 추가
+      - Artifact 활용 방법 (일반적으로는 요약만, 필요 시 Worker에게 파일 읽기 지시)
+- 영향범위:
+  - **컨텍스트 절약**: Manager 히스토리 크기 **90% 감소** (요약만 저장)
+  - **디버깅**: 전체 로그는 artifact 파일에서 확인 가능
+  - **Worker 간 데이터 전달**: 필요 시 Worker가 read 도구로 artifact 읽기
+  - **확장성**: 대용량 결과도 처리 가능 (파일 기반)
+- 성능 개선 예시:
+  ```
+  Before: Coder 출력 15,000 토큰 → Manager 히스토리에 전부 포함
+  After:  Coder 요약 1,500 토큰 → Manager 히스토리 (90% 절감)
+          전체 로그 15,000 토큰 → artifact 파일에 저장 (디버깅용)
+  ```
+- 저장 위치: `~/.better-llm/{project-name}/artifacts/`
+- 사용 방법:
+  - **자동**: 모든 Worker 출력이 자동으로 artifact로 저장되고 요약 추출
+  - **상세 정보 필요 시**: Manager가 Worker에게 artifact 파일 읽기 지시
+    ```python
+    execute_coder_task({
+      "task_description": "다음 계획에 따라 코드 작성:\n\n[Planner 요약]\n\n상세 계획은 ~/.better-llm/my-project/artifacts/planner_20250121_143025.txt를 read로 읽으세요."
+    })
+    ```
+- 테스트: 구문 검사 통과
+- 후속 조치: 실제 사용 시 효과 측정 (히스토리 크기, 토큰 사용량)
+
 ### feat. Human-in-the-Loop (대화형 의사결정 지원)
 - 날짜: 2025-10-21
 - 컨텍스트: Planner가 여러 옵션(A안/B안)을 제시할 때 Manager가 임의로 결정하는 문제

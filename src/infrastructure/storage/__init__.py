@@ -16,6 +16,7 @@ from .repository_factory import (
     get_retention_days
 )
 from .migration import SessionMigration, migrate_sessions_cli
+from .artifact_storage import ArtifactStorage, get_artifact_storage
 
 __all__ = [
     "JsonSessionRepository",
@@ -29,4 +30,6 @@ __all__ = [
     "get_retention_days",
     "SessionMigration",
     "migrate_sessions_cli",
+    "ArtifactStorage",
+    "get_artifact_storage",
 ]
