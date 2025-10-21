@@ -19,6 +19,7 @@ from src.domain.models import (
     SessionDetail
 )
 from src.domain.services import ConversationHistory
+from src.infrastructure.config import get_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +31,13 @@ class JsonSessionRepository(ISessionRepository):
     sessions/ 디렉토리에 JSON 파일로 저장
     """
 
-    def __init__(self, sessions_dir: Path = Path("sessions")):
+    def __init__(self, sessions_dir: Optional[Path] = None):
         """
         Args:
-            sessions_dir: 세션 디렉토리
+            sessions_dir: 세션 디렉토리 (None이면 자동 경로 사용)
         """
-        self.sessions_dir = sessions_dir
+        # 기본 경로: ~/.better-llm/{project-name}/sessions/
+        self.sessions_dir = sessions_dir if sessions_dir is not None else get_data_dir("sessions")
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
     def save(

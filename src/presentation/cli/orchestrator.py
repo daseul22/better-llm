@@ -224,13 +224,13 @@ class Orchestrator:
         # 세션 히스토리 저장
         duration = time.time() - self.start_time
 
-        sessions_dir = Path("sessions")
+        # save_session_history는 기본 경로를 사용 (None 전달 시 자동 경로 사용)
         filepath = save_session_history(
             self.session_id,
             user_request,
             self.history,
             result.to_dict(),
-            sessions_dir
+            output_dir=None  # 기본 경로 사용: ~/.better-llm/{project-name}/sessions/
         )
 
         # 푸터 출력 (Rich 사용)

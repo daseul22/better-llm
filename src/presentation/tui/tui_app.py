@@ -39,6 +39,7 @@ from src.infrastructure.config import (
     validate_environment,
     get_project_root,
     JsonConfigLoader,
+    get_data_dir,
 )
 from src.infrastructure.storage import JsonContextRepository, InMemoryMetricsRepository
 from src.infrastructure.logging import get_logger, log_exception_silently, configure_structlog
@@ -651,9 +652,9 @@ class OrchestratorTUI(App):
             ))
             self.write_log("")
 
-            # 세션 파일 찾기
-            sessions_dir = Path("sessions")
-            session_files = list(sessions_dir.glob(f"{session_id}_*.json"))
+            # 세션 파일 찾기 (새 경로 시스템 사용)
+            sessions_dir = get_data_dir("sessions")
+            session_files = list(sessions_dir.glob(f"session_{session_id}_*.json"))
 
             if not session_files:
                 # 피드백 시스템 사용

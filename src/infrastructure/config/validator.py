@@ -116,8 +116,9 @@ def get_project_name() -> str:
     프로젝트 이름 감지
 
     우선순위:
-    1. Git 저장소 이름 (git root directory 이름)
-    2. 현재 작업 디렉토리 이름
+    1. Git remote URL에서 프로젝트 이름 추출
+    2. Git root directory 이름
+    3. 현재 작업 디렉토리 이름
 
     Returns:
         프로젝트 이름 (디렉토리명)
@@ -125,26 +126,105 @@ def get_project_name() -> str:
     Example:
         >>> get_project_name()
         'better-llm'
+
+    Notes:
+        - Git URL 파싱 지원 형식:
+          * HTTPS: https://github.com/user/repo.git
+          * SSH: git@github.com:user/repo.git
+          * SSH with port: ssh://git@github.com:22/user/repo.git
+          * With query params: https://github.com/user/repo.git?ref=main
     """
     import subprocess
+    import re
 
     try:
-        # Git root 디렉토리 확인 시도
+        # 1. Git remote URL에서 프로젝트 이름 추출 시도
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False
+        )
+
+        if result.returncode == 0:
+            remote_url = result.stdout.strip()
+            if remote_url:
+                # Query params 제거 (예: ?ref=main)
+                remote_url = remote_url.split("?")[0]
+                # Fragment 제거 (예: #branch)
+                remote_url = remote_url.split("#")[0]
+                # .git 확장자 제거
+                if remote_url.endswith(".git"):
+                    remote_url = remote_url[:-4]
+
+                # URL에서 프로젝트 이름 추출
+                # SSH URL with port: ssh://git@github.com:22/user/repo -> repo
+                # SSH URL: git@github.com:user/repo -> repo
+                # HTTPS URL: https://github.com/user/repo -> repo
+
+                # SSH with port 형식 처리
+                if remote_url.startswith("ssh://"):
+                    # ssh://git@github.com:22/user/repo
+                    match = re.search(r"ssh://[^/]+/(.+)", remote_url)
+                    if match:
+                        path = match.group(1)
+                        project_name = path.split("/")[-1]
+                        if project_name:
+                            return project_name
+
+                # 일반 SSH 형식 (git@github.com:user/repo)
+                if "@" in remote_url and ":" in remote_url:
+                    # git@github.com:user/repo -> user/repo
+                    parts = remote_url.split(":")
+                    if len(parts) >= 2:
+                        project_name = parts[-1].split("/")[-1]
+                        if project_name:
+                            return project_name
+
+                # HTTPS 형식 또는 기타 형식
+                project_name = remote_url.split("/")[-1]
+                if project_name:
+                    return project_name
+        else:
+            # Git 명령 실패 시 debug 레벨로 기록
+            logger.debug(
+                f"Git remote command failed (code {result.returncode}): "
+                f"{result.stderr.strip()}"
+            )
+    except subprocess.TimeoutExpired:
+        logger.debug("Git remote command timed out")
+    except FileNotFoundError:
+        logger.debug("Git command not found")
+    except Exception as e:
+        logger.debug(f"Unexpected error while getting git remote: {e}")
+
+    try:
+        # 2. Git root 디렉토리 확인 시도
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
-            timeout=2
+            timeout=2,
+            check=False
         )
 
         if result.returncode == 0:
             git_root = Path(result.stdout.strip())
             return git_root.name
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        # git이 없거나 타임아웃
-        pass
+        else:
+            logger.debug(
+                f"Git rev-parse command failed (code {result.returncode}): "
+                f"{result.stderr.strip()}"
+            )
+    except subprocess.TimeoutExpired:
+        logger.debug("Git rev-parse command timed out")
+    except FileNotFoundError:
+        logger.debug("Git command not found")
+    except Exception as e:
+        logger.debug(f"Unexpected error while getting git root: {e}")
 
-    # Git 저장소가 아니면 현재 작업 디렉토리 이름 사용
+    # 3. Git 저장소가 아니면 현재 작업 디렉토리 이름 사용
     return Path.cwd().name
 
 
@@ -161,11 +241,19 @@ def get_data_dir(subdir: Optional[str] = None) -> Path:
     Returns:
         데이터 디렉토리 경로 (절대 경로)
 
+    Raises:
+        OSError: 디렉토리 생성에 실패한 경우
+
     Example:
         >>> get_data_dir()
         Path('/Users/daniel/.better-llm/better-llm')
         >>> get_data_dir("sessions")
         Path('/Users/daniel/.better-llm/better-llm/sessions')
+
+    Notes:
+        - 프로젝트 이름은 get_project_name()으로 자동 감지됩니다.
+        - 디렉토리가 없으면 자동으로 생성됩니다 (parents=True, exist_ok=True).
+        - 멀티 프로젝트 환경에서도 각 프로젝트의 데이터가 격리됩니다.
     """
     home_dir = Path.home()
     project_name = get_project_name()
@@ -176,6 +264,18 @@ def get_data_dir(subdir: Optional[str] = None) -> Path:
         data_path = home_dir / ".better-llm" / project_name
 
     # 디렉토리 생성 (없으면)
-    data_path.mkdir(parents=True, exist_ok=True)
+    try:
+        data_path.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Data directory ensured: {data_path}")
+    except OSError as e:
+        current_dir = Path.cwd()
+        error_msg = (
+            f"Failed to create data directory: {data_path}\n"
+            f"Current working directory: {current_dir}\n"
+            f"Project name: {project_name}\n"
+            f"Error: {e}"
+        )
+        logger.error(error_msg)
+        raise OSError(error_msg) from e
 
     return data_path

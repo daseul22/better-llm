@@ -302,14 +302,15 @@ class TaskRunner:
         """
         try:
             result = SessionResult(status=SessionStatus.COMPLETED)
-            sessions_dir = Path("sessions")
+            # save_session_history는 기본 경로를 사용 (None 전달 시 자동 경로 사용)
             filepath = save_session_history(
                 self.tui_app.session_id, user_request, self.tui_app.history,
-                result.to_dict(), sessions_dir
+                result.to_dict(), output_dir=None  # 기본 경로 사용: ~/.better-llm/{project-name}/sessions/
             )
 
+            # save_metrics_report도 기본 경로를 사용
             metrics_filepath = save_metrics_report(
-                self.tui_app.session_id, self.tui_app.metrics_collector, sessions_dir, format="text"
+                self.tui_app.session_id, self.tui_app.metrics_collector, output_dir=None, format="text"
             )
 
             return filepath, metrics_filepath

@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
+from src.infrastructure.config import get_data_dir
+
 
 def setup_logging(verbose: bool = False) -> None:
     """
@@ -72,7 +74,7 @@ def save_session_history(
     user_request: str,
     history,  # ConversationHistory object
     result: dict,
-    output_dir: Path
+    output_dir: Optional[Path] = None
 ) -> Path:
     """
     세션 히스토리를 JSON 파일로 저장
@@ -82,11 +84,15 @@ def save_session_history(
         user_request: 사용자 요청
         history: 대화 히스토리 (ConversationHistory 객체)
         result: 작업 결과 (SessionResult 객체의 dict)
-        output_dir: 출력 디렉토리
+        output_dir: 출력 디렉토리 (None이면 자동 경로 사용)
 
     Returns:
         저장된 파일 경로
     """
+    # 기본 경로: ~/.better-llm/{project-name}/sessions/
+    if output_dir is None:
+        output_dir = get_data_dir("sessions")
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     filename = create_session_filename(session_id, user_request)
@@ -269,7 +275,7 @@ def load_system_config(config_path: Optional[Path] = None):
 def save_metrics_report(
     session_id: str,
     metrics_collector,  # MetricsCollector object
-    output_dir: Path,
+    output_dir: Optional[Path] = None,
     format: str = "text"
 ) -> Optional[Path]:
     """
@@ -278,13 +284,17 @@ def save_metrics_report(
     Args:
         session_id: 세션 ID
         metrics_collector: 메트릭 수집기 (MetricsCollector 객체)
-        output_dir: 출력 디렉토리
+        output_dir: 출력 디렉토리 (None이면 자동 경로 사용)
         format: 리포트 형식 ("text", "json", "markdown")
 
     Returns:
         저장된 파일 경로 또는 None (메트릭이 없는 경우)
     """
     from src.domain.services import MetricsReporter
+
+    # 기본 경로: ~/.better-llm/{project-name}/sessions/
+    if output_dir is None:
+        output_dir = get_data_dir("sessions")
 
     # 세션 메트릭 조회
     session_metrics = metrics_collector.get_session_summary(session_id)
