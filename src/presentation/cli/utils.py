@@ -79,6 +79,23 @@ def save_session_history(
     """
     세션 히스토리를 JSON 파일로 저장
 
+    .. deprecated:: 0.1.0
+        이 함수는 deprecated되었습니다. Repository 패턴을 사용하세요.
+
+        **대체 방법:**
+            >>> from src.infrastructure.storage import create_session_repository
+            >>> repo = create_session_repository()
+            >>> repo.save(session_id, user_request, history, result)
+
+        **제거 예정:** v0.2.0에서 제거될 예정입니다.
+
+        **사유:**
+        - Repository 패턴으로 전환하여 저장소 추상화
+        - SQLite, JSON 등 다양한 백엔드 지원
+        - 프로젝트별 격리된 저장 경로 (`~/.better-llm/{project-name}/`)
+
+        이 함수는 하위 호환성을 위해 유지되며, 내부적으로 JSON 파일로만 저장합니다.
+
     Args:
         session_id: 세션 ID
         user_request: 사용자 요청

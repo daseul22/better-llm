@@ -34,10 +34,10 @@ from src.infrastructure.config import (
     get_project_root,
     SystemConfig,
 )
+from src.infrastructure.storage import create_session_repository
 from .utils import (
     setup_logging,
     generate_session_id,
-    save_session_history,
     print_header,
     print_footer,
     validate_user_input,
@@ -112,6 +112,9 @@ class Orchestrator:
 
         # Workflow Tree (Worker Tool 호출 추적)
         self.workflow_tree = WorkflowTree(title="Worker Tools Workflow")
+
+        # Repository 패턴 사용 (config/system_config.json의 storage.backend 설정에 따라)
+        self.session_repo = create_session_repository()
 
     def _validate_and_prepare_input(self, user_request: str) -> tuple[bool, str, str]:
         """
@@ -224,14 +227,23 @@ class Orchestrator:
         # 세션 히스토리 저장
         duration = time.time() - self.start_time
 
-        # save_session_history는 기본 경로를 사용 (None 전달 시 자동 경로 사용)
-        filepath = save_session_history(
-            self.session_id,
-            user_request,
-            self.history,
-            result.to_dict(),
-            output_dir=None  # 기본 경로 사용: ~/.better-llm/{project-name}/sessions/
-        )
+        # Repository 패턴 사용 (config/system_config.json의 storage.backend에 따라 저장)
+        try:
+            filepath = self.session_repo.save(
+                session_id=self.session_id,
+                user_request=user_request,
+                history=self.history,
+                result=result
+            )
+        except Exception as e:
+            # 저장 실패 시 경고 출력하고 계속 진행
+            self.feedback.warning(
+                f"세션 저장 중 오류 발생: {e}",
+                use_panel=False
+            )
+            # 기본 경로를 반환하여 푸터 출력은 정상적으로 진행
+            from src.infrastructure.config import get_data_dir
+            filepath = get_data_dir("sessions") / f"session_{self.session_id}_failed.json"
 
         # 푸터 출력 (Rich 사용)
         self.renderer.print_footer(

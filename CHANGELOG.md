@@ -11,6 +11,11 @@
 - ADR (Architecture Decision Records) 문서 5개 작성
 - 에러 코드 체계화 (`src/domain/errors/`)
 - 문서화 개선 (설치 가이드, 빠른 시작, 사용법, 문제 해결)
+- **SQLite 기반 세션 저장 (Repository 패턴)**
+  - `SessionRepository` 인터페이스 도입 (`src/application/ports/`)
+  - SQLite 구현체 (`src/infrastructure/storage/sqlite/`)
+  - 프로젝트별 격리된 저장 경로 (`~/.better-llm/{project-name}/`)
+  - 세션 조회/검색 API 제공
 
 ### Changed
 - **TUI 리팩토링 (2025-01-20)**
@@ -23,6 +28,16 @@
   - 프로퍼티 캐싱 최적화 (LRU 캐시 적용)
 - README.md 개선 (Quick Start, 문서 링크 추가)
 - CONTRIBUTING.md 작성 (기여 가이드)
+- **세션 저장 로직 개선 (commit: 0603ea1)**
+  - JSON 파일 저장에서 Repository 패턴으로 전환
+  - `orchestrator.py` Repository 패턴 통합 (line 117, 232-237)
+  - 프로젝트별 세션/로그 저장 경로 격리
+  - `config/system_config.json`의 `storage.backend` 설정으로 저장소 선택 가능
+
+### Deprecated
+- `src/presentation/cli/utils.py::save_session_history()` 함수
+  - Repository 패턴 (`create_session_repository()`) 사용 권장
+  - 하위 호환성을 위해 유지되며 향후 버전에서 제거 예정
 
 ## [0.1.0] - 2025-01-20
 
