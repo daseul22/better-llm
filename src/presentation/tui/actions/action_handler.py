@@ -289,7 +289,7 @@ class ActionHandler:
                 if self.tui.current_task and not self.tui.current_task.done():
                     self.tui.current_task.cancel()
                     self.tui.timer_active = False
-                    self.tui.update_worker_status("⚠️ 작업 중단됨")
+                    self.tui.update_manager.update_worker_status("⚠️ 작업 중단됨")
 
                     status_info = self.tui.query_one("#status-info", Static)
                     status_info.update("Interrupted")

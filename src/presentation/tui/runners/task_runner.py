@@ -83,7 +83,7 @@ class TaskRunner:
             status_info.update("Running...")
             self.tui_app.task_start_time = time.time()
             self.tui_app.timer_active = True
-            self.tui_app.update_worker_status("🔄 Manager Agent 실행 중...")
+            self.tui_app.update_manager.update_worker_status("🔄 Manager Agent 실행 중...")
 
             effective_width = self._calculate_display_width()
 
@@ -206,7 +206,7 @@ class TaskRunner:
                 "\n[bold yellow]⚠️  작업이 사용자에 의해 중단되었습니다[/bold yellow]"
             )
             self.tui_app.timer_active = False
-            self.tui_app.update_worker_status("")
+            self.tui_app.update_manager.update_worker_status("")
             raise
 
         except Exception as stream_error:
@@ -214,7 +214,7 @@ class TaskRunner:
             import traceback
             self.tui_app.write_log(f"[dim]{traceback.format_exc()}[/dim]")
             self.tui_app.timer_active = False
-            self.tui_app.update_worker_status("")
+            self.tui_app.update_manager.update_worker_status("")
             raise
 
         task_duration = time.time() - task_start_time

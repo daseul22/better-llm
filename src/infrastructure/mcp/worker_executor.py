@@ -13,6 +13,8 @@ from typing import Any, Dict, Callable, Optional
 from datetime import datetime
 import asyncio
 import logging
+import re
+import os
 
 from src.infrastructure.mcp.review_cycle_manager import ReviewCycleManager
 from src.infrastructure.mcp.commit_validator import CommitSafetyValidator
@@ -24,6 +26,9 @@ from src.infrastructure.mcp.error_statistics_manager import ErrorStatisticsManag
 from src.infrastructure.logging import get_logger, log_exception_silently
 
 logger = get_logger(__name__, component="WorkerExecutor")
+
+# 환경변수로 Worker 출력 요약 기능 제어
+ENABLE_WORKER_OUTPUT_SUMMARY = os.getenv("DISABLE_WORKER_OUTPUT_SUMMARY", "false").lower() != "true"
 
 
 @dataclass
@@ -299,13 +304,13 @@ class WorkerExecutor:
         context: WorkerExecutionContext
     ) -> Dict[str, Any]:
         """
-        실제 Worker 실행 로직 (타임아웃 적용)
+        실제 Worker 실행 로직 (타임아웃 적용 + 출력 요약)
 
         Args:
             context: 실행 컨텍스트
 
         Returns:
-            Worker 실행 결과
+            Worker 실행 결과 (요약됨)
 
         Raises:
             asyncio.TimeoutError: 타임아웃 발생 시
@@ -318,14 +323,22 @@ class WorkerExecutor:
             result = ""
             async for chunk in context.worker_agent.execute_task(context.task_description):
                 result += chunk
-                # Worker 출력 스트리밍 콜백 호출
+                # Worker 출력 스트리밍 콜백 호출 (TUI용, raw 출력)
                 if context.worker_output_callback:
                     try:
                         context.worker_output_callback(context.worker_name, chunk)
                     except Exception as e:
                         logger.warning(f"Worker 출력 콜백 실행 실패: {e}")
 
-            return {"content": [{"type": "text", "text": result}]}
+            # Worker 출력 요약 (Manager에게 전달할 컨텍스트 절약)
+            # 환경변수 DISABLE_WORKER_OUTPUT_SUMMARY=true로 비활성화 가능
+            if ENABLE_WORKER_OUTPUT_SUMMARY:
+                summarized_result = self._summarize_worker_output(context.worker_name, result)
+            else:
+                summarized_result = result
+                logger.debug(f"[{context.worker_name}] 출력 요약 비활성화됨 (DISABLE_WORKER_OUTPUT_SUMMARY=true)")
+
+            return {"content": [{"type": "text", "text": summarized_result}]}
 
         # 재시도 로직 또는 일반 실행 (복잡도: 1)
         if context.use_retry:
@@ -488,6 +501,127 @@ class WorkerExecutor:
                 issues.append(line.strip()[:100])  # 최대 100자
 
         return issues[:10]  # 최대 10개
+
+    def _summarize_worker_output(self, worker_name: str, output: str) -> str:
+        """
+        Worker 출력을 요약하여 Manager에게 전달할 컨텍스트를 절약합니다.
+
+        제거 대상:
+        - 파일 읽기 결과 (Read, cat 등의 긴 출력)
+        - 파일 검색 결과 상세 (Grep, Glob의 긴 리스트)
+        - 긴 코드 블록 (500자 이상)
+        - 디버그 로그
+
+        유지 대상:
+        - 에러 메시지
+        - 최종 결론/완료 메시지
+        - 핵심 결정 사항
+        - 요약 섹션
+        - 통계 정보
+
+        Args:
+            worker_name: Worker 이름
+            output: Worker의 raw 출력
+
+        Returns:
+            요약된 출력
+        """
+        lines = output.split("\n")
+        summarized_lines = []
+        in_code_block = False
+        code_block_lines = []
+        skip_file_content = False
+        file_read_count = 0
+
+        for i, line in enumerate(lines):
+            # 코드 블록 시작/종료 감지
+            if line.strip().startswith("```"):
+                in_code_block = not in_code_block
+                if not in_code_block and code_block_lines:
+                    # 코드 블록 종료 - 너무 길면 요약
+                    if len(code_block_lines) > 20:
+                        summarized_lines.append("```")
+                        summarized_lines.append(f"... ({len(code_block_lines)} lines of code omitted)")
+                        summarized_lines.append("```")
+                    else:
+                        summarized_lines.extend(code_block_lines)
+                        summarized_lines.append(line)
+                    code_block_lines = []
+                else:
+                    code_block_lines.append(line)
+                continue
+
+            if in_code_block:
+                code_block_lines.append(line)
+                continue
+
+            # 파일 읽기 결과 감지 및 요약
+            if re.search(r"Reading|read file|파일 읽기", line, re.IGNORECASE):
+                file_read_count += 1
+                summarized_lines.append(f"📄 파일 읽기 #{file_read_count}: {line.strip()[:80]}")
+                skip_file_content = True
+                continue
+
+            if skip_file_content:
+                # 파일 내용은 건너뛰고 다음 액션까지만 스킵
+                if re.search(r"^(Writing|Editing|Running|Searching|Complete|완료|에러|Error)", line, re.IGNORECASE):
+                    skip_file_content = False
+                else:
+                    continue
+
+            # 파일 검색 결과 요약 (Grep, Glob)
+            if re.search(r"(Found|검색|Searching|Grepping)", line, re.IGNORECASE):
+                summarized_lines.append(f"🔍 {line.strip()[:100]}")
+                # 다음 10줄 정도는 상세 결과이므로 스킵
+                next_lines = lines[i+1:i+10]
+                match_count = sum(1 for l in next_lines if l.strip() and not l.startswith("#"))
+                if match_count > 5:
+                    summarized_lines.append(f"   ... ({match_count}개 결과 생략)")
+                continue
+
+            # 중요 섹션 유지 (에러, 완료, 결정, 요약)
+            if re.search(r"(Error|에러|Failed|실패|Warning|경고|Critical|중요)", line, re.IGNORECASE):
+                summarized_lines.append(f"⚠️  {line.strip()}")
+                continue
+
+            if re.search(r"(Complete|완료|Success|성공|Done|Finished)", line, re.IGNORECASE):
+                summarized_lines.append(f"✅ {line.strip()}")
+                continue
+
+            if re.search(r"(Summary|요약|Conclusion|결론|Decision|결정)", line, re.IGNORECASE):
+                summarized_lines.append(f"📋 {line.strip()}")
+                continue
+
+            # 통계 정보 유지
+            if re.search(r"\d+\s*(files?|개|건|줄|lines?)", line, re.IGNORECASE):
+                summarized_lines.append(line.strip())
+                continue
+
+            # 빈 줄이 아니고 너무 길지 않으면 유지
+            if line.strip() and len(line) < 200:
+                # 디버그 로그나 반복적인 내용은 제외
+                if not re.search(r"(DEBUG|TRACE|Received chunk|청크|스트리밍)", line, re.IGNORECASE):
+                    summarized_lines.append(line.strip())
+
+        # 최종 요약
+        summarized = "\n".join(summarized_lines)
+
+        # 요약 통계
+        original_length = len(output)
+        summarized_length = len(summarized)
+        reduction_ratio = (1 - summarized_length / original_length) * 100 if original_length > 0 else 0
+
+        # 요약이 의미 있는 경우 (30% 이상 감소)에만 적용
+        if reduction_ratio >= 30:
+            logger.info(
+                f"[{worker_name}] 출력 요약 완료: {original_length} → {summarized_length} chars "
+                f"({reduction_ratio:.1f}% 감소)"
+            )
+            return summarized
+        else:
+            # 요약 효과가 적으면 원본 반환
+            logger.debug(f"[{worker_name}] 요약 효과 미미 ({reduction_ratio:.1f}%), 원본 유지")
+            return output
 
     def set_review_max_cycles(self, max_cycles: int) -> None:
         """
