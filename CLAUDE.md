@@ -453,6 +453,27 @@ ls -la prompts/
 
 ## 최근 개선 사항
 
+### fix. 패키지 설치 설정 수정 (src 패키지 지원)
+- 날짜: 2025-10-21
+- 컨텍스트: editable 모드 설치 시 `ModuleNotFoundError: No module named 'src'` 에러 발생
+  - 프로젝트 전체(63개 파일)가 `from src.domain.services import ...` 형식의 import 사용
+  - 기존 `pyproject.toml` 설정은 `package-dir = {"" = "src"}` 사용 (src를 루트로 매핑)
+  - entry point가 `presentation.tui.tui_app:main`으로 설정되어 src가 패키지로 인식되지 않음
+  - `setup.py`와 `pyproject.toml`이 동시에 존재하여 충돌 발생
+- 변경사항:
+  - **pyproject.toml 수정** (`pyproject.toml`):
+    - entry point 수정: `src.presentation.tui.tui_app:main`, `src.presentation.cli.orchestrator:main`
+    - packages.find 수정: `where = ["."]`, `include = ["src", "src.*"]`
+    - `src`를 최상위 패키지로 명시적으로 포함
+  - **setup.py 백업**:
+    - `setup.py`를 `setup.py.bak`으로 백업 (pyproject.toml과 충돌 방지)
+- 영향범위:
+  - **설치**: `pip install -e .` 정상 작동
+  - **import**: 모든 `from src.` import가 정상 작동
+  - **entry point**: `better-llm`, `better-llm-cli` 명령어 정상 실행
+- 테스트: TUI 실행 확인 (Workers: 7개, Model: claude-sonnet-4-5-20250929)
+- 후속 조치: 없음 (안정적으로 작동)
+
 ### feat. Artifact Storage - Manager 컨텍스트 윈도우 최적화
 - 날짜: 2025-01-21
 - 컨텍스트: Worker 출력이 Manager 컨텍스트 윈도우를 가득 채우는 문제

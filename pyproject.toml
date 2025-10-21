@@ -33,14 +33,12 @@ dev = [
 ]
 
 [project.scripts]
-better-llm = "presentation.tui.tui_app:main"
-better-llm-cli = "presentation.cli.orchestrator:main"
-
-[tool.setuptools]
-package-dir = {"" = "src"}
+better-llm = "src.presentation.tui.tui_app:main"
+better-llm-cli = "src.presentation.cli.orchestrator:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["src", "src.*"]
 
 [tool.black]
 line-length = 100
