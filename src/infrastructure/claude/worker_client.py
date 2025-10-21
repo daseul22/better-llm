@@ -106,7 +106,7 @@ class WorkerAgent:
 
     def _generate_debug_info(self, task_description: str) -> str:
         """
-        Worker 실행 시 디버그 정보 생성
+        Worker 실행 시 디버그 정보 생성 (시스템 프롬프트, 맥락 포함)
 
         Args:
             task_description: 작업 설명
@@ -116,42 +116,51 @@ class WorkerAgent:
         """
         lines = []
         lines.append("\n" + "="*70)
-        lines.append(f"🔍 [{self.config.name.upper()}] 실행 정보")
+        lines.append(f"🔍 [{self.config.name.upper()}] Worker 실행 정보")
         lines.append("="*70)
 
         # 1. 기본 정보
         lines.append(f"\n📋 Worker: {self.config.name} ({self.config.role})")
         lines.append(f"🤖 Model: {self.config.model}")
-        lines.append(f"🛠️  Tools: {', '.join(self.config.tools)}")
+        lines.append(f"🛠️  Tools: {', '.join(self.config.tools) if self.config.tools else 'None'}")
 
-        # 2. 시스템 프롬프트 정보
-        lines.append(f"\n📄 System Prompt File: {self.config.system_prompt}")
+        # 2. 시스템 프롬프트 정보 (전체 내용 표시)
+        lines.append(f"\n📄 System Prompt:")
+        lines.append(f"   Source: {self.config.system_prompt}")
         lines.append(f"   Length: {len(self.system_prompt)} characters")
+        lines.append("\n" + "-"*70)
+        # 시스템 프롬프트 전체 표시 (indented)
+        for line in self.system_prompt.split('\n'):
+            lines.append(f"   {line}")
+        lines.append("-"*70)
 
-        # 3. 프로젝트 컨텍스트 정보
+        # 3. 프로젝트 컨텍스트 정보 (상세)
         if self.project_context:
             lines.append(f"\n🏗️  Project Context:")
             lines.append(f"   - Project: {self.project_context.project_name}")
-            lines.append(f"   - Description: {self.project_context.description[:80]}..."
-                        if len(self.project_context.description) > 80
-                        else f"   - Description: {self.project_context.description}")
+            lines.append(f"   - Description: {self.project_context.description}")
 
             if self.project_context.coding_style:
                 style = self.project_context.coding_style
-                lines.append(f"   - Coding Style: line_length={style.line_length}, quote_style={style.quote_style}")
+                lines.append(f"   - Coding Style:")
+                lines.append(f"     • Docstring: {style.docstring_style}")
+                lines.append(f"     • Type Hints: {'사용' if style.type_hints else '미사용'}")
+                lines.append(f"     • Line Length: {style.line_length}")
+                lines.append(f"     • Quote Style: {style.quote_style}")
+                lines.append(f"     • Import Style: {style.import_style}")
         else:
             lines.append(f"\n🏗️  Project Context: None")
 
-        # 4. 작업 설명
+        # 4. 작업 설명 (전체 표시)
         lines.append(f"\n📝 Task Description:")
-        task_lines = task_description.split('\n')
-        for i, line in enumerate(task_lines[:5]):  # 최대 5줄만 표시
+        lines.append("-"*70)
+        for line in task_description.split('\n'):
             lines.append(f"   {line}")
-        if len(task_lines) > 5:
-            lines.append(f"   ... ({len(task_lines) - 5} more lines)")
+        lines.append("-"*70)
 
         lines.append("\n" + "="*70)
-        lines.append("⚡ Starting execution...\n")
+        lines.append("⚡ Starting Worker execution...")
+        lines.append("="*70 + "\n")
 
         return "\n".join(lines)
 
@@ -168,9 +177,9 @@ class WorkerAgent:
         Raises:
             Exception: 작업 실행 실패 시
         """
-        # 디버그 정보 출력 (환경변수로 제어)
-        # WORKER_DEBUG_INFO=true로 설정하면 활성화
-        show_debug_info = os.getenv("WORKER_DEBUG_INFO", "false").lower() in (
+        # 디버그 정보 출력 (기본 활성화)
+        # WORKER_DEBUG_INFO=false로 설정하면 비활성화
+        show_debug_info = os.getenv("WORKER_DEBUG_INFO", "true").lower() in (
             "true", "1", "yes"
         )
         if show_debug_info:
@@ -208,6 +217,9 @@ class WorkerAgent:
         # 스트림 실행
         async for text in executor.execute_stream(full_prompt):
             yield text
+
+        # Worker 실행 완료 표시
+        yield f"\n{'='*70}\n✅ [{self.config.name.upper()}] Worker execution completed\n{'='*70}\n"
 
     def __repr__(self) -> str:
         return f"WorkerAgent(name={self.config.name}, role={self.config.role})"

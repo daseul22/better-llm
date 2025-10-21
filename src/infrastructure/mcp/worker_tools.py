@@ -57,6 +57,9 @@ _USER_INPUT_CALLBACK: Optional[Callable] = None
 # Interaction 설정 (system_config.json에서 로드)
 _INTERACTION_ENABLED: bool = False
 
+# Tool 실행 결과 추적 (Orchestrator가 히스토리에 추가하기 위해 사용)
+_LAST_TOOL_RESULTS: list[Dict[str, Any]] = []
+
 
 # ============================================================================
 # 헬퍼 함수
@@ -375,6 +378,34 @@ def set_user_input_callback(callback: Optional[Callable]) -> None:
     logger.info("✅ 사용자 입력 콜백 설정 완료")
 
 
+def get_and_clear_tool_results() -> list[Dict[str, Any]]:
+    """
+    마지막 Manager 턴에서 실행된 Tool 결과를 조회하고 초기화
+
+    Orchestrator가 Manager 턴 완료 후 호출하여
+    Worker Tool 실행 결과를 히스토리에 추가하는 데 사용합니다.
+
+    Returns:
+        list[Dict[str, Any]]: Tool 실행 결과 리스트
+            각 항목: {
+                "tool_name": str,  # Tool 이름 (예: "execute_planner_task")
+                "worker_name": str,  # Worker 이름 (예: "planner")
+                "result": str  # Worker 실행 결과 텍스트
+            }
+    """
+    global _LAST_TOOL_RESULTS
+
+    results = _LAST_TOOL_RESULTS.copy()
+    _LAST_TOOL_RESULTS.clear()
+
+    logger.debug(
+        "Tool results retrieved and cleared",
+        count=len(results)
+    )
+
+    return results
+
+
 def reset_review_cycle() -> None:
     """
     Review cycle을 초기화합니다.
@@ -473,6 +504,8 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
+    global _LAST_TOOL_RESULTS
+
     context = WorkerExecutionContext(
         worker_name="planner",
         task_description=args["task_description"],
@@ -483,7 +516,18 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_agent=_WORKER_AGENTS.get("planner"),
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
-    return await _WORKER_EXECUTOR.execute(context)
+    result = await _WORKER_EXECUTOR.execute(context)
+
+    # Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해)
+    if result.get("content") and len(result["content"]) > 0:
+        result_text = result["content"][0].get("text", "")
+        _LAST_TOOL_RESULTS.append({
+            "tool_name": "execute_planner_task",
+            "worker_name": "planner",
+            "result": result_text
+        })
+
+    return result
 
 
 @tool(
@@ -506,6 +550,8 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
+    global _LAST_TOOL_RESULTS
+
     context = WorkerExecutionContext(
         worker_name="coder",
         task_description=args["task_description"],
@@ -516,7 +562,18 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_agent=_WORKER_AGENTS.get("coder"),
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
-    return await _WORKER_EXECUTOR.execute(context)
+    result = await _WORKER_EXECUTOR.execute(context)
+
+    # Tool 결과 저장
+    if result.get("content") and len(result["content"]) > 0:
+        result_text = result["content"][0].get("text", "")
+        _LAST_TOOL_RESULTS.append({
+            "tool_name": "execute_coder_task",
+            "worker_name": "coder",
+            "result": result_text
+        })
+
+    return result
 
 
 @tool(
@@ -539,6 +596,8 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
+    global _LAST_TOOL_RESULTS
+
     context = WorkerExecutionContext(
         worker_name="tester",
         task_description=args["task_description"],
@@ -549,7 +608,18 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_agent=_WORKER_AGENTS.get("tester"),
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
-    return await _WORKER_EXECUTOR.execute(context)
+    result = await _WORKER_EXECUTOR.execute(context)
+
+    # Tool 결과 저장
+    if result.get("content") and len(result["content"]) > 0:
+        result_text = result["content"][0].get("text", "")
+        _LAST_TOOL_RESULTS.append({
+            "tool_name": "execute_tester_task",
+            "worker_name": "tester",
+            "result": result_text
+        })
+
+    return result
 
 
 @tool(
@@ -584,6 +654,8 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
         - 최대 횟수 초과 시 자동으로 실행이 중단되며, 수동 검토가 필요합니다.
         - 새 작업 시작 시(Planner 또는 Coder 호출) Review cycle이 자동 초기화됩니다.
     """
+    global _LAST_TOOL_RESULTS
+
     context = WorkerExecutionContext(
         worker_name="reviewer",
         task_description=args["task_description"],
@@ -594,7 +666,18 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_agent=_WORKER_AGENTS.get("reviewer"),
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
-    return await _WORKER_EXECUTOR.execute(context)
+    result = await _WORKER_EXECUTOR.execute(context)
+
+    # Tool 결과 저장
+    if result.get("content") and len(result["content"]) > 0:
+        result_text = result["content"][0].get("text", "")
+        _LAST_TOOL_RESULTS.append({
+            "tool_name": "execute_reviewer_task",
+            "worker_name": "reviewer",
+            "result": result_text
+        })
+
+    return result
 
 
 @tool(
@@ -632,6 +715,8 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
 
     logger.info("[Committer Tool] 보안 검증 통과 - Committer Agent 실행")
 
+    global _LAST_TOOL_RESULTS
+
     context = WorkerExecutionContext(
         worker_name="committer",
         task_description=args["task_description"],
@@ -642,7 +727,18 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_agent=_WORKER_AGENTS.get("committer"),
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
-    return await _WORKER_EXECUTOR.execute(context)
+    result = await _WORKER_EXECUTOR.execute(context)
+
+    # Tool 결과 저장
+    if result.get("content") and len(result["content"]) > 0:
+        result_text = result["content"][0].get("text", "")
+        _LAST_TOOL_RESULTS.append({
+            "tool_name": "execute_committer_task",
+            "worker_name": "committer",
+            "result": result_text
+        })
+
+    return result
 
 
 @tool(
@@ -665,6 +761,8 @@ async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
+    global _LAST_TOOL_RESULTS
+
     context = WorkerExecutionContext(
         worker_name="ideator",
         task_description=args["task_description"],
@@ -675,7 +773,18 @@ async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_agent=_WORKER_AGENTS.get("ideator"),
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
-    return await _WORKER_EXECUTOR.execute(context)
+    result = await _WORKER_EXECUTOR.execute(context)
+
+    # Tool 결과 저장
+    if result.get("content") and len(result["content"]) > 0:
+        result_text = result["content"][0].get("text", "")
+        _LAST_TOOL_RESULTS.append({
+            "tool_name": "execute_ideator_task",
+            "worker_name": "ideator",
+            "result": result_text
+        })
+
+    return result
 
 
 @tool(
@@ -698,6 +807,8 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과
     """
+    global _LAST_TOOL_RESULTS
+
     context = WorkerExecutionContext(
         worker_name="product_manager",
         task_description=args["task_description"],
@@ -708,7 +819,18 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_agent=_WORKER_AGENTS.get("product_manager"),
         worker_output_callback=_WORKER_OUTPUT_CALLBACK
     )
-    return await _WORKER_EXECUTOR.execute(context)
+    result = await _WORKER_EXECUTOR.execute(context)
+
+    # Tool 결과 저장
+    if result.get("content") and len(result["content"]) > 0:
+        result_text = result["content"][0].get("text", "")
+        _LAST_TOOL_RESULTS.append({
+            "tool_name": "execute_product_manager_task",
+            "worker_name": "product_manager",
+            "result": result_text
+        })
+
+    return result
 
 
 # ============================================================================
@@ -927,6 +1049,14 @@ async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
             failed=len(execution_result.failed_tasks),
             duration=execution_result.total_duration
         )
+
+        # Tool 결과 저장
+        global _LAST_TOOL_RESULTS
+        _LAST_TOOL_RESULTS.append({
+            "tool_name": "execute_parallel_tasks",
+            "worker_name": "parallel_executor",
+            "result": result_text
+        })
 
         return {
             "content": [{"type": "text", "text": result_text}],

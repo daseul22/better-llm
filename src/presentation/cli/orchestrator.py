@@ -28,7 +28,8 @@ from src.infrastructure.mcp import (
     initialize_workers,
     create_worker_tools_server,
     log_error_summary,
-    set_user_input_callback
+    set_user_input_callback,
+    get_and_clear_tool_results,
 )
 from src.infrastructure.config import (
     validate_environment,
@@ -231,6 +232,18 @@ class Orchestrator:
         self.renderer.console.print()
         self.renderer.console.print()
 
+        # Worker Tool 실행 결과를 히스토리에 추가
+        tool_results = get_and_clear_tool_results()
+        for tool_result in tool_results:
+            self.history.add_message(
+                "agent",
+                tool_result["result"],
+                agent_name=tool_result["worker_name"]
+            )
+
+        # Manager 응답을 히스토리에 추가
+        self.history.add_message("manager", manager_response)
+
         return manager_response
 
     def _check_completion_condition(self, manager_response: str) -> bool:
@@ -338,13 +351,10 @@ class Orchestrator:
         try:
             # 4. 대화 루프
             for turn in range(1, max_turns + 1):
-                # 4.1 Manager 턴 실행
+                # 4.1 Manager 턴 실행 (히스토리 추가 포함)
                 manager_response = await self._execute_manager_turn(turn)
 
-                # 4.2 Manager 응답을 히스토리에 추가
-                self.history.add_message("manager", manager_response)
-
-                # 4.3 완료 조건 확인
+                # 4.2 완료 조건 확인
                 if self._check_completion_condition(manager_response):
                     self.feedback.success(
                         "Manager가 작업 완료를 보고했습니다",

@@ -19,6 +19,7 @@ from src.presentation.cli.utils import (
 )
 from src.presentation.cli.feedback import TUIFeedbackWidget, FeedbackType
 from src.infrastructure.logging import get_logger
+from src.infrastructure.mcp import get_and_clear_tool_results
 from ..utils import MessageRenderer
 
 if TYPE_CHECKING:
@@ -92,7 +93,7 @@ class TaskRunner:
             )
 
             self.tui_app.timer_active = False
-            self.tui_app.history.add_message("manager", manager_response)
+            # Manager 응답은 _execute_streaming_task 내에서 히스토리에 추가됨
 
             filepath, metrics_filepath = self._save_and_cleanup(
                 sanitized_request, task_duration
@@ -200,6 +201,18 @@ class TaskRunner:
 
             self.tui_app.write_log("")
             self.tui_app.write_log(MessageRenderer.render_ai_response_end())
+
+            # Worker Tool 실행 결과를 히스토리에 추가
+            tool_results = get_and_clear_tool_results()
+            for tool_result in tool_results:
+                self.tui_app.history.add_message(
+                    "agent",
+                    tool_result["result"],
+                    agent_name=tool_result["worker_name"]
+                )
+
+            # Manager 응답을 히스토리에 추가
+            self.tui_app.history.add_message("manager", manager_response)
 
         except asyncio.CancelledError:
             self.tui_app.write_log(

@@ -15,6 +15,7 @@ from .worker_tools import (
     set_workflow_callback,
     set_worker_output_callback,
     set_user_input_callback,
+    get_and_clear_tool_results,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "set_workflow_callback",
     "set_worker_output_callback",
     "set_user_input_callback",
+    "get_and_clear_tool_results",
 ]

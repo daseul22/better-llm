@@ -330,15 +330,9 @@ class WorkerExecutor:
                     except Exception as e:
                         logger.warning(f"Worker 출력 콜백 실행 실패: {e}")
 
-            # Worker 출력 요약 (Manager에게 전달할 컨텍스트 절약)
-            # 환경변수 DISABLE_WORKER_OUTPUT_SUMMARY=true로 비활성화 가능
-            if ENABLE_WORKER_OUTPUT_SUMMARY:
-                summarized_result = self._summarize_worker_output(context.worker_name, result)
-            else:
-                summarized_result = result
-                logger.debug(f"[{context.worker_name}] 출력 요약 비활성화됨 (DISABLE_WORKER_OUTPUT_SUMMARY=true)")
-
-            return {"content": [{"type": "text", "text": summarized_result}]}
+            # Worker 출력을 raw 상태로 반환 (히스토리에 완전한 내용 저장)
+            # 출력 요약은 더 이상 사용하지 않음 (정보 손실 방지)
+            return {"content": [{"type": "text", "text": result}], "raw_output": result}
 
         # 재시도 로직 또는 일반 실행 (복잡도: 1)
         if context.use_retry:

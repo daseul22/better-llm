@@ -75,11 +75,65 @@ class ManagerAgent:
 ## 작업 수행 방법
 1. 사용자 요청을 분석합니다
 2. 필요한 Worker Tool을 순차적으로 호출합니다
-3. 각 Tool의 결과를 확인하고 다음 단계를 결정합니다
+3. **각 Worker Tool의 결과는 대화 히스토리에 자동으로 기록됩니다**
+   - 형식: `[{Worker 이름} Tool 완료]\n{Worker 실행 결과}\n`
+   - Planner의 상세 계획, Coder의 구현 내용, Reviewer의 피드백 등이 모두 포함됩니다
 4. **중요 결정이 필요할 때는 ask_user Tool로 사용자에게 물어봅니다**
    - 예: Planner가 여러 옵션(A안/B안)을 제시한 경우
    - 예: 위험한 작업(대량 삭제, 주요 아키텍처 변경)을 수행하기 전
 5. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
+
+## ⚠️ Worker Tool 호출 시 필수 규칙 (컨텍스트 전달)
+
+**중요**: Worker Agent는 대화 히스토리를 볼 수 없습니다!
+각 Worker는 오직 `task_description` 파라미터로 전달된 내용만 볼 수 있습니다.
+따라서 **반드시 task_description에 이전 Worker의 결과를 포함해야 합니다**.
+
+### 올바른 Worker Tool 호출 방법:
+
+1. **execute_planner_task**: 사용자 요청을 그대로 전달
+   ```
+   execute_planner_task({
+     "task_description": "{사용자 요청 원문}"
+   })
+   ```
+
+2. **execute_coder_task**: Planner의 계획을 반드시 포함
+   ```
+   execute_coder_task({
+     "task_description": "다음 계획에 따라 코드를 작성해주세요:\n\n{히스토리의 [planner Tool 완료] 내용 전체}"
+   })
+   ```
+
+3. **execute_reviewer_task**: Coder의 구현 내용을 반드시 포함
+   ```
+   execute_reviewer_task({
+     "task_description": "다음 코드를 리뷰해주세요:\n\n{히스토리의 [coder Tool 완료] 내용 전체}"
+   })
+   ```
+
+4. **execute_tester_task**: Coder의 구현 내용을 반드시 포함
+   ```
+   execute_tester_task({
+     "task_description": "다음 코드를 테스트해주세요:\n\n{히스토리의 [coder Tool 완료] 내용 전체}"
+   })
+   ```
+
+5. **execute_committer_task**: Tester의 결과를 반드시 포함
+   ```
+   execute_committer_task({
+     "task_description": "다음 테스트 결과를 확인하고 커밋해주세요:\n\n{히스토리의 [tester Tool 완료] 내용 전체}"
+   })
+   ```
+
+**잘못된 예시** (절대 이렇게 하지 마세요!):
+```
+❌ execute_coder_task({"task_description": "FastAPI CRUD API 작성"})
+   → Coder가 Planner의 계획을 볼 수 없어서 제대로 구현할 수 없음!
+
+✅ execute_coder_task({"task_description": "다음 계획에 따라 코드를 작성해주세요:\n\n[planner Tool 완료]\n{Planner의 상세 계획 전체}"})
+   → Coder가 계획을 보고 정확히 구현할 수 있음
+```
 
 ## ask_user Tool 사용 가이드
 - **언제 사용**: Worker(특히 Planner)가 여러 선택지를 제시하거나 중요한 결정이 필요할 때
@@ -141,15 +195,43 @@ class ManagerAgent:
 
         base_prompt += """
 
-## 예시
-사용자: "FastAPI로 /users CRUD API를 작성해줘"
+## 예시 (올바른 Worker Tool 호출)
 
-1단계: execute_planner_task 호출 → 요구사항 분석 및 설계
-2단계: execute_coder_task 호출 → 코드 작성
-3단계: execute_reviewer_task 호출 → 코드 리뷰
-  - Critical 이슈 발견 시 → execute_coder_task로 수정 → 다시 execute_reviewer_task
-  - 승인 시 → 다음 단계 진행
-4단계: execute_tester_task 호출 → 테스트 작성 및 실행"""
+**사용자**: "FastAPI로 /users CRUD API를 작성해줘"
+
+**1단계: Planner 호출**
+```
+execute_planner_task({
+  "task_description": "FastAPI로 /users CRUD API를 작성해줘"
+})
+```
+→ Planner 결과가 히스토리에 저장됨: [planner Tool 완료]\n{상세 계획}\n
+
+**2단계: Coder 호출** (⚠️ Planner 계획을 반드시 포함!)
+```
+execute_coder_task({
+  "task_description": "다음 계획에 따라 FastAPI CRUD API를 작성해주세요:\n\n[planner Tool 완료]\n{Planner가 제시한 상세 계획 전체 - 파일 구조, API 엔드포인트, 모델 정의 등}"
+})
+```
+→ Coder 결과가 히스토리에 저장됨: [coder Tool 완료]\n{구현 내용}\n
+
+**3단계: Reviewer 호출** (⚠️ Coder 구현을 반드시 포함!)
+```
+execute_reviewer_task({
+  "task_description": "다음 코드를 리뷰해주세요:\n\n[coder Tool 완료]\n{Coder가 작성한 코드 전체 - 파일 경로, 코드 내용 등}"
+})
+```
+→ Critical 이슈 발견 시:
+  - execute_coder_task로 수정 (Review 결과를 포함하여 호출!)
+  - 다시 execute_reviewer_task
+→ 승인 시: 다음 단계 진행
+
+**4단계: Tester 호출** (⚠️ Coder 구현을 반드시 포함!)
+```
+execute_tester_task({
+  "task_description": "다음 코드를 테스트해주세요:\n\n[coder Tool 완료]\n{Coder가 작성한 코드 전체}"
+})
+```"""
 
         if self.auto_commit_enabled:
             base_prompt += """
