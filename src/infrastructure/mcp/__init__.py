@@ -14,6 +14,7 @@ from .worker_tools import (
     update_session_id,
     set_workflow_callback,
     set_worker_output_callback,
+    set_user_input_callback,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "update_session_id",
     "set_workflow_callback",
     "set_worker_output_callback",
+    "set_user_input_callback",
 ]

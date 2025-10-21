@@ -453,6 +453,60 @@ ls -la prompts/
 
 ## 최근 개선 사항
 
+### feat. Human-in-the-Loop (대화형 의사결정 지원)
+- 날짜: 2025-10-21
+- 컨텍스트: Planner가 여러 옵션(A안/B안)을 제시할 때 Manager가 임의로 결정하는 문제
+  - 사용자가 중요한 기술 결정에 참여할 수 없음
+  - 아키텍처 선택, 구현 방식 등 중요한 의사결정이 자동화됨
+- 변경사항:
+  - **`ask_user` Tool 추가** (`worker_tools.py`):
+    - Manager Agent가 사용자에게 질문하고 응답 받을 수 있는 MCP Tool
+    - 선택지 목록 제공 가능 (번호 선택 또는 자유 텍스트)
+    - `interaction.enabled` 설정에 따라 on/off 가능
+  - **설정 추가** (`system_config.json`):
+    ```json
+    "interaction": {
+      "enabled": false,           // Human-in-the-Loop on/off
+      "allow_questions": true,    // ask_user Tool 허용
+      "timeout_seconds": 300,     // 사용자 응답 대기 시간
+      "auto_fallback": "first"    // 타임아웃 시 기본 선택
+    }
+    ```
+  - **Manager 프롬프트 수정** (`manager_client.py`):
+    - ask_user Tool 사용 가이드 추가
+    - "Worker가 여러 선택지를 제시하면 사용자에게 물어보기" 지침 추가
+  - **CLI 콜백 구현** (`orchestrator.py`):
+    - Rich Panel로 질문 표시
+    - 선택지 번호 매겨서 출력
+    - 사용자 입력 받기 (Prompt.ask)
+- 영향범위:
+  - **사용자 경험**: 중요한 결정에 사용자 참여 가능
+  - **유연성**: 설정으로 자동/대화형 모드 전환 가능
+  - **확장성**: 다른 Worker도 ask_user 사용 가능
+- 사용 방법:
+  ```bash
+  # 환경변수로 활성화
+  export ENABLE_INTERACTIVE=true
+  python orchestrator.py "새 기능 추가"
+
+  # 또는 system_config.json 수정
+  # "interaction": {"enabled": true}
+  ```
+- 워크플로우 예시:
+  ```
+  사용자: "새로운 인증 시스템 추가"
+    ↓
+  Planner: "A안: OAuth 2.0 / B안: JWT 기반"
+    ↓
+  Manager: ask_user 호출
+    ↓
+  사용자: "1" (A안 선택)
+    ↓
+  Planner: A안으로 상세 계획 수립
+  ```
+- 테스트: 구문 검사 통과
+- 후속 조치: TUI에도 동일 기능 추가 필요
+
 ### feat. 세션 및 로그 저장 위치 변경 (~/.better-llm/{project-name}/)
 - 날짜: 2025-10-20
 - 컨텍스트: 실행 위치에 세션/로그 파일이 생성되어 프로젝트 디렉토리가 어지러워지는 문제

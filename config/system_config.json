@@ -75,5 +75,11 @@
   },
   "workflow": {
     "auto_commit_enabled": false
+  },
+  "interaction": {
+    "enabled": false,
+    "allow_questions": true,
+    "timeout_seconds": 300,
+    "auto_fallback": "first"
   }
 }

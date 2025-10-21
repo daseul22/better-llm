@@ -27,7 +27,8 @@ from src.infrastructure.claude import ManagerAgent
 from src.infrastructure.mcp import (
     initialize_workers,
     create_worker_tools_server,
-    log_error_summary
+    log_error_summary,
+    set_user_input_callback
 )
 from src.infrastructure.config import (
     validate_environment,
@@ -115,6 +116,59 @@ class Orchestrator:
 
         # Repository 패턴 사용 (config/system_config.json의 storage.backend 설정에 따라)
         self.session_repo = create_session_repository()
+
+        # 사용자 입력 콜백 설정 (Human-in-the-Loop)
+        set_user_input_callback(self._user_input_callback)
+
+    def _user_input_callback(self, question: str, options=None):
+        """
+        사용자 입력 콜백 함수 (Human-in-the-Loop)
+
+        Args:
+            question: 사용자에게 보여줄 질문
+            options: 선택지 목록 (선택적)
+
+        Returns:
+            사용자 응답 (문자열)
+        """
+        # Rich Panel로 질문 표시
+        from rich.panel import Panel
+        from rich.prompt import Prompt
+
+        self.renderer.console.print()
+        self.renderer.console.print(
+            Panel(
+                f"[bold yellow]{question}[/bold yellow]",
+                title="❓ Manager가 질문합니다",
+                border_style="yellow"
+            )
+        )
+
+        # 선택지가 있으면 번호 매겨서 표시
+        if options:
+            self.renderer.console.print()
+            for i, opt in enumerate(options, 1):
+                self.renderer.console.print(f"  [cyan]{i}.[/cyan] {opt}")
+            self.renderer.console.print()
+
+            # 사용자 입력 받기 (번호 또는 텍스트)
+            user_input = Prompt.ask(
+                "[bold green]선택해주세요 (번호 또는 텍스트)[/bold green]"
+            )
+
+            # 숫자면 해당 옵션 반환
+            try:
+                choice = int(user_input)
+                if 1 <= choice <= len(options):
+                    return options[choice - 1]
+            except ValueError:
+                pass
+
+            # 텍스트면 그대로 반환
+            return user_input
+        else:
+            # 자유 텍스트 입력
+            return Prompt.ask("[bold green]답변을 입력해주세요[/bold green]")
 
     def _validate_and_prepare_input(self, user_request: str) -> tuple[bool, str, str]:
         """

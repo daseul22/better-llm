@@ -70,12 +70,30 @@ class ManagerAgent:
 
         base_prompt += """
 - **read**: 파일 읽기 (필요 시)
+- **ask_user**: 사용자에게 질문하고 응답 받기 (interaction.enabled가 true일 때만 사용 가능)
 
 ## 작업 수행 방법
 1. 사용자 요청을 분석합니다
 2. 필요한 Worker Tool을 순차적으로 호출합니다
 3. 각 Tool의 결과를 확인하고 다음 단계를 결정합니다
-4. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
+4. **중요 결정이 필요할 때는 ask_user Tool로 사용자에게 물어봅니다**
+   - 예: Planner가 여러 옵션(A안/B안)을 제시한 경우
+   - 예: 위험한 작업(대량 삭제, 주요 아키텍처 변경)을 수행하기 전
+5. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
+
+## ask_user Tool 사용 가이드
+- **언제 사용**: Worker(특히 Planner)가 여러 선택지를 제시하거나 중요한 결정이 필요할 때
+- **사용 방법**:
+  ```
+  ask_user({
+    "question": "Planner가 두 가지 접근 방법을 제시했습니다. 어느 방법을 선택하시겠습니까?",
+    "options": [
+      "A안: 기존 시스템 확장 (빠르지만 기술부채 증가)",
+      "B안: 새로운 모듈 분리 (시간 걸리지만 확장성 좋음)"
+    ]
+  })
+  ```
+- **주의**: interaction.enabled가 false면 사용할 수 없습니다 (자동으로 첫 번째 옵션 선택)
 
 ## 표준 작업 흐름
 
@@ -316,6 +334,7 @@ class ManagerAgent:
             "mcp__workers__execute_tester_task",
             "mcp__workers__execute_ideator_task",  # 아이디어 생성
             "mcp__workers__execute_product_manager_task",  # 제품 기획
+            "mcp__workers__ask_user",  # 사용자 입력 (Human-in-the-Loop)
             "read"  # 파일 읽기 툴
         ]
 

@@ -51,6 +51,12 @@ _CURRENT_SESSION_ID: Optional[str] = None
 # Worker 출력 스트리밍 콜백 (TUI에서 설정)
 _WORKER_OUTPUT_CALLBACK: Optional[Callable] = None
 
+# 사용자 입력 콜백 (CLI/TUI에서 설정)
+_USER_INPUT_CALLBACK: Optional[Callable] = None
+
+# Interaction 설정 (system_config.json에서 로드)
+_INTERACTION_ENABLED: bool = False
+
 
 # ============================================================================
 # 헬퍼 함수
@@ -188,6 +194,38 @@ def _load_worker_timeouts_from_config():
         logger.warning(f"system_config.json에서 타임아웃 로드 실패: {e}. 기본값 사용.")
 
 
+def _load_interaction_config():
+    """
+    system_config.json에서 interaction 설정 로드
+
+    환경변수가 설정되어 있으면 우선 사용,
+    없으면 system_config.json 값 사용,
+    기본값: false
+    """
+    global _INTERACTION_ENABLED
+
+    try:
+        # 환경변수 우선
+        env_value = os.getenv("ENABLE_INTERACTIVE")
+        if env_value is not None:
+            _INTERACTION_ENABLED = env_value.lower() in ("true", "1", "yes")
+            logger.info(f"✅ Interaction 모드: {_INTERACTION_ENABLED} (환경변수)")
+            return
+
+        # system_config.json에서 로드
+        from ..config import load_system_config
+
+        config = load_system_config()
+        interaction = config.get("interaction", {})
+        _INTERACTION_ENABLED = interaction.get("enabled", False)
+
+        logger.info(f"✅ Interaction 모드: {_INTERACTION_ENABLED} (설정 파일)")
+
+    except Exception as e:
+        logger.warning(f"interaction 설정 로드 실패: {e}. 기본값(false) 사용.")
+        _INTERACTION_ENABLED = False
+
+
 # ============================================================================
 # 초기화 및 설정 함수
 # ============================================================================
@@ -199,10 +237,13 @@ def initialize_workers(config_path: Path):
     Args:
         config_path: Agent 설정 파일 경로
     """
-    global _WORKER_AGENTS, _WORKER_EXECUTOR, _PARALLEL_EXECUTOR
+    global _WORKER_AGENTS, _WORKER_EXECUTOR, _PARALLEL_EXECUTOR, _INTERACTION_ENABLED
 
     # system_config.json에서 타임아웃 설정 로드
     _load_worker_timeouts_from_config()
+
+    # interaction 설정 로드
+    _load_interaction_config()
 
     # system_config.json에서 max_review_iterations 로드
     max_cycles = 3
@@ -319,6 +360,19 @@ def set_worker_output_callback(callback: Optional[Callable]) -> None:
     global _WORKER_OUTPUT_CALLBACK
     _WORKER_OUTPUT_CALLBACK = callback
     logger.info("✅ Worker 출력 스트리밍 콜백 설정 완료")
+
+
+def set_user_input_callback(callback: Optional[Callable]) -> None:
+    """
+    사용자 입력 콜백 설정
+
+    Args:
+        callback: 사용자 입력 함수
+                  시그니처: callback(question: str, options: List[str] = None) -> str
+    """
+    global _USER_INPUT_CALLBACK
+    _USER_INPUT_CALLBACK = callback
+    logger.info("✅ 사용자 입력 콜백 설정 완료")
 
 
 def reset_review_cycle() -> None:
@@ -658,6 +712,100 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ============================================================================
+# Human-in-the-Loop Tool
+# ============================================================================
+
+@tool(
+    "ask_user",
+    "사용자에게 질문하고 응답을 받습니다. 여러 선택지 중 하나를 선택하거나 자유 텍스트 입력을 요청할 수 있습니다. interaction.enabled가 true일 때만 사용 가능합니다.",
+    {
+        "question": {
+            "type": "string",
+            "description": "사용자에게 보여줄 질문"
+        },
+        "options": {
+            "type": "array",
+            "description": "선택지 목록 (선택적). 예: ['A안: 기존 시스템 확장', 'B안: 새로운 모듈 분리']",
+            "items": {"type": "string"}
+        }
+    }
+)
+async def ask_user(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    사용자에게 질문하고 응답을 받는 Tool
+
+    Args:
+        args: {
+            "question": "질문 내용",
+            "options": ["선택지1", "선택지2", ...] (선택적)
+        }
+
+    Returns:
+        {"content": [{"type": "text", "text": "사용자 응답"}]}
+    """
+    global _INTERACTION_ENABLED, _USER_INPUT_CALLBACK
+
+    # Interaction 모드가 비활성화된 경우
+    if not _INTERACTION_ENABLED:
+        logger.warning("[ask_user] Interaction 모드가 비활성화되어 있습니다.")
+        return {
+            "content": [{
+                "type": "text",
+                "text": "⚠️ Interaction 모드가 비활성화되어 있어 사용자 입력을 받을 수 없습니다.\n"
+                       "system_config.json의 interaction.enabled를 true로 설정하거나 "
+                       "ENABLE_INTERACTIVE=true 환경변수를 설정해주세요."
+            }]
+        }
+
+    # 사용자 입력 콜백이 설정되지 않은 경우
+    if not _USER_INPUT_CALLBACK:
+        logger.error("[ask_user] 사용자 입력 콜백이 설정되지 않았습니다.")
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ 사용자 입력 콜백이 설정되지 않았습니다.\n"
+                       "CLI/TUI에서 set_user_input_callback()을 호출해주세요."
+            }]
+        }
+
+    question = args.get("question", "")
+    options = args.get("options")
+
+    logger.info(f"[ask_user] 사용자에게 질문: {question}")
+    if options:
+        logger.info(f"[ask_user] 선택지: {options}")
+
+    try:
+        # 사용자 입력 받기 (동기 함수를 비동기로 래핑)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        user_response = await loop.run_in_executor(
+            None,
+            _USER_INPUT_CALLBACK,
+            question,
+            options
+        )
+
+        logger.info(f"[ask_user] 사용자 응답: {user_response}")
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"✅ 사용자 응답: {user_response}"
+            }]
+        }
+
+    except Exception as e:
+        logger.error(f"[ask_user] 사용자 입력 받기 실패: {e}", exc_info=True)
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ 사용자 입력 받기 실패: {e}"
+            }]
+        }
+
+
+# ============================================================================
 # 병렬 실행 Tool (ParallelExecutor 통합)
 # ============================================================================
 
@@ -823,10 +971,11 @@ def create_worker_tools_server():
             execute_committer_task,
             execute_ideator_task,
             execute_product_manager_task,
+            ask_user,
             execute_parallel_tasks
         ]
     )
 
-    logger.info("✅ Worker Tools MCP Server 생성 완료 (병렬 실행 포함)")
+    logger.info("✅ Worker Tools MCP Server 생성 완료 (Human-in-the-Loop 포함)")
 
     return server
