@@ -54,7 +54,6 @@
   "storage": {
     "backend": "sqlite",
     "json_dir": "sessions",
-    "sqlite_db_path": "data/sessions.db",
     "retention_days": 90
   },
   "templates": {

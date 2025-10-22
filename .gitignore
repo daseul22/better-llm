@@ -45,6 +45,9 @@ Thumbs.db
 sessions/*.json
 sessions/*.txt
 
+# SQLite Database (should be in ~/.better-llm/)
+data/
+
 # Logs
 *.log
 
