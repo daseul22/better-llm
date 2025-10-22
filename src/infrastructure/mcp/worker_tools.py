@@ -20,8 +20,6 @@ from src.domain.services import MetricsCollector
 from ..config import JsonConfigLoader, get_project_root
 from ..logging import get_logger
 from ..storage import get_artifact_storage
-# FAISSMemoryBankRepository는 lazy import (search_memory 함수 내부에서 로드)
-# 초기 로딩 시간 단축을 위해 최상위 import 제거
 
 # Level 1 및 Level 2 모듈 Import
 from src.infrastructure.mcp.review_cycle_manager import ReviewCycleManager
@@ -1263,129 +1261,6 @@ async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-@tool(
-    "search_memory",
-    "과거 세션 메모리를 검색합니다. 유사한 작업을 수행한 적이 있는지 확인하고, 과거 경험을 재활용할 수 있습니다.",
-    {
-        "query": {
-            "type": "string",
-            "description": "검색 쿼리 (예: 'FastAPI CRUD API 구현', '인증 시스템 추가')"
-        },
-        "top_k": {
-            "type": "integer",
-            "description": "반환할 결과 개수 (기본값: 3)",
-            "default": 3
-        },
-        "threshold": {
-            "type": "number",
-            "description": "유사도 임계값 (0.0 ~ 1.0, 기본값: 0.3)",
-            "default": 0.3
-        }
-    }
-)
-async def search_memory(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    메모리 검색 Tool
-
-    과거 세션 히스토리에서 유사한 작업을 검색하여,
-    과거 경험을 재활용할 수 있도록 돕습니다.
-
-    Args:
-        args: {
-            "query": "검색 쿼리",
-            "top_k": 반환할 결과 개수 (기본값: 3),
-            "threshold": 유사도 임계값 (기본값: 0.3)
-        }
-
-    Returns:
-        {
-            "content": [{"type": "text", "text": "검색 결과"}],
-            "results": [
-                {
-                    "task_description": "과거 작업 설명",
-                    "session_summary": "과거 작업 요약",
-                    "files_modified": ["파일1", "파일2"],
-                    "similarity_score": 0.85
-                }
-            ]
-        }
-    """
-    try:
-        query_text = args["query"]
-        top_k = args.get("top_k", 3)
-        threshold = args.get("threshold", 0.3)
-
-        logger.info(f"[search_memory] 메모리 검색: query='{query_text}', top_k={top_k}, threshold={threshold}")
-
-        # Lazy import: 실제 사용할 때만 메모리 모듈 로드 (초기 로딩 시간 단축)
-        from ..memory import FAISSMemoryBankRepository
-        from src.domain.models import MemoryQuery
-
-        # Memory Bank Repository 초기화
-        memory_repo = FAISSMemoryBankRepository()
-
-        # 검색 수행
-        query = MemoryQuery(
-            query_text=query_text,
-            top_k=top_k,
-            threshold=threshold
-        )
-        search_results = memory_repo.search(query)
-
-        # 결과 포맷팅
-        if not search_results:
-            result_text = f"🔍 **메모리 검색 결과**\n\n검색 쿼리: '{query_text}'\n\n❌ 유사한 작업을 찾을 수 없습니다."
-            return {
-                "content": [{"type": "text", "text": result_text}],
-                "results": []
-            }
-
-        # 검색 결과를 텍스트로 변환
-        result_lines = [
-            f"🔍 **메모리 검색 결과**\n",
-            f"검색 쿼리: '{query_text}'",
-            f"발견된 유사 작업: {len(search_results)}개\n"
-        ]
-
-        for i, result in enumerate(search_results, 1):
-            memory = result.memory
-            score = result.similarity_score
-            result_lines.append(f"### {i}. 유사도: {score:.3f}")
-            result_lines.append(f"**작업**: {memory.task_description}")
-            result_lines.append(f"**요약**: {memory.session_summary[:200]}...")
-            if memory.files_modified:
-                result_lines.append(f"**수정 파일**: {', '.join(memory.files_modified[:5])}")
-            result_lines.append("")
-
-        result_text = "\n".join(result_lines)
-
-        # 결과를 딕셔너리 리스트로 변환
-        results_data = [
-            {
-                "task_description": result.memory.task_description,
-                "session_summary": result.memory.session_summary,
-                "files_modified": result.memory.files_modified,
-                "similarity_score": result.similarity_score
-            }
-            for result in search_results
-        ]
-
-        logger.info(f"[search_memory] 검색 완료: {len(search_results)}개 결과 반환")
-
-        return {
-            "content": [{"type": "text", "text": result_text}],
-            "results": results_data
-        }
-
-    except Exception as e:
-        logger.error(f"[search_memory] 메모리 검색 실패: {e}", exc_info=True)
-        return {
-            "content": [{"type": "text", "text": f"❌ 메모리 검색 실패: {e}"}],
-            "error": str(e),
-            "results": []
-        }
-
-
 # ============================================================================
 # MCP 서버 생성
 # ============================================================================
@@ -1409,11 +1284,10 @@ def create_worker_tools_server():
             execute_ideator_task,
             execute_product_manager_task,
             ask_user,
-            execute_parallel_tasks,
-            search_memory
+            execute_parallel_tasks
         ]
     )
 
-    logger.info("✅ Worker Tools MCP Server 생성 완료 (Human-in-the-Loop 포함)")
+    logger.info("✅ Worker Tools MCP Server 생성 완료")
 
     return server
