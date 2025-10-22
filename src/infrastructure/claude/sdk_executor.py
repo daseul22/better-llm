@@ -120,14 +120,24 @@ class ManagerResponseHandler(SDKResponseHandler):
         # usage 정보 추출 및 콜백 호출
         if hasattr(response, 'usage') and response.usage and self.usage_callback:
             usage_dict = {}
-            if hasattr(response.usage, 'input_tokens'):
-                usage_dict['input_tokens'] = response.usage.input_tokens
-            if hasattr(response.usage, 'output_tokens'):
-                usage_dict['output_tokens'] = response.usage.output_tokens
-            if hasattr(response.usage, 'cache_read_tokens'):
-                usage_dict['cache_read_tokens'] = response.usage.cache_read_tokens
-            if hasattr(response.usage, 'cache_creation_tokens'):
-                usage_dict['cache_creation_tokens'] = response.usage.cache_creation_tokens
+
+            # usage가 dict인 경우와 object인 경우 모두 지원
+            if isinstance(response.usage, dict):
+                # Dictionary인 경우: 직접 접근
+                usage_dict['input_tokens'] = response.usage.get('input_tokens', 0)
+                usage_dict['output_tokens'] = response.usage.get('output_tokens', 0)
+                usage_dict['cache_read_tokens'] = response.usage.get('cache_read_input_tokens', 0)  # 키 이름 주의!
+                usage_dict['cache_creation_tokens'] = response.usage.get('cache_creation_input_tokens', 0)  # 키 이름 주의!
+            else:
+                # Object인 경우: 속성 접근
+                if hasattr(response.usage, 'input_tokens'):
+                    usage_dict['input_tokens'] = response.usage.input_tokens
+                if hasattr(response.usage, 'output_tokens'):
+                    usage_dict['output_tokens'] = response.usage.output_tokens
+                if hasattr(response.usage, 'cache_read_tokens'):
+                    usage_dict['cache_read_tokens'] = response.usage.cache_read_tokens
+                if hasattr(response.usage, 'cache_creation_tokens'):
+                    usage_dict['cache_creation_tokens'] = response.usage.cache_creation_tokens
 
             if usage_dict:
                 logger.info(f"[Manager] Token usage received: {usage_dict}")
@@ -182,14 +192,24 @@ class WorkerResponseHandler(SDKResponseHandler):
         # usage 정보 추출 및 콜백 호출 (Manager와 동일)
         if hasattr(response, 'usage') and response.usage and self.usage_callback:
             usage_dict = {}
-            if hasattr(response.usage, 'input_tokens'):
-                usage_dict['input_tokens'] = response.usage.input_tokens
-            if hasattr(response.usage, 'output_tokens'):
-                usage_dict['output_tokens'] = response.usage.output_tokens
-            if hasattr(response.usage, 'cache_read_tokens'):
-                usage_dict['cache_read_tokens'] = response.usage.cache_read_tokens
-            if hasattr(response.usage, 'cache_creation_tokens'):
-                usage_dict['cache_creation_tokens'] = response.usage.cache_creation_tokens
+
+            # usage가 dict인 경우와 object인 경우 모두 지원
+            if isinstance(response.usage, dict):
+                # Dictionary인 경우: 직접 접근
+                usage_dict['input_tokens'] = response.usage.get('input_tokens', 0)
+                usage_dict['output_tokens'] = response.usage.get('output_tokens', 0)
+                usage_dict['cache_read_tokens'] = response.usage.get('cache_read_input_tokens', 0)  # 키 이름 주의!
+                usage_dict['cache_creation_tokens'] = response.usage.get('cache_creation_input_tokens', 0)  # 키 이름 주의!
+            else:
+                # Object인 경우: 속성 접근
+                if hasattr(response.usage, 'input_tokens'):
+                    usage_dict['input_tokens'] = response.usage.input_tokens
+                if hasattr(response.usage, 'output_tokens'):
+                    usage_dict['output_tokens'] = response.usage.output_tokens
+                if hasattr(response.usage, 'cache_read_tokens'):
+                    usage_dict['cache_read_tokens'] = response.usage.cache_read_tokens
+                if hasattr(response.usage, 'cache_creation_tokens'):
+                    usage_dict['cache_creation_tokens'] = response.usage.cache_creation_tokens
 
             if usage_dict:
                 logger.info(f"[Worker] Token usage received: {usage_dict}")
@@ -318,14 +338,22 @@ class ManagerSDKExecutor:
                 self.logger.info(f"[Manager] client.usage: {client.usage}")
                 if client.usage and self.response_handler.usage_callback:
                     usage_dict = {}
-                    if hasattr(client.usage, 'input_tokens'):
-                        usage_dict['input_tokens'] = client.usage.input_tokens
-                    if hasattr(client.usage, 'output_tokens'):
-                        usage_dict['output_tokens'] = client.usage.output_tokens
-                    if hasattr(client.usage, 'cache_read_tokens'):
-                        usage_dict['cache_read_tokens'] = client.usage.cache_read_tokens
-                    if hasattr(client.usage, 'cache_creation_tokens'):
-                        usage_dict['cache_creation_tokens'] = client.usage.cache_creation_tokens
+
+                    # usage가 dict인 경우와 object인 경우 모두 지원
+                    if isinstance(client.usage, dict):
+                        usage_dict['input_tokens'] = client.usage.get('input_tokens', 0)
+                        usage_dict['output_tokens'] = client.usage.get('output_tokens', 0)
+                        usage_dict['cache_read_tokens'] = client.usage.get('cache_read_input_tokens', 0)
+                        usage_dict['cache_creation_tokens'] = client.usage.get('cache_creation_input_tokens', 0)
+                    else:
+                        if hasattr(client.usage, 'input_tokens'):
+                            usage_dict['input_tokens'] = client.usage.input_tokens
+                        if hasattr(client.usage, 'output_tokens'):
+                            usage_dict['output_tokens'] = client.usage.output_tokens
+                        if hasattr(client.usage, 'cache_read_tokens'):
+                            usage_dict['cache_read_tokens'] = client.usage.cache_read_tokens
+                        if hasattr(client.usage, 'cache_creation_tokens'):
+                            usage_dict['cache_creation_tokens'] = client.usage.cache_creation_tokens
 
                     if usage_dict:
                         self.logger.info(f"[Manager] Found usage in client: {usage_dict}")
