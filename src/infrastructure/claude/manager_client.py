@@ -350,6 +350,15 @@ execute_tester_task({
         self.total_cache_read_tokens = 0
         self.total_cache_creation_tokens = 0
 
+        # Context metadata formatter (lazy import to avoid circular dependency)
+        self.metadata_formatter = None
+        self.context_metadata_enabled = self._load_context_metadata_config()
+
+        # Initialize metadata formatter if enabled
+        if self.context_metadata_enabled:
+            from ..mcp.context_metadata_formatter import ContextMetadataFormatter
+            self.metadata_formatter = ContextMetadataFormatter()
+
         # system_config.json에서 max_review_iterations 로드
         try:
             from ..config import load_system_config
@@ -370,12 +379,43 @@ execute_tester_task({
             model=self.model,
             max_history_messages=self.max_history_messages,
             auto_commit_enabled=self.auto_commit_enabled,
-            max_review_cycles=self.max_review_cycles
+            max_review_cycles=self.max_review_cycles,
+            context_metadata_enabled=self.context_metadata_enabled
         )
+
+    def _load_context_metadata_config(self) -> bool:
+        """
+        system_config.json에서 context_metadata.enabled 설정 로드
+
+        Returns:
+            True: context metadata 활성화
+            False: 비활성화 (기본값)
+        """
+        try:
+            from ..config import load_system_config
+            config = load_system_config()
+            enabled = config.get("context_metadata", {}).get("enabled", False)
+            self.logger.debug(
+                "Context metadata config loaded",
+                enabled=enabled
+            )
+            return enabled
+        except Exception as e:
+            self.logger.warning(
+                "Failed to load context_metadata config",
+                error=str(e),
+                default_value=False
+            )
+            return False
 
     def _build_prompt_from_history(self, history: List[Message]) -> str:
         """
         대화 히스토리를 프롬프트 텍스트로 변환 (슬라이딩 윈도우 적용)
+
+        Context metadata가 활성화된 경우:
+        - 메시지에서 JSON 메타데이터를 파싱
+        - 컨텍스트 체인을 구성 (dependencies 기반)
+        - 관련 메타데이터만 포함하여 컨텍스트 절약
 
         Args:
             history: 대화 히스토리
@@ -385,6 +425,11 @@ execute_tester_task({
         """
         # 시스템 프롬프트로 시작
         prompt_parts = [self.SYSTEM_PROMPT, "\n\n## 대화 히스토리:\n"]
+
+        # Context metadata 파싱 (활성화된 경우)
+        metadata_map = {}  # task_id -> (msg, metadata)
+        if self.context_metadata_enabled:
+            metadata_map = self._parse_context_metadata_from_history(history)
 
         # 슬라이딩 윈도우: 최근 N개 메시지만 포함
         # 단, 첫 번째 사용자 요청은 항상 포함 (컨텍스트 유지)
@@ -406,7 +451,13 @@ execute_tester_task({
                 prompt_parts.append(f"\n[사용자]\n{msg.content}\n")
             elif msg.role == "agent":
                 # 워커 Tool의 실행 결과
-                prompt_parts.append(f"\n[{msg.agent_name} Tool 완료]\n{msg.content}\n")
+                # Context metadata가 있으면 요약 레벨을 활용
+                if self.context_metadata_enabled:
+                    content = self._format_message_with_metadata(msg, metadata_map)
+                else:
+                    content = msg.content
+
+                prompt_parts.append(f"\n[{msg.agent_name} Tool 완료]\n{content}\n")
             elif msg.role == "manager":
                 # 매니저 자신의 이전 응답
                 prompt_parts.append(f"\n[매니저 (당신)]\n{msg.content}\n")
@@ -414,6 +465,89 @@ execute_tester_task({
         prompt_parts.append("\n다음 단계를 수행해주세요:")
 
         return "".join(prompt_parts)
+
+    def _parse_context_metadata_from_history(
+        self,
+        history: List[Message]
+    ) -> dict:
+        """
+        히스토리에서 컨텍스트 메타데이터 파싱
+
+        Args:
+            history: 대화 히스토리
+
+        Returns:
+            메타데이터 맵 {task_id: (msg, metadata)}
+        """
+        metadata_map = {}
+
+        for msg in history:
+            if msg.role == "agent":
+                metadata = self.metadata_formatter.parse_metadata_from_output(msg.content)
+                if metadata:
+                    metadata_map[metadata.task_id] = (msg, metadata)
+
+        self.logger.debug(
+            "Context metadata parsed from history",
+            total_messages=len(history),
+            metadata_count=len(metadata_map)
+        )
+
+        return metadata_map
+
+    def _format_message_with_metadata(
+        self,
+        msg: Message,
+        metadata_map: dict
+    ) -> str:
+        """
+        메타데이터를 활용하여 메시지 포맷팅
+
+        메타데이터가 있으면 five_line 요약 레벨을 사용하여 컨텍스트 절약.
+        메타데이터가 없으면 원본 메시지 그대로 반환.
+
+        Args:
+            msg: 메시지
+            metadata_map: 메타데이터 맵
+
+        Returns:
+            포맷팅된 메시지 내용
+        """
+        # 메시지에서 메타데이터 추출
+        metadata = self.metadata_formatter.parse_metadata_from_output(msg.content)
+
+        if not metadata:
+            # 메타데이터 없음 - 원본 반환
+            return msg.content
+
+        # 메타데이터 있음 - five_line 요약 사용
+        five_line_summary = metadata.summary_levels.get("five_line", "")
+        one_line_summary = metadata.summary_levels.get("one_line", "")
+        artifact_path = metadata.summary_levels.get("full", "")
+
+        # 포맷팅된 메시지 생성
+        formatted = f"""**요약**: {one_line_summary}
+
+**주요 내용**:
+{five_line_summary}
+
+**상세 내용**: {artifact_path}
+
+**메타데이터**:
+- Task ID: {metadata.task_id}
+- Dependencies: {', '.join(metadata.dependencies) if metadata.dependencies else 'None'}
+- Key Decisions: {', '.join(metadata.key_decisions[:3]) if metadata.key_decisions else 'None'}
+"""
+
+        self.logger.debug(
+            "Message formatted with metadata",
+            task_id=metadata.task_id,
+            original_length=len(msg.content),
+            formatted_length=len(formatted),
+            reduction_ratio=f"{(1 - len(formatted)/len(msg.content))*100:.1f}%"
+        )
+
+        return formatted
 
     def _update_token_usage(self, usage_dict: dict) -> None:
         """토큰 사용량 업데이트.

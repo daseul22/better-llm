@@ -86,5 +86,9 @@
     "max_concurrent_tasks": 5,
     "continue_on_error": false,
     "min_tasks_for_parallel": 3
+  },
+  "context_metadata": {
+    "enabled": true,
+    "description": "Structured Context Metadata - Worker 출력에 메타데이터 포함하여 Manager가 컨텍스트 자동 추적"
   }
 }

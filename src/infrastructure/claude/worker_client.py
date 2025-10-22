@@ -164,12 +164,17 @@ class WorkerAgent:
 
         return "\n".join(lines)
 
-    async def execute_task(self, task_description: str) -> AsyncIterator[str]:
+    async def execute_task(
+        self,
+        task_description: str,
+        usage_callback: Optional[callable] = None
+    ) -> AsyncIterator[str]:
         """
         Claude Agent SDK를 사용하여 작업 실행
 
         Args:
             task_description: 작업 설명
+            usage_callback: 토큰 사용량 정보를 받을 콜백 함수 (선택)
 
         Yields:
             스트리밍 응답 청크
@@ -203,8 +208,8 @@ class WorkerAgent:
             permission_mode="bypassPermissions"
         )
 
-        # 응답 핸들러 생성
-        response_handler = WorkerResponseHandler()
+        # 응답 핸들러 생성 (usage_callback 전달)
+        response_handler = WorkerResponseHandler(usage_callback=usage_callback)
 
         # Executor 생성
         executor = WorkerSDKExecutor(

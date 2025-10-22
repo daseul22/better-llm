@@ -34,6 +34,7 @@ from .approval import (
     ApprovalResponse
 )
 from .feedback import Feedback
+from .context_metadata import WorkerContextMetadata
 
 __all__ = [
     "Message",
@@ -68,4 +69,5 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalResponse",
     "Feedback",
+    "WorkerContextMetadata",
 ]

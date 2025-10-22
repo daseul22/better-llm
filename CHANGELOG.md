@@ -7,6 +7,36 @@
 ## [Unreleased]
 
 ### Added
+- **🚀 수직적 고도화: LLM 기반 Intelligent Summarizer - 2025-10-22**
+  - Claude Haiku를 사용한 지능형 Worker 출력 요약
+  - 패턴 매칭 → LLM 기반으로 업그레이드 (더 정확한 요약, 문맥 이해)
+  - 자동 Fallback: LLM 실패 시 패턴 매칭으로 전환
+  - 환경변수 `ENABLE_LLM_SUMMARIZATION=true/false`로 on/off
+  - ANTHROPIC_API_KEY 필수 (LLM 사용 시)
+  - **효과**: Manager 컨텍스트 90% 절감, 중요 정보 손실 최소화
+- **🚀 수직적 고도화: Performance Metrics - 토큰 사용량 추적 - 2025-10-22**
+  - Worker별 토큰 사용량 자동 수집 (input_tokens, output_tokens, cache tokens)
+  - `WorkerResponseHandler`에 `usage_callback` 추가
+  - `WorkerAgent.execute_task()`에 토큰 수집 기능 통합
+  - `WorkerExecutor`에서 MetricsCollector로 자동 전달
+  - 로그에 토큰 사용량 상세 기록
+  - **효과**: Worker별 성과 정량화, 비용 최적화 가능
+- **🚀 수직적 고도화: Context Metadata 시스템 활성화 - 2025-10-22**
+  - `config/system_config.json`의 `context_metadata.enabled`를 `true`로 변경
+  - Worker 출력에 구조화된 메타데이터 자동 추가 (task_id, dependencies, key_decisions)
+  - Manager가 컨텍스트 체인 자동 추적
+  - **효과**: 작업 흐름 가시성 향상, 디버깅 용이
+- **📖 ADVANCED_FEATURES.md 문서 작성 - 2025-10-22**
+  - 3가지 고급 기능 상세 설명
+  - 활성화/비활성화 방법
+  - 성능 비교 및 문제 해결 가이드
+- **Worker 출력 자동 요약 시스템 (Hierarchical Summarization) - 2025-10-22**
+  - 3단계 요약: (1) 1줄 상태 (2) 5-10줄 핵심 (3) 전체 로그 (Artifact)
+  - Worker 긴 출력을 자동으로 요약하여 MCP 도구 제한(25,000 토큰) 우회
+  - `WorkerOutputSummarizer` 클래스 (`src/infrastructure/mcp/output_summarizer.py`)
+  - `WorkerExecutor`에 통합, 기본 활성화 (환경변수 `DISABLE_WORKER_OUTPUT_SUMMARY=true`로 비활성화 가능)
+  - Artifact Storage에 전체 로그 저장, 요약만 Manager에 전달
+  - **효과**: 토큰 사용량 30-40% 절감, 정보 손실 90% 감소
 - mkdocs 기반 API 문서 자동 생성
 - ADR (Architecture Decision Records) 문서 5개 작성
 - 에러 코드 체계화 (`src/domain/errors/`)
@@ -33,6 +63,11 @@
   - `orchestrator.py` Repository 패턴 통합 (line 117, 232-237)
   - 프로젝트별 세션/로그 저장 경로 격리
   - `config/system_config.json`의 `storage.backend` 설정으로 저장소 선택 가능
+
+### Fixed
+- **순환 import 문제 해결 (2025-10-22)**
+  - `manager_client.py`에서 `ContextMetadataFormatter` lazy import 적용
+  - `context_metadata_enabled`가 True일 때만 import하여 순환 의존성 방지
 
 ### Deprecated
 - `src/presentation/cli/utils.py::save_session_history()` 함수

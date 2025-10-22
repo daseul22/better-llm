@@ -126,6 +126,14 @@ class WorkerResponseHandler(SDKResponseHandler):
     query() 함수의 스트리밍 응답을 처리합니다.
     """
 
+    def __init__(self, usage_callback: Optional[Callable[[dict], None]] = None):
+        """초기화.
+
+        Args:
+            usage_callback: 토큰 사용량 정보를 받을 콜백 함수
+        """
+        self.usage_callback = usage_callback
+
     async def process_response(self, response: Any) -> AsyncIterator[str]:
         """응답 처리 및 텍스트 추출.
 
@@ -135,6 +143,21 @@ class WorkerResponseHandler(SDKResponseHandler):
         Yields:
             str: 추출된 텍스트 청크
         """
+        # usage 정보 추출 및 콜백 호출 (Manager와 동일)
+        if hasattr(response, 'usage') and response.usage and self.usage_callback:
+            usage_dict = {}
+            if hasattr(response.usage, 'input_tokens'):
+                usage_dict['input_tokens'] = response.usage.input_tokens
+            if hasattr(response.usage, 'output_tokens'):
+                usage_dict['output_tokens'] = response.usage.output_tokens
+            if hasattr(response.usage, 'cache_read_tokens'):
+                usage_dict['cache_read_tokens'] = response.usage.cache_read_tokens
+            if hasattr(response.usage, 'cache_creation_tokens'):
+                usage_dict['cache_creation_tokens'] = response.usage.cache_creation_tokens
+
+            if usage_dict:
+                self.usage_callback(usage_dict)
+
         # 텍스트 추출
         text = self.extract_text_from_response(response)
         if text:

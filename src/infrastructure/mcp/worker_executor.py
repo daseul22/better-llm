@@ -23,6 +23,8 @@ from src.infrastructure.mcp.workflow_callback_handler import (
     WorkflowEventType
 )
 from src.infrastructure.mcp.error_statistics_manager import ErrorStatisticsManager
+from src.infrastructure.mcp.context_metadata_formatter import ContextMetadataFormatter
+from src.infrastructure.mcp.output_summarizer import WorkerOutputSummarizer
 from src.infrastructure.logging import get_logger, log_exception_silently
 
 logger = get_logger(__name__, component="WorkerExecutor")
@@ -117,7 +119,9 @@ class WorkerExecutor:
         review_manager: Optional[ReviewCycleManager] = None,
         commit_validator: Optional[CommitSafetyValidator] = None,
         callback_handler: Optional[WorkflowCallbackHandler] = None,
-        error_manager: Optional[ErrorStatisticsManager] = None
+        error_manager: Optional[ErrorStatisticsManager] = None,
+        metadata_formatter: Optional[ContextMetadataFormatter] = None,
+        output_summarizer: Optional[WorkerOutputSummarizer] = None
     ):
         """
         WorkerExecutor 초기화
@@ -127,13 +131,52 @@ class WorkerExecutor:
             commit_validator: Commit 안전성 검증기 (기본값: 새 인스턴스 생성)
             callback_handler: 워크플로우 콜백 핸들러 (기본값: 새 인스턴스 생성)
             error_manager: 에러 통계 관리자 (기본값: 새 인스턴스 생성)
+            metadata_formatter: 컨텍스트 메타데이터 포맷터 (기본값: 새 인스턴스 생성)
+            output_summarizer: Worker 출력 요약기 (기본값: 새 인스턴스 생성)
         """
         self.review_manager = review_manager or ReviewCycleManager()
         self.commit_validator = commit_validator or CommitSafetyValidator()
         self.callback_handler = callback_handler or WorkflowCallbackHandler()
         self.error_manager = error_manager or ErrorStatisticsManager()
+        self.metadata_formatter = metadata_formatter or ContextMetadataFormatter()
+        self.output_summarizer = output_summarizer or WorkerOutputSummarizer()
 
-        logger.info("WorkerExecutor initialized")
+        # Context metadata 활성화 여부 (system_config.json에서 로드)
+        self.context_metadata_enabled = self._load_context_metadata_config()
+
+        # Worker 출력 요약 활성화 여부
+        self.output_summary_enabled = ENABLE_WORKER_OUTPUT_SUMMARY
+
+        logger.info(
+            "WorkerExecutor initialized",
+            context_metadata_enabled=self.context_metadata_enabled,
+            output_summary_enabled=self.output_summary_enabled
+        )
+
+    def _load_context_metadata_config(self) -> bool:
+        """
+        system_config.json에서 context_metadata.enabled 설정 로드
+
+        Returns:
+            True: context metadata 활성화
+            False: 비활성화 (기본값)
+        """
+        try:
+            from ..config import load_system_config
+            config = load_system_config()
+            enabled = config.get("context_metadata", {}).get("enabled", False)
+            logger.debug(
+                "Context metadata config loaded",
+                enabled=enabled
+            )
+            return enabled
+        except Exception as e:
+            logger.warning(
+                "Failed to load context_metadata config",
+                error=str(e),
+                default_value=False
+            )
+            return False
 
     async def execute(self, context: WorkerExecutionContext) -> Dict[str, Any]:
         """
@@ -304,13 +347,13 @@ class WorkerExecutor:
         context: WorkerExecutionContext
     ) -> Dict[str, Any]:
         """
-        실제 Worker 실행 로직 (타임아웃 적용 + 출력 요약)
+        실제 Worker 실행 로직 (타임아웃 적용 + 메타데이터 추가)
 
         Args:
             context: 실행 컨텍스트
 
         Returns:
-            Worker 실행 결과 (요약됨)
+            Worker 실행 결과 (메타데이터 포함, tokens_used 포함)
 
         Raises:
             asyncio.TimeoutError: 타임아웃 발생 시
@@ -319,9 +362,27 @@ class WorkerExecutor:
         # 에러 통계: 시도 기록
         self.error_manager.record_attempt(context.worker_name)
 
+        # 토큰 사용량 수집 (usage_callback)
+        tokens_used = {
+            'input_tokens': 0,
+            'output_tokens': 0,
+            'cache_read_tokens': 0,
+            'cache_creation_tokens': 0
+        }
+
+        def usage_callback(usage_dict: Dict[str, int]):
+            """토큰 사용량 콜백"""
+            tokens_used['input_tokens'] += usage_dict.get('input_tokens', 0)
+            tokens_used['output_tokens'] += usage_dict.get('output_tokens', 0)
+            tokens_used['cache_read_tokens'] += usage_dict.get('cache_read_tokens', 0)
+            tokens_used['cache_creation_tokens'] += usage_dict.get('cache_creation_tokens', 0)
+
         async def execute():
             result = ""
-            async for chunk in context.worker_agent.execute_task(context.task_description):
+            async for chunk in context.worker_agent.execute_task(
+                context.task_description,
+                usage_callback=usage_callback
+            ):
                 result += chunk
                 # Worker 출력 스트리밍 콜백 호출 (TUI용, raw 출력)
                 if context.worker_output_callback:
@@ -330,9 +391,23 @@ class WorkerExecutor:
                     except Exception as e:
                         logger.warning(f"Worker 출력 콜백 실행 실패: {e}")
 
-            # Worker 출력을 raw 상태로 반환 (히스토리에 완전한 내용 저장)
-            # 출력 요약은 더 이상 사용하지 않음 (정보 손실 방지)
-            return {"content": [{"type": "text", "text": result}], "raw_output": result}
+            # 원본 출력 보관
+            raw_output = result
+
+            # 1. Worker 출력 요약 (활성화된 경우)
+            if self.output_summary_enabled:
+                result = self._summarize_worker_output(result, context)
+
+            # 2. Context metadata 추가 (활성화된 경우)
+            if self.context_metadata_enabled:
+                result = self._add_context_metadata(result, context)
+
+            # Worker 출력 반환 (요약된 버전 + raw_output + tokens_used 보관)
+            return {
+                "content": [{"type": "text", "text": result}],
+                "raw_output": raw_output,
+                "tokens_used": tokens_used
+            }
 
         # 재시도 로직 또는 일반 실행 (복잡도: 1)
         if context.use_retry:
@@ -345,6 +420,133 @@ class WorkerExecutor:
             result = await asyncio.wait_for(execute(), timeout=context.timeout)
 
         return result
+
+    def _add_context_metadata(
+        self,
+        worker_output: str,
+        context: WorkerExecutionContext
+    ) -> str:
+        """
+        Worker 출력에 컨텍스트 메타데이터 추가
+
+        Args:
+            worker_output: Worker의 raw 출력
+            context: 실행 컨텍스트
+
+        Returns:
+            메타데이터가 추가된 출력
+        """
+        try:
+            # Artifact 경로 생성 (존재하는 경우)
+            artifact_path = None
+            if context.session_id:
+                from ..storage.artifact_storage import get_artifact_storage
+                storage = get_artifact_storage()
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                artifact_id = f"{context.worker_name}_{timestamp}"
+                artifact_path = str(storage.get_artifact_path(
+                    artifact_id,
+                    session_id=context.session_id
+                ))
+
+            # Dependencies 추출 (metadata에서)
+            dependencies = context.metadata.get("dependencies", [])
+
+            # 메타데이터 추가
+            enhanced_output = self.metadata_formatter.format_worker_output(
+                worker_name=context.worker_name,
+                output=worker_output,
+                artifact_path=artifact_path,
+                dependencies=dependencies
+            )
+
+            logger.debug(
+                "Context metadata added to worker output",
+                worker_name=context.worker_name,
+                has_artifact=artifact_path is not None,
+                dependencies_count=len(dependencies)
+            )
+
+            return enhanced_output
+
+        except Exception as e:
+            logger.warning(
+                "Failed to add context metadata",
+                worker_name=context.worker_name,
+                error=str(e)
+            )
+            # 실패 시 원본 출력 반환
+            return worker_output
+
+    def _summarize_worker_output(
+        self,
+        worker_output: str,
+        context: WorkerExecutionContext
+    ) -> str:
+        """
+        Worker 출력을 자동 요약
+
+        Args:
+            worker_output: Worker의 raw 출력
+            context: 실행 컨텍스트
+
+        Returns:
+            요약된 출력 (artifact 경로 포함)
+        """
+        try:
+            # Artifact 저장 (전체 로그)
+            if context.session_id:
+                from ..storage.artifact_storage import get_artifact_storage
+                storage = get_artifact_storage()
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                artifact_id = f"{context.worker_name}_{timestamp}"
+
+                # 전체 로그를 artifact 파일로 저장
+                artifact_path = storage.save_artifact(
+                    artifact_id=artifact_id,
+                    content=worker_output,
+                    session_id=context.session_id
+                )
+
+                # 3단계 요약 생성
+                summary = self.output_summarizer.summarize(
+                    worker_name=context.worker_name,
+                    full_output=worker_output,
+                    artifact_path=str(artifact_path)
+                )
+
+                # 요약 포맷팅
+                summarized = self.output_summarizer.format_summary_output(
+                    worker_name=context.worker_name,
+                    summary=summary
+                )
+
+                logger.info(
+                    "Worker output summarized",
+                    worker_name=context.worker_name,
+                    original_length=len(worker_output),
+                    summary_length=len(summarized),
+                    reduction_ratio=f"{(1 - len(summarized)/len(worker_output))*100:.1f}%",
+                    artifact_path=str(artifact_path)
+                )
+
+                return summarized
+            else:
+                # 세션 ID가 없으면 요약 없이 원본 반환
+                logger.debug(
+                    "Session ID not found, skipping summarization",
+                    worker_name=context.worker_name
+                )
+                return worker_output
+
+        except Exception as e:
+            logger.warning(
+                "Failed to summarize worker output",
+                worker_name=context.worker_name,
+                error=str(e)
+            )
+            # 실패 시 원본 출력 반환
+            return worker_output
 
     async def _post_execute(
         self,
@@ -394,6 +596,24 @@ class WorkerExecutor:
         if context.metrics_collector and context.session_id:
             end_time = datetime.now()
             try:
+                # tokens_used 추출 (result에서)
+                tokens_used_dict = result.get("tokens_used", None)
+                total_tokens = None
+                if tokens_used_dict:
+                    total_tokens = (
+                        tokens_used_dict.get('input_tokens', 0) +
+                        tokens_used_dict.get('output_tokens', 0)
+                    )
+                    logger.debug(
+                        "Token usage recorded",
+                        worker_name=context.worker_name,
+                        input_tokens=tokens_used_dict.get('input_tokens', 0),
+                        output_tokens=tokens_used_dict.get('output_tokens', 0),
+                        cache_read_tokens=tokens_used_dict.get('cache_read_tokens', 0),
+                        cache_creation_tokens=tokens_used_dict.get('cache_creation_tokens', 0),
+                        total_tokens=total_tokens
+                    )
+
                 context.metrics_collector.record_worker_execution(
                     session_id=context.session_id,
                     worker_name=context.worker_name,
@@ -401,7 +621,7 @@ class WorkerExecutor:
                     start_time=start_time,
                     end_time=end_time,
                     success=success,
-                    tokens_used=None,  # 추후 Claude SDK에서 토큰 정보 가져오면 추가
+                    tokens_used=total_tokens,
                     error_message=error_message,
                 )
             except Exception as metrics_error:

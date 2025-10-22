@@ -343,9 +343,14 @@ class OrchestratorTUI(App):
         """앱 종료 시 정리 작업"""
         logger.info("TUI 앱 종료 시작")
         # 진행 중인 작업 정리
-        if hasattr(self, 'task_runner') and self.task_runner.is_running:
+        if self.current_task and not self.current_task.done():
             logger.info("진행 중인 작업 중단")
-            await self.task_runner.interrupt_task()
+            self.current_task.cancel()
+            # 작업이 취소될 때까지 잠시 대기
+            try:
+                await asyncio.wait_for(self.current_task, timeout=1.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
         logger.info("TUI 앱 종료 완료")
 
     async def on_multiline_input_submitted(self, event: MultilineInput.Submitted) -> None:
