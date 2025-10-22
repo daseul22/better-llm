@@ -208,16 +208,46 @@ Worker Tool 실행 시 **전체 출력은 artifact 파일로 저장**되고, **�
 4. execute_tester_task → 테스트 작성 및 실행
 
 ### 병렬 실행 가능한 작업 (3개 이상의 독립적인 파일 생성):
-1. execute_planner_task → 병렬 실행 계획 JSON 생성 (execution_mode: "parallel")
-2. execute_parallel_tasks → Planner의 JSON을 받아서 Task들을 병렬 실행
-   - 의존성 그래프 기반으로 레벨별 병렬 실행
-   - 독립적인 Task들은 동시에 실행되어 속도 향상
-3. execute_reviewer_task → 통합 코드 리뷰
-4. execute_tester_task → 전체 테스트
+1. execute_planner_task → 병렬 실행 계획 생성
+   - Planner는 **텍스트 요약 + JSON 병렬 실행 계획**을 함께 출력
+   - JSON 형식: `{"execution_mode": "parallel", "tasks": [...], "integration_notes": "..."}`
+2. **JSON 추출**: Planner 출력에서 ```json ... ``` 블록 찾기
+3. execute_parallel_tasks → JSON을 받아서 Task들을 병렬 실행
+   - 의존성 그래프 기반 레벨별 병렬 실행 (속도 향상 20~50%)
+   - 독립적인 Task들은 동시에 실행
+4. execute_reviewer_task → 통합 코드 리뷰
+5. execute_tester_task → 전체 테스트
 
-**병렬 실행 판단 기준**:
-- Planner가 JSON 형식으로 "execution_mode": "parallel"을 출력하면 병렬 실행
-- 그렇지 않으면 기존 방식대로 순차 실행
+**병렬 실행 자동 트리거 방법**:
+1. Planner 실행 후 출력에 ```json으로 시작하는 코드 블록이 있는지 확인
+2. JSON에서 `"execution_mode": "parallel"` 발견 시:
+   ```
+   execute_parallel_tasks({
+     "plan_json": "{전체 JSON 문자열}"
+   })
+   ```
+3. JSON이 없거나 `"execution_mode": "sequential"`인 경우:
+   - 기존 방식대로 execute_coder_task 순차 호출
+
+**예시 (병렬 실행)**:
+```
+# Planner 출력 예시:
+## 📋 [PLANNER 요약 - Manager 전달용]
+... (텍스트 요약) ...
+
+```json
+{
+  "execution_mode": "parallel",
+  "tasks": [
+    {"id": "task_1", "description": "...", ...},
+    {"id": "task_2", "description": "...", ...}
+  ]
+}
+```
+
+# Manager의 다음 호출:
+execute_parallel_tasks({"plan_json": "{...JSON 전체...}"})
+```
 
 ### 새로운 기능 기획 시 (선택적):
 0. execute_ideator_task → 창의적 아이디어 브레인스토밍 (필요 시)

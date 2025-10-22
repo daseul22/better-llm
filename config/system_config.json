@@ -80,5 +80,11 @@
     "allow_questions": true,
     "timeout_seconds": 300,
     "auto_fallback": "first"
+  },
+  "parallel_execution": {
+    "enabled": true,
+    "max_concurrent_tasks": 5,
+    "continue_on_error": false,
+    "min_tasks_for_parallel": 3
   }
 }

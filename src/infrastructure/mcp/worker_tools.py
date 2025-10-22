@@ -1170,10 +1170,16 @@ async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
 
             return result
 
-        # ParallelExecutor 인스턴스 생성
+        # 설정 로드
+        config_loader = JsonConfigLoader()
+        system_config = config_loader.load_system_config()
+        parallel_config = system_config.get("parallel_execution", {})
+
+        # ParallelExecutor 인스턴스 생성 (설정 기반)
         executor = ParallelExecutor(
             task_executor=coder_task_executor,
-            max_concurrent_tasks=4
+            max_concurrent_tasks=parallel_config.get("max_concurrent_tasks", 5),
+            continue_on_error=parallel_config.get("continue_on_error", False)
         )
 
         # JSON 파싱 및 실행

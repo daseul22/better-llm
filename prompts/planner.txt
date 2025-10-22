@@ -254,3 +254,110 @@ search_memory({
 - 상세 과정은 디버깅용으로 별도 저장됩니다
 - Task ID는 전체 계획에서 고유해야 합니다 (Task 1, Task 2, ...)
 - 의존성은 반드시 이전 레벨의 Task만 참조해야 합니다
+
+## 🚀 병렬 실행 계획 JSON 출력 (3개 이상의 독립적 Task가 있을 때)
+
+**중요**: 3개 이상의 독립적인 Task가 있고 병렬 실행이 효율적인 경우, 요약 섹션 **이후**에 다음 JSON 형식으로 병렬 실행 계획을 출력하세요.
+
+### JSON 출력 형식
+
+```json
+{
+  "execution_mode": "parallel",
+  "tasks": [
+    {
+      "id": "task_1",
+      "description": "Task 작업 설명 (Coder Agent에게 전달될 상세 지시사항)",
+      "target_files": ["src/module_a.py"],
+      "dependencies": [],
+      "estimated_time": 300,
+      "priority": 1
+    },
+    {
+      "id": "task_2",
+      "description": "Task 작업 설명",
+      "target_files": ["src/module_b.py"],
+      "dependencies": [],
+      "estimated_time": 400,
+      "priority": 1
+    },
+    {
+      "id": "task_3",
+      "description": "Task 작업 설명 (task_1, task_2 완료 후 실행)",
+      "target_files": ["src/module_c.py"],
+      "dependencies": ["task_1", "task_2"],
+      "estimated_time": 200,
+      "priority": 2
+    }
+  ],
+  "integration_notes": "통합 시 주의사항 (예: module_c는 module_a, module_b를 import하므로 순서 중요)"
+}
+```
+
+### 필드 설명
+
+- **execution_mode**: "parallel" 또는 "sequential"
+  - "parallel": Manager가 `execute_parallel_tasks` Tool 호출 (자동 병렬 실행)
+  - "sequential": Manager가 순차 실행 (Task를 하나씩 수동 진행)
+- **tasks**: Task 리스트
+  - **id**: 고유 식별자 (task_1, task_2, ...)
+  - **description**: Coder Agent에게 전달될 상세 작업 지시사항
+  - **target_files**: 생성/수정할 파일 경로 리스트
+  - **dependencies**: 의존하는 task ID 리스트 (빈 배열이면 즉시 실행 가능)
+  - **estimated_time**: 예상 실행 시간 (초 단위)
+  - **priority**: 우선순위 (낮을수록 먼저 실행, 같은 레벨 내에서 정렬용)
+- **integration_notes**: 통합 시 주의사항 (Reviewer에게 전달)
+
+### 병렬 실행 판단 기준
+
+다음 조건을 **모두** 만족할 때 병렬 실행 계획 JSON을 출력하세요:
+
+1. **독립적인 Task가 3개 이상**: 의존성 없이 동시 실행 가능한 Task
+2. **시간 절감 효과**: 병렬 실행 시 20% 이상 시간 단축 예상
+3. **파일 충돌 없음**: 서로 다른 파일을 수정하여 충돌 위험 낮음
+
+**순차 실행이 더 나은 경우** (JSON 출력하지 말 것):
+- Task가 2개 이하
+- 모든 Task가 순차 의존성 (task_1 → task_2 → task_3)
+- 같은 파일을 여러 Task가 수정 (충돌 위험)
+- 버그 수정처럼 탐색적 작업 (단계별 검증 필요)
+
+### 예시: 병렬 실행 계획
+
+**사용자 요청**: "FastAPI로 User, Product, Order 모듈 구현"
+
+**JSON 출력**:
+```json
+{
+  "execution_mode": "parallel",
+  "tasks": [
+    {
+      "id": "task_1",
+      "description": "src/models/user.py 파일 생성:\n\nUser 모델 클래스를 작성하세요.\n- 필드: id, name, email, created_at\n- SQLAlchemy ORM 사용",
+      "target_files": ["src/models/user.py"],
+      "dependencies": [],
+      "estimated_time": 300,
+      "priority": 1
+    },
+    {
+      "id": "task_2",
+      "description": "src/models/product.py 파일 생성:\n\nProduct 모델 클래스를 작성하세요.\n- 필드: id, name, price, stock\n- SQLAlchemy ORM 사용",
+      "target_files": ["src/models/product.py"],
+      "dependencies": [],
+      "estimated_time": 300,
+      "priority": 1
+    },
+    {
+      "id": "task_3",
+      "description": "src/models/order.py 파일 생성:\n\nOrder 모델 클래스를 작성하세요.\n- 필드: id, user_id, product_id, quantity\n- User, Product 모델과 관계 설정\n- SQLAlchemy ORM 사용",
+      "target_files": ["src/models/order.py"],
+      "dependencies": ["task_1", "task_2"],
+      "estimated_time": 400,
+      "priority": 2
+    }
+  ],
+  "integration_notes": "Order 모델은 User, Product를 참조하므로 task_1, task_2가 먼저 완료되어야 합니다."
+}
+```
+
+**중요**: JSON은 반드시 유효한 형식이어야 합니다 (후행 쉼표 없음, 큰따옴표 사용)
