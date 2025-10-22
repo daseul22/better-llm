@@ -20,7 +20,7 @@ from typing import Optional, Dict
 import click
 from rich.traceback import install as install_rich_traceback
 
-from src.domain.models import SessionResult
+from src.domain.models import SessionResult, Memory
 from src.domain.models.session import SessionStatus
 from src.domain.services import ConversationHistory
 from src.infrastructure.claude import ManagerAgent
@@ -37,6 +37,7 @@ from src.infrastructure.config import (
     SystemConfig,
 )
 from src.infrastructure.storage import create_session_repository
+from src.infrastructure.memory import FAISSMemoryBankRepository
 from .utils import (
     setup_logging,
     generate_session_id,
@@ -117,6 +118,9 @@ class Orchestrator:
 
         # Repository 패턴 사용 (config/system_config.json의 storage.backend 설정에 따라)
         self.session_repo = create_session_repository()
+
+        # Memory Bank Repository (벡터 DB 기반 세션 메모리)
+        self.memory_repo = FAISSMemoryBankRepository()
 
         # 사용자 입력 콜백 설정 (Human-in-the-Loop)
         set_user_input_callback(self._user_input_callback)
@@ -274,6 +278,55 @@ class Orchestrator:
         )
         return SessionResult(status=SessionStatus.MAX_TURNS_REACHED)
 
+    def _save_to_memory_bank(self, user_request: str) -> None:
+        """
+        세션을 Memory Bank에 저장 (벡터 검색을 위한 메모리)
+
+        Args:
+            user_request: 사용자 요청
+        """
+        try:
+            # Manager의 최종 응답 추출 (마지막 manager 메시지)
+            manager_messages = [
+                msg for msg in self.history.get_history()
+                if msg.role == "manager"
+            ]
+            session_summary = manager_messages[-1].content if manager_messages else "작업이 완료되었습니다."
+
+            # 수정된 파일 목록 추출 (Tool 결과에서)
+            tool_results = get_and_clear_tool_results()
+            files_modified = []
+            for tool_result in tool_results:
+                # Tool 결과에서 파일 경로 추출 (write, edit 도구의 경우)
+                if isinstance(tool_result, dict):
+                    if "file_path" in tool_result:
+                        files_modified.append(tool_result["file_path"])
+                    elif "files" in tool_result and isinstance(tool_result["files"], list):
+                        files_modified.extend(tool_result["files"])
+
+            # Memory 객체 생성
+            memory = Memory(
+                id=self.session_id,
+                task_description=user_request,
+                session_summary=session_summary[:500],  # 요약은 500자로 제한
+                files_modified=list(set(files_modified)),  # 중복 제거
+                tags=[],  # 향후 자동 태깅 기능 추가 가능
+                metadata={
+                    "duration": time.time() - self.start_time,
+                    "turn_count": sum(1 for msg in self.history.get_history() if msg.role == "manager")
+                }
+            )
+
+            # Memory Bank에 저장
+            self.memory_repo.save_memory(memory)
+
+        except Exception as e:
+            # 메모리 저장 실패는 치명적이지 않으므로 경고만 출력
+            self.feedback.warning(
+                f"Memory Bank 저장 중 오류 발생: {e}",
+                use_panel=False
+            )
+
     def _finalize_session(
         self,
         user_request: str,
@@ -311,6 +364,9 @@ class Orchestrator:
             # 기본 경로를 반환하여 푸터 출력은 정상적으로 진행
             from src.infrastructure.config import get_data_dir
             filepath = get_data_dir("sessions") / f"session_{self.session_id}_failed.json"
+
+        # Memory Bank에 세션 저장 (벡터 검색을 위한 메모리)
+        self._save_to_memory_bank(user_request)
 
         # 푸터 출력 (Rich 사용)
         self.renderer.print_footer(

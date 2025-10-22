@@ -508,9 +508,79 @@ ls -la prompts/
       print(f"[{result.similarity_score:.3f}] {result.memory.task_description}")
   ```
 - 후속 조치:
-  - ⏳ Planner Agent와 통합 (과거 작업 자동 검색 및 컨텍스트 전달)
-  - ⏳ Manager Agent에서 세션 완료 시 자동 메모리 저장
-  - ⏳ Worker Agent 프롬프트에 메모리 활용 지침 추가
+  - ✅ Planner Agent와 통합 (과거 작업 자동 검색 및 컨텍스트 전달)
+  - ✅ Manager Agent에서 세션 완료 시 자동 메모리 저장
+  - ✅ Worker Agent 프롬프트에 메모리 활용 지침 추가
+
+### feat. Memory Bank와 Agent 통합 - 과거 경험 자동 재활용
+- 날짜: 2025-10-22
+- 컨텍스트: Memory Bank가 구현되었지만 Agent와 통합되지 않아 실제로 사용되지 않음
+- 해결 방안: **Manager/Planner Agent와 Memory Bank 통합**
+- 변경사항:
+  - **Orchestrator** (`src/presentation/cli/orchestrator.py`):
+    - `__init__`: FAISSMemoryBankRepository 초기화
+    - `_save_to_memory_bank()`: 세션 완료 시 메모리 자동 저장
+    - Manager의 최종 응답, 수정된 파일 목록, 메타데이터 추출 및 저장
+  - **Worker Tools** (`src/infrastructure/mcp/worker_tools.py`):
+    - `search_memory` Tool 추가: 과거 세션 검색 기능
+    - 검색 쿼리, top_k, threshold 파라미터 지원
+    - 유사도 기반 검색 결과 반환 (task_description, session_summary, files_modified, similarity_score)
+  - **Manager 프롬프트** (`src/infrastructure/claude/manager_client.py`):
+    - "작업 수행 방법"에 search_memory Tool 사용 지침 추가
+    - 작업 시작 전 유사 작업 검색 권장
+    - 검색 결과를 Planner에게 전달하는 예시 추가
+  - **Planner 프롬프트** (`prompts/planner.txt`):
+    - "메모리 검색 (Project Memory Bank)" 섹션 추가
+    - search_memory Tool 사용 방법 및 예시
+    - 검색 결과 활용 전략 (유사 작업 재활용, 새로운 접근법)
+    - 비판적 사고 적용 (과거 작업 맹목적 추종 금지)
+- 영향범위:
+  - **워크플로우**: Manager → search_memory → Planner → Coder 순서로 진행
+  - **효율성**: 반복 작업 시간 단축 (과거 계획 재활용)
+  - **일관성**: 프로젝트별 코딩 스타일 및 패턴 유지
+- 사용 방법:
+  ```python
+  # Manager가 자동으로 수행 (사용자는 별도 작업 불필요)
+  # 1. 사용자 요청 → search_memory("FastAPI API 구현")
+  # 2. 유사 작업 발견 시 Planner에게 전달
+  # 3. 세션 완료 시 자동 메모리 저장
+  ```
+- 테스트: 구문 검사 통과
+- 후속 조치: 실제 사용 시 효과 측정 (히스토리 크기, 토큰 사용량, 작업 시간)
+
+### feat. Reflective Agent - 자가 평가 및 코드 개선
+- 날짜: 2025-10-22
+- 컨텍스트: Coder가 코드 작성 후 자체 검증 없이 Reviewer에게 의존
+  - 낮은 품질의 코드가 Reviewer로 전달되어 Review 사이클 증가
+  - Coder의 메타 인지 능력 부재
+- 해결 방안: **Coder Worker에 자가 평가 및 개선 기능 추가**
+- 변경사항:
+  - **Coder 프롬프트** (`prompts/coder.txt`):
+    - "자가 평가 및 개선 (Reflective Agent)" 섹션 추가
+    - 평가 기준 5가지 정의 (코드 품질, 가독성, 성능, 보안, 테스트 가능성)
+    - 자가 평가 프로세스: 평가 → 평균 계산 → 개선 판단
+    - 평균 점수 < 7.0 → 코드 개선 → 재평가 (최대 1회)
+    - 평가 결과 출력 형식 표준화
+- 영향범위:
+  - **코드 품질**: Coder가 스스로 품질 검증하여 초기 품질 향상
+  - **Review 사이클**: Critical 이슈 감소로 Review 횟수 단축 (예상 30%)
+  - **투명성**: 평가 점수 및 근거가 명확히 문서화됨
+- 평가 기준:
+  1. 코드 품질 (1-10): 일관성, 추상화, SOLID 원칙
+  2. 가독성 (1-10): 명명, 주석, 복잡도
+  3. 성능 (1-10): 효율성, 알고리즘, 메모리
+  4. 보안 (1-10): 입력 검증, SQL Injection/XSS 방지
+  5. 테스트 가능성 (1-10): 단일 책임, 의존성 주입
+- 사용 방법:
+  ```
+  # Coder가 자동으로 수행 (별도 설정 불필요)
+  # 1. 코드 작성 완료
+  # 2. 5가지 기준으로 자가 평가 (각 1-10점)
+  # 3. 평균 점수 < 7.0 → 개선 후 재평가 (최대 1회)
+  # 4. 평가 결과를 포함한 최종 요약 출력
+  ```
+- 테스트: 구문 검사 통과
+- 후속 조치: 실제 사용 시 효과 측정 (Review 사이클 감소율, 코드 품질 개선도)
 
 ### fix. 패키지 설치 설정 수정 (src 패키지 지원)
 - 날짜: 2025-10-21

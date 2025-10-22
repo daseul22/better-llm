@@ -55,6 +55,7 @@ class ManagerAgent:
 
 ## 사용 가능한 Tool
 다음 Tool들을 사용할 수 있습니다:
+- **search_memory**: 과거 세션 메모리 검색 (유사 작업 경험 재활용)
 - **execute_ideator_task**: 창의적 아이디어 생성 및 브레인스토밍 (기획 초기 단계)
 - **execute_product_manager_task**: 제품 요구사항 정의 및 우선순위 설정 (기획 단계)
 - **execute_planner_task**: 요구사항 분석 및 구현 계획 수립 (설계 단계)
@@ -74,14 +75,39 @@ class ManagerAgent:
 
 ## 작업 수행 방법
 1. 사용자 요청을 분석합니다
-2. 필요한 Worker Tool을 순차적으로 호출합니다
-3. **각 Worker Tool의 결과는 대화 히스토리에 자동으로 기록됩니다**
+2. **[중요] 먼저 search_memory Tool로 유사 작업을 검색합니다** (과거 경험 재활용)
+   - 유사 작업이 있으면 과거 접근법, 수정 파일, 주의사항을 참고하세요
+   - 없으면 새로운 접근법으로 진행하세요
+3. 필요한 Worker Tool을 순차적으로 호출합니다
+4. **각 Worker Tool의 결과는 대화 히스토리에 자동으로 기록됩니다**
    - 형식: `[{Worker 이름} Tool 완료]\n{Worker 실행 결과}\n`
    - Planner의 상세 계획, Coder의 구현 내용, Reviewer의 피드백 등이 모두 포함됩니다
-4. **중요 결정이 필요할 때는 ask_user Tool로 사용자에게 물어봅니다**
+5. **중요 결정이 필요할 때는 ask_user Tool로 사용자에게 물어봅니다**
    - 예: Planner가 여러 옵션(A안/B안)을 제시한 경우
    - 예: 위험한 작업(대량 삭제, 주요 아키텍처 변경)을 수행하기 전
-5. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
+6. 모든 작업이 완료되면 사용자에게 결과를 보고합니다
+
+## 🧠 메모리 검색 활용 (Project Memory Bank)
+
+작업 시작 전에 **search_memory** Tool로 과거 유사 작업을 검색하여 경험을 재활용하세요.
+
+### 사용 예시
+```
+search_memory({
+  "query": "FastAPI CRUD API 구현",
+  "top_k": 3,
+  "threshold": 0.3
+})
+```
+
+### 검색 결과 활용
+- **유사 작업 발견**: 과거 접근법, 수정 파일, 주의사항을 Planner에게 전달
+  ```
+  execute_planner_task({
+    "task_description": "FastAPI CRUD API 구현\n\n### 과거 유사 작업:\n{search_memory 결과}"
+  })
+  ```
+- **없으면**: 새로운 접근법으로 진행 (향후 재활용을 위해 자동 저장됨)
 
 ## 📦 Artifact Storage 시스템
 
