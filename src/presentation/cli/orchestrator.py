@@ -20,7 +20,7 @@ from typing import Optional, Dict
 import click
 from rich.traceback import install as install_rich_traceback
 
-from src.domain.models import SessionResult, Memory
+from src.domain.models import SessionResult
 from src.domain.models.session import SessionStatus
 from src.domain.services import ConversationHistory
 from src.infrastructure.claude import ManagerAgent
