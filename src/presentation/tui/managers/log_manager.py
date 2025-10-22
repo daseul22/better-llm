@@ -98,6 +98,8 @@ class LogManager:
         """
         로그 출력 추적 (Phase 2.1: 로그 버퍼 관리).
 
+        Race Condition 방지: deque.append는 thread-safe합니다.
+
         Args:
             content: 로그 내용
         """
@@ -107,11 +109,85 @@ class LogManager:
         else:
             content_str = content
 
-        # 현재 세션의 log_lines에 추가 (property를 통해 접근)
+        # 현재 세션의 log_lines에 추가 (deque.append는 thread-safe)
+        # deque는 maxlen이 설정되어 있어 자동으로 오래된 항목 제거
         self.app.current_session.log_lines.append(content_str)
 
-        # 최대 라인 수 제한
-        max_lines = self.app.settings.max_log_lines
-        if len(self.app.current_session.log_lines) > max_lines:
-            # 오래된 라인 제거
-            self.app.current_session.log_lines = self.app.current_session.log_lines[-max_lines:]
+    def apply_filter(self, filter_config) -> None:
+        """
+        로그 필터 적용 (LogFilter 사용).
+
+        Args:
+            filter_config: FilterConfig 객체 (levels, worker, start_time, end_time)
+        """
+        try:
+            from ..utils.log_filter import LogFilter
+
+            # 필터 적용
+            log_filter = LogFilter()
+            filtered_lines = log_filter.apply_filters(
+                self.app.log_lines,
+                levels=filter_config.levels,
+                worker=filter_config.worker,
+                start_time=filter_config.start_time,
+                end_time=filter_config.end_time
+            )
+
+            # 출력 로그 갱신
+            output_log = self.app.query_one("#output-log", RichLog)
+            output_log.clear()
+
+            # 필터 정보 표시
+            filter_info = self._format_filter_info(filter_config)
+            output_log.write(Panel(
+                f"[bold cyan]🔍 로그 필터 적용[/bold cyan]\n\n{filter_info}",
+                border_style="cyan"
+            ))
+            output_log.write("")
+
+            # 필터링된 로그 출력
+            if filtered_lines:
+                for line in filtered_lines:
+                    output_log.write(line)
+                output_log.write("")
+                output_log.write(
+                    f"[dim]총 {len(filtered_lines)}개 라인 (전체: {len(self.app.log_lines)}개)[/dim]"
+                )
+            else:
+                output_log.write("[yellow]⚠️ 필터링된 로그가 없습니다[/yellow]")
+
+            logger.info(f"로그 필터 적용 완료: {len(filtered_lines)}개 라인")
+
+        except Exception as e:
+            logger.error(f"로그 필터 적용 실패: {e}", exc_info=True)
+            raise
+
+    def _format_filter_info(self, filter_config) -> str:
+        """
+        필터 설정 정보 포매팅.
+
+        Args:
+            filter_config: FilterConfig 객체
+
+        Returns:
+            포매팅된 필터 정보 문자열
+        """
+        lines = []
+
+        # 로그 레벨
+        levels_str = ", ".join(sorted(filter_config.levels))
+        lines.append(f"**레벨**: {levels_str}")
+
+        # Worker
+        worker_str = filter_config.worker or "All"
+        lines.append(f"**Worker**: {worker_str}")
+
+        # 시간대
+        if filter_config.start_time or filter_config.end_time:
+            start_str = filter_config.start_time.strftime("%H:%M:%S") if filter_config.start_time else "제한 없음"
+            end_str = filter_config.end_time.strftime("%H:%M:%S") if filter_config.end_time else "제한 없음"
+            lines.append(f"**시간대**: {start_str} ~ {end_str}")
+        else:
+            lines.append("**시간대**: 제한 없음")
+
+        return "\n".join(lines)

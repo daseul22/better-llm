@@ -184,6 +184,16 @@ class SettingsModal(ModalScreen):
                         classes="setting-control"
                     )
 
+                # 토큰 예산 설정
+                with Horizontal(classes="setting-row"):
+                    yield Static("토큰 예산:", classes="setting-label")
+                    yield Input(
+                        str(self.settings.token_budget),
+                        id="token-budget",
+                        classes="setting-control",
+                        placeholder="권장: 50,000 (Sonnet 4.5)"
+                    )
+
             with Horizontal(id="settings-buttons"):
                 yield Button("저장 (Enter)", id="save-button", variant="primary")
                 yield Button("기본값 복원", id="reset-button", variant="warning")
@@ -220,6 +230,7 @@ class SettingsModal(ModalScreen):
             max_history_size = int(self.query_one("#max-history-size", Input).value)
             worker_timeout = int(self.query_one("#worker-timeout", Input).value)
             log_export_format = self.query_one("#log-export-format", Input).value
+            token_budget = int(self.query_one("#token-budget", Input).value)
 
             # Switch 상태 읽기
             enable_notifications = self.query_one("#enable-notifications", Switch).value
@@ -230,6 +241,10 @@ class SettingsModal(ModalScreen):
             show_workflow_panel = self.query_one("#show-workflow-panel", Switch).value
             show_worker_status = self.query_one("#show-worker-status", Switch).value
             show_error_stats_on_complete = self.query_one("#show-error-stats-on-complete", Switch).value
+
+            # 토큰 예산 유효성 검증
+            if not (1000 <= token_budget <= 1000000):
+                raise ValueError("토큰 예산은 1,000 ~ 1,000,000 범위여야 합니다.")
 
             # 설정 업데이트
             self.settings.max_log_lines = max_log_lines
@@ -244,6 +259,7 @@ class SettingsModal(ModalScreen):
             self.settings.show_workflow_panel = show_workflow_panel
             self.settings.show_worker_status = show_worker_status
             self.settings.show_error_stats_on_complete = show_error_stats_on_complete
+            self.settings.token_budget = token_budget
 
             # 파일에 저장
             TUIConfig.save(self.settings)

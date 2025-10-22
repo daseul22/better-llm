@@ -194,10 +194,10 @@ MultilineInput > .text-area--selection {
 }
 
 #status-info {
-    text-align: center;
+    text-align: left;
     width: 1fr;
     height: auto;
-    content-align: center middle;
+    content-align: left middle;
 }
 
 #token-info {

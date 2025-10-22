@@ -19,6 +19,7 @@ from ..widgets import (
     SessionBrowserModal,
     WorkflowVisualizer,
     WorkerStatus,
+    TokenUsageWidget,
 )
 
 if TYPE_CHECKING:
@@ -83,6 +84,12 @@ class UIComposer:
             session_id = self.app.session_id
             yield Static(f"Session: {session_id}", id="session-info")
             yield Static("Ready", id="status-info")
-            yield Static("🟢 Tokens: 0/200K (0% used, 100% free)", id="token-info")
+            # 토큰 사용량 위젯 (설정에서 예산 로드)
+            yield TokenUsageWidget(
+                id="token-info",
+                token_budget=self.app.settings.token_budget,
+                warn_threshold=self.app.settings.warn_threshold,
+                alert_threshold=self.app.settings.alert_threshold
+            )
 
         yield Footer()

@@ -9,8 +9,9 @@ TUI 세션 관리 책임:
 
 import time
 from typing import Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from collections import deque
 
 from src.domain.models import SessionStatus
 from src.domain.services import ConversationHistory, MetricsCollector
@@ -45,7 +46,7 @@ class SessionData:
     Attributes:
         session_id: 세션 고유 ID
         history: 대화 히스토리
-        log_lines: 로그 라인 목록
+        log_lines: 로그 라인 목록 (thread-safe deque, maxlen=10000)
         start_time: 세션 시작 시간
         metrics_repository: 메트릭 저장소
         metrics_collector: 메트릭 수집기
@@ -55,10 +56,10 @@ class SessionData:
     """
     session_id: str
     history: ConversationHistory
-    log_lines: list[str]
-    start_time: float
-    metrics_repository: InMemoryMetricsRepository
-    metrics_collector: MetricsCollector
+    log_lines: deque = field(default_factory=lambda: deque(maxlen=10000))
+    start_time: float = 0.0
+    metrics_repository: InMemoryMetricsRepository = field(default_factory=InMemoryMetricsRepository)
+    metrics_collector: MetricsCollector = field(default=None)
     status: SessionStatus = SessionStatus.COMPLETED
     end_time: Optional[float] = None
     input_buffer: str = ""
@@ -655,11 +656,11 @@ class SessionManager:
         metrics_repository = InMemoryMetricsRepository()
         metrics_collector = MetricsCollector(metrics_repository)
 
-        # SessionData 생성
+        # SessionData 생성 (log_lines는 deque, maxlen=10000)
         session_data = SessionData(
             session_id=session_id,
             history=history,
-            log_lines=[],
+            log_lines=deque(maxlen=10000),
             start_time=time.time(),
             metrics_repository=metrics_repository,
             metrics_collector=metrics_collector,

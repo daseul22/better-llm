@@ -11,6 +11,7 @@ click>=8.0.0
 # TUI (Terminal User Interface)
 textual>=0.47.0
 rich>=13.7.0
+rapidfuzz>=3.0.0
 
 # 유틸리티
 python-dotenv>=1.0.0

@@ -54,6 +54,9 @@ from .widgets import (
     SessionBrowserModal,
     WorkflowVisualizer,
     WorkerStatus,
+    CommandPaletteModal,
+    CommandItem,
+    LogFilterModal,
 )
 from .widgets.settings_modal import SettingsModal
 from .widgets.search_input import SearchHighlighter
@@ -107,10 +110,12 @@ class OrchestratorTUI(App):
         Binding("ctrl+n", "new_session", "새 세션"),
         Binding("ctrl+s", "save_log", "로그 저장"),
         Binding("ctrl+l", "show_session_browser", "세션"),
+        Binding("ctrl+p", "show_command_palette", "명령 팔레트"),
 
         # 검색 (한글 모드 지원)
         Binding("/", "search_log", "검색", show=False),  # 한글 모드에서 작동 안 함
         Binding("ctrl+f", "search_log", "검색"),  # Footer에 표시 (한글 모드 OK)
+        Binding("ctrl+shift+f", "show_log_filter", "로그 필터"),  # 로그 필터 모달
 
         # 도움말 (한글 모드 지원)
         Binding("?", "show_help", "도움말", show=False),  # 한글 모드에서 작동 안 함
@@ -597,6 +602,118 @@ class OrchestratorTUI(App):
         await self.action_handler.action_search_log()
         self._apply_action_handler_state()
 
+    async def action_show_log_filter(self) -> None:
+        """
+        Ctrl+Shift+F: 로그 필터 모달 표시.
+
+        로그 레벨, Worker, 시간대별 필터링 옵션을 제공합니다.
+        """
+        try:
+            # Worker 목록 추출 (LogFilter 사용)
+            from .utils.log_filter import LogFilter
+            log_filter = LogFilter()
+            available_workers = log_filter.extract_workers(self.log_lines)
+
+            # 로그 필터 모달 표시
+            result = await self.push_screen(
+                LogFilterModal(self.log_lines, available_workers)
+            )
+
+            # 필터 적용 결과 처리
+            if result is not None:
+                await self.apply_log_filter(result)
+
+        except Exception as e:
+            logger.error(f"로그 필터 모달 표시 실패: {e}", exc_info=True)
+            if self.settings.enable_notifications and self.settings.notify_on_error:
+                self.notify(f"로그 필터 표시 실패: {e}", severity="error")
+
+    async def apply_log_filter(self, filter_config) -> None:
+        """
+        로그 필터 적용.
+
+        Args:
+            filter_config: FilterConfig 객체 (levels, worker, start_time, end_time)
+        """
+        try:
+            from .utils.log_filter import LogFilter
+
+            # 필터 적용
+            log_filter = LogFilter()
+            filtered_lines = log_filter.apply_filters(
+                self.log_lines,
+                levels=filter_config.levels,
+                worker=filter_config.worker,
+                start_time=filter_config.start_time,
+                end_time=filter_config.end_time
+            )
+
+            # 출력 로그 갱신
+            output_log = self.query_one("#output-log", RichLog)
+            output_log.clear()
+
+            # 필터 정보 표시
+            from rich.panel import Panel
+            filter_info = self._format_filter_info(filter_config)
+            output_log.write(Panel(
+                f"[bold cyan]🔍 로그 필터 적용[/bold cyan]\n\n{filter_info}",
+                border_style="cyan"
+            ))
+            output_log.write("")
+
+            # 필터링된 로그 출력
+            if filtered_lines:
+                for line in filtered_lines:
+                    output_log.write(line)
+                output_log.write("")
+                output_log.write(
+                    f"[dim]총 {len(filtered_lines)}개 라인 (전체: {len(self.log_lines)}개)[/dim]"
+                )
+            else:
+                output_log.write("[yellow]⚠️ 필터링된 로그가 없습니다[/yellow]")
+
+            # 알림 표시
+            if self.settings.enable_notifications:
+                self.notify(
+                    f"로그 필터 적용: {len(filtered_lines)}개 라인",
+                    severity="information"
+                )
+
+        except Exception as e:
+            logger.error(f"로그 필터 적용 실패: {e}", exc_info=True)
+            if self.settings.enable_notifications and self.settings.notify_on_error:
+                self.notify(f"로그 필터 적용 실패: {e}", severity="error")
+
+    def _format_filter_info(self, filter_config) -> str:
+        """
+        필터 설정 정보 포매팅.
+
+        Args:
+            filter_config: FilterConfig 객체
+
+        Returns:
+            포매팅된 필터 정보 문자열
+        """
+        lines = []
+
+        # 로그 레벨
+        levels_str = ", ".join(sorted(filter_config.levels))
+        lines.append(f"**레벨**: {levels_str}")
+
+        # Worker
+        worker_str = filter_config.worker or "All"
+        lines.append(f"**Worker**: {worker_str}")
+
+        # 시간대
+        if filter_config.start_time or filter_config.end_time:
+            start_str = filter_config.start_time.strftime("%H:%M:%S") if filter_config.start_time else "제한 없음"
+            end_str = filter_config.end_time.strftime("%H:%M:%S") if filter_config.end_time else "제한 없음"
+            lines.append(f"**시간대**: {start_str} ~ {end_str}")
+        else:
+            lines.append("**시간대**: 제한 없음")
+
+        return "\n".join(lines)
+
     async def perform_search(self, query: str) -> None:
         """
         로그 검색 수행
@@ -979,6 +1096,80 @@ class OrchestratorTUI(App):
         self._sync_action_handler_state()
         await self.action_handler.action_toggle_output_mode()
         self._apply_action_handler_state()
+
+    async def action_show_command_palette(self) -> None:
+        """
+        Ctrl+P: 명령 팔레트 표시 (VS Code 스타일)
+
+        키 바인딩과 슬래시 커맨드를 통합 검색하여 실행합니다.
+        """
+        try:
+            # 명령 아이템 목록 생성
+            commands: List[CommandItem] = []
+
+            # 1. BINDINGS에서 키 바인딩 추출
+            for binding in self.BINDINGS:
+                # show=False인 것도 포함 (내부적으로 사용 가능)
+                commands.append(CommandItem(
+                    label=binding.description,
+                    description=f"키 바인딩: {binding.key}",
+                    keybinding=binding.key,
+                    action=binding.action,
+                    item_type="keybinding"
+                ))
+
+            # 2. 슬래시 커맨드 추가
+            slash_commands = [
+                ("/help", "도움말 표시"),
+                ("/metrics", "메트릭 패널 토글"),
+                ("/search", "로그 검색"),
+                ("/init", "프로젝트 분석 및 context 초기화"),
+                ("/load", "이전 세션 불러오기"),
+                ("/clear", "로그 화면 지우기"),
+            ]
+
+            for cmd, desc in slash_commands:
+                commands.append(CommandItem(
+                    label=cmd,
+                    description=desc,
+                    keybinding="",
+                    action=cmd,
+                    item_type="command"
+                ))
+
+            # 명령 팔레트 모달 표시
+            async def on_command_selected(command_item: Optional[CommandItem]) -> None:
+                """
+                명령 선택 콜백
+
+                Args:
+                    command_item: 선택된 명령 아이템 (None이면 취소)
+                """
+                if command_item is None:
+                    return
+
+                # 키 바인딩이면 해당 액션 실행
+                if command_item.item_type == "keybinding":
+                    action_method = getattr(self, f"action_{command_item.action}", None)
+                    if action_method and callable(action_method):
+                        await action_method()
+                # 슬래시 커맨드면 핸들러 호출
+                elif command_item.item_type == "command":
+                    await self.handle_slash_command(command_item.action)
+
+            # 모달 표시
+            result = await self.push_screen(
+                CommandPaletteModal(commands, on_command_selected)
+            )
+
+            # 결과 처리
+            if result:
+                await on_command_selected(result)
+
+        except Exception as e:
+            logger.error(f"명령 팔레트 표시 실패: {e}")
+            if self.settings.enable_notifications and self.settings.notify_on_error:
+                self.notify(f"명령 팔레트 표시 실패: {e}", severity="error")
 
 
 def main() -> None:

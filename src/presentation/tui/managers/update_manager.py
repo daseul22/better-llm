@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Optional
 
 from textual.widgets import Static
 
-from ..widgets import WorkflowVisualizer
+from ..widgets import WorkflowVisualizer, TokenUsageWidget
 from src.infrastructure.logging import get_logger
 
 if TYPE_CHECKING:
@@ -115,90 +115,29 @@ class UpdateManager:
     def update_token_info(self) -> None:
         """
         타이머: 토큰 사용량 업데이트 (1초마다 호출).
-        Manager + Worker 토큰 사용량을 통합하여 표시합니다.
+        TokenUsageWidget에 데이터를 전달하여 업데이트합니다.
         """
         try:
-            token_info_widget = self.app.query_one("#token-info", Static)
+            token_widget = self.app.query_one("#token-info", TokenUsageWidget)
 
             if not self.app.manager:
-                # Manager 초기화 전: 기본값 표시
-                token_info_widget.update("🟢 Tokens: 0/200K (0% used, 100% free)")
+                # Manager 초기화 전: 빈 데이터로 업데이트
+                token_widget.update_token_info(
+                    manager_usage={"total_tokens": 0, "input_tokens": 0, "output_tokens": 0},
+                    session_summary=None
+                )
                 return
 
             # Manager Agent에서 토큰 사용량 가져오기
             manager_usage = self.app.manager.get_token_usage()
             logger.debug(f"[TUI] Manager usage: {manager_usage}")
 
-            manager_total = manager_usage["total_tokens"]
-            manager_input = manager_usage["input_tokens"]
-            manager_output = manager_usage["output_tokens"]
-
             # Worker Agent 토큰 사용량 가져오기 (세션 메트릭에서)
             session_metrics = self.app.metrics_collector.get_session_summary(self.app.session_id)
             logger.debug(f"[TUI] Session metrics exists: {session_metrics is not None}")
 
-            worker_total = 0
-            worker_input = 0
-            worker_output = 0
-            worker_cache_read = 0
-            worker_cache_creation = 0
-
-            if session_metrics:
-                logger.debug(f"[TUI] Number of worker metrics: {len(session_metrics.workers_metrics)}")
-                for metric in session_metrics.workers_metrics:
-                    logger.debug(
-                        f"[TUI] Worker {metric.worker_name}: "
-                        f"input={metric.input_tokens}, output={metric.output_tokens}, "
-                        f"cache_read={metric.cache_read_tokens}, cache_creation={metric.cache_creation_tokens}"
-                    )
-                    worker_input += metric.input_tokens or 0
-                    worker_output += metric.output_tokens or 0
-                    worker_cache_read += metric.cache_read_tokens or 0
-                    worker_cache_creation += metric.cache_creation_tokens or 0
-                worker_total = worker_input + worker_output
-            else:
-                logger.debug("[TUI] No session metrics found")
-
-            # 전체 토큰 계산
-            total_tokens = manager_total + worker_total
-            total_input = manager_input + worker_input
-            total_output = manager_output + worker_output
-
-            logger.debug(
-                f"[TUI] Total tokens: {total_tokens} (Manager: {manager_total}, Worker: {worker_total})"
-            )
-
-            # 모델별 컨텍스트 윈도우 (토큰 수)
-            # Claude Sonnet 4.5: 200K context window
-            context_window = 200_000
-
-            # 사용률 계산
-            usage_percentage = (total_tokens / context_window) * 100 if context_window > 0 else 0
-            remaining_percentage = 100 - usage_percentage
-
-            # 표시 형식 생성
-            if total_tokens >= 1000:
-                total_display = f"{total_tokens / 1000:.1f}K"
-            else:
-                total_display = str(total_tokens)
-
-            # 색상: 초록(< 50%), 노랑(50-80%), 빨강(>= 80%)
-            if usage_percentage < 50:
-                color = "green"
-                emoji = "🟢"
-            elif usage_percentage < 80:
-                color = "yellow"
-                emoji = "🟡"
-            else:
-                color = "red"
-                emoji = "🔴"
-
-            # 상세 정보 표시 (한 줄)
-            # 형식: 🟢 Tokens: 15.2K/200K (7.6% used, 92.4% free) • M: 10K W: 5K
-            token_info_widget.update(
-                f"[{color}]{emoji} {total_display}/200K ({usage_percentage:.1f}% used, {remaining_percentage:.1f}% free)[/{color}] "
-                f"[dim]• M:{manager_total:,} W:{worker_total:,}[/dim]"
-            )
+            # TokenUsageWidget에 데이터 전달
+            token_widget.update_token_info(manager_usage, session_metrics)
 
         except Exception as e:
             logger.warning(f"토큰 정보 업데이트 실패: {e}")
