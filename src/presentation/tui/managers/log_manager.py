@@ -50,7 +50,14 @@ class LogManager:
             widget_id: RichLog 위젯 ID
         """
         try:
-            output_log = self.app.query_one(f"#{widget_id}", RichLog)
+            # 위젯 존재 여부 확인 (화면 종료 시 위젯이 없을 수 있음)
+            widgets = self.app.query(f"#{widget_id}")
+            if not widgets:
+                # 위젯이 없으면 조용히 실패 (화면 종료 중일 수 있음)
+                logger.debug(f"위젯 '{widget_id}'를 찾을 수 없습니다 (화면 종료 중일 수 있음)")
+                return
+
+            output_log = widgets.first(RichLog)
 
             # RichLog의 실제 너비 계산
             # (컨테이너 너비 - 패딩 - 스크롤바 - 보더)

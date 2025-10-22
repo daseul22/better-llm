@@ -64,7 +64,7 @@ class WorkerExecutionContext:
     worker_name: str
     task_description: str
     use_retry: bool = False
-    timeout: int = 300
+    timeout: int = 600
     session_id: Optional[str] = None
     metrics_collector: Optional[Any] = None
     worker_agent: Optional[Any] = None
@@ -599,18 +599,25 @@ class WorkerExecutor:
                 # tokens_used 추출 (result에서)
                 tokens_used_dict = result.get("tokens_used", None)
                 total_tokens = None
+                input_tokens = None
+                output_tokens = None
+                cache_read_tokens = None
+                cache_creation_tokens = None
+
                 if tokens_used_dict:
-                    total_tokens = (
-                        tokens_used_dict.get('input_tokens', 0) +
-                        tokens_used_dict.get('output_tokens', 0)
-                    )
+                    input_tokens = tokens_used_dict.get('input_tokens', 0)
+                    output_tokens = tokens_used_dict.get('output_tokens', 0)
+                    cache_read_tokens = tokens_used_dict.get('cache_read_tokens', 0)
+                    cache_creation_tokens = tokens_used_dict.get('cache_creation_tokens', 0)
+                    total_tokens = input_tokens + output_tokens
+
                     logger.debug(
                         "Token usage recorded",
                         worker_name=context.worker_name,
-                        input_tokens=tokens_used_dict.get('input_tokens', 0),
-                        output_tokens=tokens_used_dict.get('output_tokens', 0),
-                        cache_read_tokens=tokens_used_dict.get('cache_read_tokens', 0),
-                        cache_creation_tokens=tokens_used_dict.get('cache_creation_tokens', 0),
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_read_tokens=cache_read_tokens,
+                        cache_creation_tokens=cache_creation_tokens,
                         total_tokens=total_tokens
                     )
 
@@ -622,6 +629,10 @@ class WorkerExecutor:
                     end_time=end_time,
                     success=success,
                     tokens_used=total_tokens,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_creation_tokens=cache_creation_tokens,
                     error_message=error_message,
                 )
             except Exception as metrics_error:

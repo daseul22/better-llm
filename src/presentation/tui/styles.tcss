@@ -83,22 +83,6 @@ Tab:hover {
     background: #1c2128;
 }
 
-/* Worker 상태 표시 */
-#worker-status-container {
-    height: auto;
-    margin: 0 1;
-    background: transparent;
-    border: round #21262d;
-    padding: 0;
-}
-
-#worker-status {
-    background: transparent;
-    color: #8b949e;
-    padding: 0 2;
-    height: auto;
-}
-
 /* 메트릭 대시보드 */
 #metrics-container {
     height: auto;
@@ -193,30 +177,35 @@ MultilineInput > .text-area--selection {
     display: none;
 }
 
-/* 하단 정보바 */
+/* 하단 정보바 (Footer 바로 위에 배치) */
 #info-bar {
-    dock: bottom;
-    height: 1;
+    height: auto;
     background: #0d1117;
     color: #6e7681;
-    padding: 0 2;
+    padding: 1 2;
     border-top: tall #21262d;
 }
 
 #session-info {
     text-align: left;
     width: 2fr;
-}
-
-#token-info {
-    text-align: center;
-    width: 1fr;
-    color: #58a6ff;
+    height: auto;
+    content-align: left middle;
 }
 
 #status-info {
+    text-align: center;
+    width: 1fr;
+    height: auto;
+    content-align: center middle;
+}
+
+#token-info {
     text-align: right;
     width: 2fr;
+    height: auto;
+    content-align: right middle;
+    color: #58a6ff;
 }
 
 /* Footer 스타일 */

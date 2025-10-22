@@ -35,6 +35,10 @@ class MetricsCollector:
         end_time: datetime,
         success: bool,
         tokens_used: Optional[int] = None,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+        cache_read_tokens: Optional[int] = None,
+        cache_creation_tokens: Optional[int] = None,
         error_message: Optional[str] = None,
     ) -> WorkerMetrics:
         """
@@ -47,7 +51,11 @@ class MetricsCollector:
             start_time: 시작 시각
             end_time: 종료 시각
             success: 성공 여부
-            tokens_used: 사용한 토큰 수 (선택적)
+            tokens_used: 사용한 토큰 수 (선택적, 하위 호환성)
+            input_tokens: 입력 토큰 수 (선택적)
+            output_tokens: 출력 토큰 수 (선택적)
+            cache_read_tokens: 캐시 읽기 토큰 수 (선택적)
+            cache_creation_tokens: 캐시 생성 토큰 수 (선택적)
             error_message: 에러 메시지 (선택적)
 
         Returns:
@@ -63,6 +71,10 @@ class MetricsCollector:
             execution_time=execution_time,
             success=success,
             tokens_used=tokens_used,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
             error_message=error_message,
         )
 

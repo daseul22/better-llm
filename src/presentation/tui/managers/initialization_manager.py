@@ -60,11 +60,9 @@ class InitializationManager:
 
         환경 검증 → Worker 초기화 → Manager 초기화 → 콜백 설정 순서로 진행
         """
-        worker_status = self.app.query_one("#worker-status", Static)
         status_info = self.app.query_one("#status-info", Static)
 
         try:
-            worker_status.update("⏳ 초기화 중...")
             status_info.update("Initializing...")
 
             # 1. 환경 검증
@@ -84,7 +82,6 @@ class InitializationManager:
 
             # 6. 초기화 완료 표시
             self.app.initialized = True
-            worker_status.update("✅ 준비 완료")
             status_info.update("Ready")
 
             # 7. 환영 메시지 표시

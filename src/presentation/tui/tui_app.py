@@ -530,19 +530,9 @@ class OrchestratorTUI(App):
             logger.error(f"Failed to apply workflow panel visibility: {e}", exc_info=True)
 
     def apply_worker_status_visibility(self) -> None:
-        """Worker 상태 패널 표시/숨김 상태 적용"""
-        try:
-            worker_status_container = self.query_one("#worker-status-container", Container)
-            if self.show_worker_status:
-                worker_status_container.remove_class("hidden")
-            else:
-                worker_status_container.add_class("hidden")
-        except NoMatches:
-            # 위젯이 아직 마운트되지 않은 경우 (정상적인 초기화 과정)
-            logger.debug("Worker status container not yet mounted, skipping visibility update")
-        except Exception as e:
-            # 예상치 못한 에러
-            logger.error(f"Failed to apply worker status visibility: {e}", exc_info=True)
+        """Worker 상태 패널 표시/숨김 상태 적용 (Worker 상태 컨테이너 제거됨)"""
+        # Worker 상태 컨테이너가 제거되었으므로 이 메서드는 더 이상 필요하지 않음
+        pass
 
     def on_workflow_update(self, worker_name: str, status: str, error: Optional[str] = None) -> None:
         """
@@ -656,7 +646,6 @@ class OrchestratorTUI(App):
         """
         try:
             output_log = self.query_one("#output-log", RichLog)
-            worker_status = self.query_one("#worker-status", Static)
             status_info = self.query_one("#status-info", Static)
 
             self.write_log("")
@@ -725,7 +714,6 @@ class OrchestratorTUI(App):
             ))
             self.write_log("")
 
-            worker_status.update("✅ 세션 로드됨")
             status_info.update("Ready")
 
         except Exception as e:

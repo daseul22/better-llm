@@ -19,8 +19,8 @@
     "coder_timeout": 600,
     "reviewer_timeout": 600,
     "tester_timeout": 600,
-    "committer_timeout": 180,
-    "documenter_timeout": 300
+    "committer_timeout": 600,
+    "documenter_timeout": 600
   },
   "workflow_limits": {
     "max_retry_cycles": 3,
@@ -63,7 +63,7 @@
   },
   "approval": {
     "enabled": false,
-    "timeout_seconds": 300,
+    "timeout_seconds": 600,
     "approval_points": {
       "before_code_write": true,
       "after_code_write": true,
@@ -79,7 +79,7 @@
   "interaction": {
     "enabled": false,
     "allow_questions": true,
-    "timeout_seconds": 300,
+    "timeout_seconds": 600,
     "auto_fallback": "first"
   },
   "parallel_execution": {

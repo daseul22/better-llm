@@ -64,7 +64,6 @@ class TaskRunner:
         from src.presentation.tui.widgets import MultilineInput
 
         task_input = self.tui_app.query_one("#task-input", MultilineInput)
-        worker_status = self.tui_app.query_one("#worker-status", Static)
         status_info = self.tui_app.query_one("#status-info", Static)
 
         try:
@@ -119,7 +118,6 @@ class TaskRunner:
 
             self.tui_app.write_log("")
 
-            worker_status.update(f"✅ 완료 ({task_duration:.1f}초)")
             status_info.update(f"Completed • {filepath.name}")
 
         except Exception as e:
@@ -215,19 +213,31 @@ class TaskRunner:
             self.tui_app.history.add_message("manager", manager_response)
 
         except asyncio.CancelledError:
-            self.tui_app.write_log(
-                "\n[bold yellow]⚠️  작업이 사용자에 의해 중단되었습니다[/bold yellow]"
-            )
+            # 작업 취소 시 상태만 업데이트 (로그는 이미 화면이 종료 중일 수 있음)
             self.tui_app.timer_active = False
-            self.tui_app.update_manager.update_worker_status("")
+            try:
+                self.tui_app.write_log(
+                    "\n[bold yellow]⚠️  작업이 사용자에 의해 중단되었습니다[/bold yellow]"
+                )
+                self.tui_app.update_manager.update_worker_status("")
+            except Exception as e:
+                # 화면 종료 중이면 로그 출력 실패할 수 있음 (조용히 무시)
+                logger.debug(f"작업 취소 로그 출력 실패 (화면 종료 중일 수 있음): {e}")
             raise
 
         except Exception as stream_error:
-            self.tui_app.write_log(f"\n[bold red]❌ 스트리밍 에러: {stream_error}[/bold red]")
-            import traceback
-            self.tui_app.write_log(f"[dim]{traceback.format_exc()}[/dim]")
+            # 에러 발생 시 상태 업데이트
             self.tui_app.timer_active = False
-            self.tui_app.update_manager.update_worker_status("")
+            try:
+                self.tui_app.write_log(f"\n[bold red]❌ 스트리밍 에러: {stream_error}[/bold red]")
+                import traceback
+                self.tui_app.write_log(f"[dim]{traceback.format_exc()}[/dim]")
+                self.tui_app.update_manager.update_worker_status("")
+            except Exception as log_error:
+                # 화면 종료 중이면 로그 출력 실패할 수 있음 (조용히 무시)
+                logger.debug(f"에러 로그 출력 실패 (화면 종료 중일 수 있음): {log_error}")
+                # 원래 에러 정보는 구조화된 로거로 기록
+                logger.error(f"스트리밍 에러: {stream_error}", exc_info=True)
             raise
 
         task_duration = time.time() - task_start_time
@@ -275,7 +285,6 @@ class TaskRunner:
         try:
             import traceback
 
-            worker_status = self.tui_app.query_one("#worker-status", Static)
             status_info = self.tui_app.query_one("#status-info", Static)
 
             error_panel = TUIFeedbackWidget.create_panel(
@@ -288,7 +297,6 @@ class TaskRunner:
             self.tui_app.write_log(error_panel)
             self.tui_app.write_log("")
 
-            worker_status.update("❌ 오류")
             status_info.update("Error")
 
             logger.error(f"작업 실행 중 오류: {error}", exc_info=True)

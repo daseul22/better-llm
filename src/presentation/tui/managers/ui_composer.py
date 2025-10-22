@@ -63,10 +63,6 @@ class UIComposer:
                         id="no-workers-message"
                     )
 
-        # Worker 상태 표시
-        with Container(id="worker-status-container"):
-            yield Static("⏳ 초기화 중...", id="worker-status")
-
         # 메트릭 대시보드
         with Container(id="metrics-container"):
             yield Static("📊 메트릭 없음", id="metrics-panel")
@@ -87,6 +83,6 @@ class UIComposer:
             session_id = self.app.session_id
             yield Static(f"Session: {session_id}", id="session-info")
             yield Static("Ready", id="status-info")
-            yield Static("Tokens: 0K", id="token-info")
+            yield Static("🟢 Tokens: 0/200K (0% used, 100% free)", id="token-info")
 
         yield Footer()

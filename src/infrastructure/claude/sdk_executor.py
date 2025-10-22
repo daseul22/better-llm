@@ -29,7 +29,7 @@ class SDKExecutionConfig:
     model: str = "claude-sonnet-4-5-20250929"
     max_tokens: int = 8000
     temperature: float = 0.7
-    timeout: int = 300
+    timeout: int = 600
     cli_path: Optional[str] = None
     permission_mode: str = "bypassPermissions"
 
@@ -112,7 +112,16 @@ class ManagerResponseHandler(SDKResponseHandler):
                 usage_dict['cache_creation_tokens'] = response.usage.cache_creation_tokens
 
             if usage_dict:
+                logger.info(f"[Manager] Token usage received: {usage_dict}")
                 self.usage_callback(usage_dict)
+        else:
+            # 디버깅: usage 정보가 없는 이유 확인
+            if not hasattr(response, 'usage'):
+                logger.debug("[Manager] Response has no 'usage' attribute")
+            elif not response.usage:
+                logger.debug("[Manager] Response.usage is None/False")
+            elif not self.usage_callback:
+                logger.debug("[Manager] No usage_callback provided")
 
         # 텍스트 추출
         text = self.extract_text_from_response(response)

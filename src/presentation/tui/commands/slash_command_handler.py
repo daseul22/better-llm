@@ -292,7 +292,6 @@ class SlashCommandHandler:
         Example:
             >>> await self._handle_init_command("")
         """
-        worker_status = self.query_one("#worker-status", Static)
         status_info = self.query_one("#status-info", Static)
 
         try:
@@ -306,7 +305,6 @@ class SlashCommandHandler:
             ))
             self.write_log("")
 
-            worker_status.update("🔍 프로젝트 구조 분석 중...")
             status_info.update("Analyzing...")
 
             project_root = get_project_root()
@@ -330,7 +328,6 @@ class SlashCommandHandler:
             self.write_log("")
 
             self.write_log("[dim]컨텍스트 저장 중...[/dim]")
-            worker_status.update("💾 컨텍스트 저장 중...")
 
             # 컨텍스트 저장
             context_file = self._save_project_context(context)
@@ -378,7 +375,6 @@ class SlashCommandHandler:
             ))
             self.write_log("")
 
-            worker_status.update("✅ 초기화 완료")
             status_info.update("Ready")
 
         except Exception as e:
@@ -390,7 +386,6 @@ class SlashCommandHandler:
             self.write_log("")
             self.write_log(error_panel)
             self.write_log("")
-            worker_status.update("❌ 오류")
             status_info.update("Error")
 
     def _parse_init_args(self, args: str) -> Dict[str, str]:
