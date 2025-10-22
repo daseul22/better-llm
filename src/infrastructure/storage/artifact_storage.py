@@ -139,52 +139,63 @@ class ArtifactStorage:
 
         return content
 
-    def extract_summary(self, full_output: str) -> str:
+    def extract_summary(self, full_output: str) -> Optional[str]:
         """
         Worker 출력에서 요약 섹션만 추출
 
         "## 📋 [XXX 요약 - Manager 전달용]" 섹션을 찾아서 반환합니다.
-        요약 섹션이 없으면 전체 출력을 반환합니다.
+        요약 섹션이 없으면 None을 반환합니다.
 
         Args:
             full_output: Worker 전체 출력
 
         Returns:
-            요약 섹션 또는 전체 출력
+            요약 섹션 또는 None (요약 실패)
 
         Example:
             >>> storage = ArtifactStorage()
             >>> summary = storage.extract_summary(worker_output)
-            >>> print(summary)
-            ## 📋 [PLANNER 요약 - Manager 전달용]
-            ...
+            >>> if summary:
+            ...     print(summary)
+            ... else:
+            ...     print("요약 실패")
         """
-        # 요약 섹션 패턴: ## 📋 [XXX 요약 - Manager 전달용]
-        pattern = r'##\s*📋\s*\[.*?요약\s*-\s*Manager\s*전달용\].*?$'
+        # 요약 섹션 패턴 (여러 변형 지원)
+        patterns = [
+            # 정확한 패턴: ## 📋 [XXX 요약 - Manager 전달용]
+            r'##\s*📋\s*\[.*?요약\s*-\s*Manager\s*전달용\]',
+            # 관대한 패턴: ## [XXX 요약]
+            r'##\s*\[.*?요약.*?\]',
+            # 대체 패턴: # 요약
+            r'#\s*요약',
+            # 영문 패턴: ## Summary
+            r'##?\s*Summary',
+        ]
 
-        # 요약 섹션부터 끝까지 추출
-        match = re.search(pattern, full_output, re.MULTILINE | re.DOTALL)
+        for pattern in patterns:
+            match = re.search(pattern, full_output, re.MULTILINE | re.IGNORECASE)
+            if match:
+                # 요약 섹션 시작 위치부터 끝까지
+                summary_start = match.start()
+                summary = full_output[summary_start:].strip()
 
-        if match:
-            # 요약 섹션 시작 위치부터 끝까지
-            summary_start = match.start()
-            summary = full_output[summary_start:].strip()
+                logger.debug(
+                    "Summary extracted",
+                    pattern=pattern,
+                    original_size=len(full_output),
+                    summary_size=len(summary),
+                    reduction_ratio=f"{(1 - len(summary)/len(full_output))*100:.1f}%"
+                )
 
-            logger.debug(
-                "Summary extracted",
-                original_size=len(full_output),
-                summary_size=len(summary),
-                reduction_ratio=f"{(1 - len(summary)/len(full_output))*100:.1f}%"
-            )
+                return summary
 
-            return summary
-        else:
-            # 요약 섹션이 없으면 전체 출력 반환 (폴백)
-            logger.warning(
-                "Summary section not found, returning full output",
-                output_size=len(full_output)
-            )
-            return full_output
+        # 요약 섹션을 찾지 못함 (None 반환)
+        logger.warning(
+            "Summary section not found in worker output",
+            output_size=len(full_output),
+            output_preview=full_output[:200] + "..." if len(full_output) > 200 else full_output
+        )
+        return None
 
     def cleanup_old_artifacts(self, days: int = 7) -> int:
         """

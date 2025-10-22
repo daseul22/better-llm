@@ -27,14 +27,26 @@ def validate_environment() -> None:
     환경 변수 검증 (CLAUDE_CODE_OAUTH_TOKEN)
 
     .env 파일이 있으면 자동으로 로드합니다.
+    우선순위: 1. 현재 작업 디렉토리 2. 프로젝트 루트
 
     OAuth 토큰 기반 인증만 사용합니다 (Claude 구독 사용자).
 
     Raises:
         ValueError: OAuth 토큰이 설정되지 않은 경우
     """
-    # .env 파일 로드 (있을 경우)
-    load_dotenv()
+    # .env 파일 로드 (우선순위: 작업 디렉토리 → 프로젝트 루트)
+    cwd_dotenv = Path.cwd() / ".env"
+    if cwd_dotenv.exists():
+        load_dotenv(dotenv_path=cwd_dotenv)
+        logger.debug(f"Loaded .env from current directory: {cwd_dotenv}")
+    else:
+        project_root = get_project_root()
+        project_dotenv = project_root / ".env"
+        if project_dotenv.exists():
+            load_dotenv(dotenv_path=project_dotenv)
+            logger.debug(f"Loaded .env from project root: {project_dotenv}")
+        else:
+            logger.debug("No .env file found")
 
     oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
 
@@ -61,8 +73,15 @@ def get_claude_cli_path() -> str:
     Raises:
         FileNotFoundError: CLI를 찾을 수 없을 경우
     """
-    # .env 파일 로드
-    load_dotenv()
+    # .env 파일 로드 (우선순위: 작업 디렉토리 → 프로젝트 루트)
+    cwd_dotenv = Path.cwd() / ".env"
+    if cwd_dotenv.exists():
+        load_dotenv(dotenv_path=cwd_dotenv)
+    else:
+        project_root = get_project_root()
+        project_dotenv = project_root / ".env"
+        if project_dotenv.exists():
+            load_dotenv(dotenv_path=project_dotenv)
 
     # 1. 환경변수 확인
     env_path = os.getenv("CLAUDE_CLI_PATH")
@@ -101,14 +120,41 @@ def get_project_root() -> Path:
     """
     프로젝트 루트 디렉토리 반환
 
-    orchestrator.py 또는 tui.py가 있는 디렉토리를 프로젝트 루트로 간주
+    우선순위:
+    1. 환경변수 BETTER_LLM_ROOT
+    2. 현재 작업 디렉토리에 config/ 존재 시
+    3. __file__ 기반 경로 (개발 모드)
 
     Returns:
         프로젝트 루트 디렉토리 (절대 경로)
     """
-    # 현재 파일(validator.py)의 부모의 부모의 부모 = better-llm
+    import os
+
+    # 1. 환경변수 확인
+    env_root = os.getenv("BETTER_LLM_ROOT")
+    if env_root:
+        root = Path(env_root).resolve()
+        if (root / "config").exists():
+            return root
+
+    # 2. 현재 작업 디렉토리 확인
+    cwd = Path.cwd()
+    if (cwd / "config").exists():
+        return cwd
+
+    # 3. __file__ 기반 경로 (개발 모드)
     # better-llm/src/infrastructure/config/validator.py -> better-llm
-    return Path(__file__).parent.parent.parent.parent.resolve()
+    file_based_root = Path(__file__).parent.parent.parent.parent.resolve()
+    if (file_based_root / "config").exists():
+        return file_based_root
+
+    # 4. 찾지 못한 경우 현재 작업 디렉토리 반환 (경고 로그)
+    logger = logging.getLogger(__name__)
+    logger.warning(
+        f"프로젝트 루트를 찾을 수 없습니다. 현재 작업 디렉토리를 사용합니다: {cwd}\n"
+        f"환경변수 BETTER_LLM_ROOT를 설정하거나, better-llm 프로젝트 디렉토리에서 실행하세요."
+    )
+    return cwd
 
 
 def get_project_name() -> str:

@@ -37,7 +37,7 @@ from src.infrastructure.config import (
     SystemConfig,
 )
 from src.infrastructure.storage import create_session_repository
-from src.infrastructure.memory import FAISSMemoryBankRepository
+# FAISSMemoryBankRepository는 lazy import (실제 사용 시에만 로드)
 from .utils import (
     setup_logging,
     generate_session_id,
@@ -119,11 +119,19 @@ class Orchestrator:
         # Repository 패턴 사용 (config/system_config.json의 storage.backend 설정에 따라)
         self.session_repo = create_session_repository()
 
-        # Memory Bank Repository (벡터 DB 기반 세션 메모리)
-        self.memory_repo = FAISSMemoryBankRepository()
+        # Memory Bank Repository (벡터 DB 기반 세션 메모리) - Lazy loading
+        self._memory_repo = None
 
         # 사용자 입력 콜백 설정 (Human-in-the-Loop)
         set_user_input_callback(self._user_input_callback)
+
+    @property
+    def memory_repo(self):
+        """Memory Bank Repository - Lazy loading으로 초기 시작 시간 단축"""
+        if self._memory_repo is None:
+            from src.infrastructure.memory import FAISSMemoryBankRepository
+            self._memory_repo = FAISSMemoryBankRepository()
+        return self._memory_repo
 
     def _user_input_callback(self, question: str, options=None):
         """

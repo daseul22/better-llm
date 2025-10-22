@@ -20,8 +20,8 @@ from src.domain.services import MetricsCollector
 from ..config import JsonConfigLoader, get_project_root
 from ..logging import get_logger
 from ..storage import get_artifact_storage
-from ..memory import FAISSMemoryBankRepository
-from src.domain.models import MemoryQuery
+# FAISSMemoryBankRepository는 lazy import (search_memory 함수 내부에서 로드)
+# 초기 로딩 시간 단축을 위해 최상위 import 제거
 
 # Level 1 및 Level 2 모듈 Import
 from src.infrastructure.mcp.review_cycle_manager import ReviewCycleManager
@@ -518,13 +518,15 @@ def log_error_summary():
 # Artifact Storage Helper
 # ============================================================================
 
-def _save_and_summarize_output(
+async def _save_and_summarize_output(
     worker_name: str,
     result: Dict[str, Any],
     session_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Worker 출력을 artifact로 저장하고 요약 추출
+
+    요약 실패 시 동일한 Worker에게 요약을 재요청합니다.
 
     Args:
         worker_name: Worker 이름
@@ -548,10 +550,27 @@ def _save_and_summarize_output(
         session_id=session_id
     )
 
-    # 2. 요약 섹션 추출
+    # 2. 요약 섹션 추출 시도
     summary = artifact_storage.extract_summary(full_output)
 
-    # 3. Manager에게는 요약 + artifact_id만 전달
+    # 3. 요약 실패 시 Worker에게 재요청
+    if summary is None:
+        logger.warning(
+            f"[{worker_name}] Summary extraction failed, requesting worker to summarize",
+            artifact_id=artifact_id
+        )
+
+        summary = await _request_summary_from_worker(worker_name, full_output, artifact_id)
+
+        # 재요청 결과도 실패하면 전체 출력 사용 (폴백)
+        if summary is None:
+            logger.error(
+                f"[{worker_name}] Summary re-request failed, using full output",
+                artifact_id=artifact_id
+            )
+            summary = full_output
+
+    # 4. Manager에게는 요약 + artifact_id만 전달
     summary_with_ref = f"{summary}\n\n**[전체 로그: artifact `{artifact_id}`]**"
     result_with_summary = {
         "content": [{"type": "text", "text": summary_with_ref}]
@@ -566,6 +585,88 @@ def _save_and_summarize_output(
     )
 
     return result_with_summary
+
+
+async def _request_summary_from_worker(
+    worker_name: str,
+    full_output: str,
+    artifact_id: str
+) -> Optional[str]:
+    """
+    Worker에게 출력 요약을 재요청
+
+    Args:
+        worker_name: Worker 이름
+        full_output: Worker 전체 출력
+        artifact_id: Artifact ID
+
+    Returns:
+        요약 텍스트 또는 None (재요청 실패)
+    """
+    try:
+        # Worker Agent 가져오기
+        worker_agent = _state.worker_agents.get(worker_name)
+        if not worker_agent:
+            logger.error(f"[{worker_name}] Worker agent not found for summary request")
+            return None
+
+        # 요약 요청 프롬프트 생성
+        summary_request = f"""다음은 당신이 방금 생성한 출력입니다.
+하지만 "## 📋 [{worker_name.upper()} 요약 - Manager 전달용]" 섹션이 누락되었습니다.
+
+아래 출력을 읽고, Manager에게 전달할 핵심 요약을 다음 형식으로 작성해주세요:
+
+## 📋 [{worker_name.upper()} 요약 - Manager 전달용]
+**상태**: (작업 완료/실패)
+**핵심 내용**: (3-5줄 요약)
+**변경 파일**: (해당 시)
+**다음 단계**: (해당 시)
+
+중요: 위 형식을 정확히 지켜서 작성해주세요. 다른 내용은 포함하지 마세요.
+
+---
+원본 출력 ({len(full_output)} bytes):
+{full_output[:2000]}
+{"..." if len(full_output) > 2000 else ""}
+"""
+
+        logger.info(
+            f"[{worker_name}] Requesting summary from worker",
+            artifact_id=artifact_id,
+            prompt_length=len(summary_request)
+        )
+
+        # Worker에게 요약 요청 (스트리밍)
+        summary_result = ""
+        async for chunk in worker_agent.execute_task(summary_request):
+            summary_result += chunk
+
+        # 요약 결과에서 다시 extract_summary() 시도
+        artifact_storage = get_artifact_storage()
+        extracted_summary = artifact_storage.extract_summary(summary_result)
+
+        if extracted_summary:
+            logger.info(
+                f"[{worker_name}] Summary re-request succeeded",
+                artifact_id=artifact_id,
+                summary_length=len(extracted_summary)
+            )
+            return extracted_summary
+        else:
+            logger.warning(
+                f"[{worker_name}] Summary re-request failed to extract summary",
+                artifact_id=artifact_id,
+                response_preview=summary_result[:200]
+            )
+            return None
+
+    except Exception as e:
+        logger.error(
+            f"[{worker_name}] Exception during summary re-request: {e}",
+            artifact_id=artifact_id,
+            exc_info=True
+        )
+        return None
 
 
 # ============================================================================
@@ -605,7 +706,7 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화 (전체 출력 저장 및 요약 추출)
-    result = _save_and_summarize_output("planner", result, _state.current_session_id)
+    result = await _save_and_summarize_output("planner", result, _state.current_session_id)
 
     # Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해)
     if result.get("content") and len(result["content"]) > 0:
@@ -652,7 +753,7 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
     result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("coder", result, _state.current_session_id)
+    result = await _save_and_summarize_output("coder", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -699,7 +800,7 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
     result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("tester", result, _state.current_session_id)
+    result = await _save_and_summarize_output("tester", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -758,7 +859,7 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("reviewer", result, _state.current_session_id)
+    result = await _save_and_summarize_output("reviewer", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -805,7 +906,7 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     result = await _state.worker_executor.execute(context)  # 보안 검증은 내부에서 처리됨
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("committer", result, _state.current_session_id)
+    result = await _save_and_summarize_output("committer", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -852,7 +953,7 @@ async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
     result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("ideator", result, _state.current_session_id)
+    result = await _save_and_summarize_output("ideator", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -899,7 +1000,7 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
     result = await _state.worker_executor.execute(context)
 
     # Artifact Storage 활성화
-    result = _save_and_summarize_output("product_manager", result, _state.current_session_id)
+    result = await _save_and_summarize_output("product_manager", result, _state.current_session_id)
 
     # Tool 결과 저장
     if result.get("content") and len(result["content"]) > 0:
@@ -1209,6 +1310,10 @@ async def search_memory(args: Dict[str, Any]) -> Dict[str, Any]:
         threshold = args.get("threshold", 0.3)
 
         logger.info(f"[search_memory] 메모리 검색: query='{query_text}', top_k={top_k}, threshold={threshold}")
+
+        # Lazy import: 실제 사용할 때만 메모리 모듈 로드 (초기 로딩 시간 단축)
+        from ..memory import FAISSMemoryBankRepository
+        from src.domain.models import MemoryQuery
 
         # Memory Bank Repository 초기화
         memory_repo = FAISSMemoryBankRepository()

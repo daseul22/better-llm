@@ -40,6 +40,12 @@ better-llm-cli = "src.presentation.cli.orchestrator:main"
 where = ["."]
 include = ["src", "src.*"]
 
+[tool.setuptools.package-data]
+"*" = ["*.tcss", "*.txt", "*.json", "*.yaml", "*.yml"]
+
+[tool.setuptools]
+include-package-data = true
+
 [tool.black]
 line-length = 100
 target-version = ['py310']
