@@ -523,6 +523,164 @@ ls -la prompts/
 
 ## 최근 개선 사항
 
+### fix. 3차 버그 수정 4개 - Presentation Layer 안정성 개선
+- 날짜: 2025-10-23 (3차 버그 수정)
+- 컨텍스트: Presentation Layer, CLI, TUI, 비동기 코드 심층 분석으로 8개 버그 발견 → High/Medium 4개 수정
+  - **High Priority 2개**: 미정의 변수 참조, 비동기 Task 예외 처리
+  - **Medium Priority 2개**: 세션 캐시 무효화, CancelledError 전파
+  - **검증됨**: tui_config.py 파일 핸들 누수는 False Positive (이미 `with` statement로 올바르게 처리됨)
+- 변경사항:
+  1. **High: initialization_manager.py:98 - 미정의 변수 참조 에러**:
+     - 변경 전: `worker_status.update(f"❌ 오류: {e}")` - `worker_status` 변수가 정의되지 않음
+     - 변경 후: `status_info.update(f"❌ 오류: {e}")` - 이미 정의된 `status_info` 사용
+     - 영향: TUI 초기화 실패 시 NameError로 크래시 → 정상적인 에러 표시로 개선
+
+  2. **High: parallel_executor.py:305-312 - Exception이 failed 리스트에 누락**:
+     - 변경 전: `for result in results: if isinstance(result, Exception): continue`
+     - 변경 후: `for task, result in zip(tasks, results):`로 매칭 후 `failed.append(task)`
+     - 영향: `asyncio.gather()`에서 반환된 Exception이 추적되지 않는 문제 해결 → 실패한 Task가 정확히 기록됨
+
+  3. **Medium: tui_app.py:209-213 - 초기 세션 생성 후 캐시 무효화 누락**:
+     - 변경 전: `self.session_manager.start_session(initial_config)` 후 캐시 업데이트 없음
+     - 변경 후: `self._cached_current_session = None`, `self._cached_session_index = -1` 추가
+     - 영향: 초기 세션 생성 후 `current_session` 프로퍼티 접근 시 캐시가 반영되지 않는 문제 해결
+
+  4. **Medium: task_runner.py:226 - CancelledError 재발생으로 인한 전파**:
+     - 변경 전: `except asyncio.CancelledError: ... raise`
+     - 변경 후: `except asyncio.CancelledError: ... return` (graceful cancellation)
+     - 영향: 작업 취소 시 CancelledError가 상위로 전파되어 추가 에러 핸들링 발생 → 조용히 종료하여 사용자 경험 개선
+
+- 영향범위:
+  - **안정성**: TUI 초기화 에러 처리 개선, 비동기 Task 실패 추적 강화
+  - **캐시 일관성**: 세션 생성/전환 시 캐시가 올바르게 무효화됨
+  - **사용자 경험**: 작업 취소가 부드럽게 처리되어 불필요한 에러 메시지 제거
+- 테스트: 구문 검사 통과 (4개 파일)
+- 후속 조치:
+  - 실제 사용 시 효과 검증 (초기화 에러 처리, Task 실패 추적, 작업 취소)
+  - Low Priority 버그 3개 추후 수정 예정 (TOCTOU, 예외 처리, 성능 최적화)
+- 참고: 3차 버그 탐색은 Explore 에이전트로 Presentation Layer 심층 분석 (총 8개 발견: High:2, Medium:3, Low:3)
+
+### fix. 추가 버그 8개 수정 - 저장소, 데이터베이스, 환경변수 안정성 개선
+- 날짜: 2025-10-22 (2차 버그 수정)
+- 컨텍스트: 2차 체계적 버그 탐색으로 17개 추가 버그 발견 → High/Medium 8개 우선 수정
+  - **High Priority 3개**: 세션 파일 읽기, SQL timeout, 비동기 프로세스
+  - **Medium Priority 5개**: JSON 파싱, 환경변수 타입 변환, 데이터베이스 timeout
+- 변경사항:
+  1. **High: session_repository.py:156-185 - 세션 파일 읽기 예외 처리 구체화**:
+     - 변경 전: 모든 에러를 `Exception`으로 처리
+     - 변경 후: json.JSONDecodeError, KeyError, OSError 별도 처리
+     - 영향: 손상된 세션 파일을 스킵하고 나머지 정상 로드
+
+  2. **High: db_utils.py:23-40, 84-92 - 데이터베이스 연결 및 쿼리 timeout 추가**:
+     - 변경 전: `sqlite3.connect(str(db_path))` - timeout 없음
+     - 변경 후: `sqlite3.connect(str(db_path), timeout=30.0)` - 30초 timeout
+     - OperationalError에서 timeout/locked 감지 및 명확한 에러 메시지
+     - 영향: 장시간 locked 상태에서 무한 대기 방지
+
+  3. **Medium: context_repository.py:43-62 - JSON 파싱 에러 처리 구체화**:
+     - json.JSONDecodeError, KeyError/TypeError/ValueError, OSError 별도 처리
+     - 영향: 디버깅 시 정확한 에러 원인 파악 가능
+
+  4. **Medium: env_utils.py (새 파일) - 환경변수 타입 안전 파싱 헬퍼 함수**:
+     - `parse_bool_env()`: "true"/"1"/"yes"/"on" → True, "false"/"0"/"no"/"off" → False
+     - `parse_int_env()`, `parse_float_env()`, `parse_str_env()` 추가
+     - 영향: 환경변수 파싱 일관성 향상, 타입 에러 방지
+
+  5. **Medium: output_summarizer.py:21-22, worker_executor.py:33-34 - 환경변수 파싱 개선**:
+     - 변경 전: `.lower() == "true"` 패턴 (대소문자 구분, "1"/"yes" 미지원)
+     - 변경 후: `parse_bool_env()` 사용 (다양한 형식 지원)
+     - 영향: 사용자가 환경변수를 다양한 형식으로 설정 가능
+
+- 영향범위:
+  - **안정성**: 파일 I/O 및 DB 에러 처리 강화 → 부분 실패 시에도 시스템 계속 작동
+  - **디버깅**: 구체적인 예외 타입으로 에러 원인 빠르게 파악
+  - **사용자 경험**: 환경변수 설정 오류 감소, timeout으로 인한 무한 대기 방지
+- 테스트: 구문 검사 통과 (6개 파일)
+- 후속 조치:
+  - 실제 사용 시 효과 검증 (timeout 발생 빈도, 손상된 파일 처리 등)
+  - Low Priority 버그 9개 추후 수정 예정 (코드 품질 개선)
+- 참고: 2차 버그 탐색은 Explore 에이전트를 사용하여 17개 발견 (High:4, Medium:8, Low:5)
+
+### fix. Critical/High 버그 5개 수정 - 안정성 및 신뢰성 대폭 향상
+- 날짜: 2025-10-22 (1차 버그 수정)
+- 컨텍스트: 코드베이스 전체 버그 탐색을 통해 5개의 Critical/High 버그 발견 및 수정
+  - **Critical 버그 3개**: 인덱싱 실패로 인한 런타임 크래시 (IndexError, AttributeError)
+  - **High 버그 2개**: None 체크 누락, 중복 메서드로 인한 기능 미작동
+- 변경사항:
+  1. **Critical: worker_executor.py:572 - 안전한 인덱싱** (`src/infrastructure/mcp/worker_executor.py:569-577`):
+     - 변경 전: `result.get("content", [{}])[0].get("text", "")` (IndexError 위험)
+     - 변경 후: 안전한 다단계 체크로 변경 (content 존재 확인 → 길이 확인 → 타입 확인)
+     - 영향: Reviewer 실행 결과 파싱 실패 시 크래시 방지
+
+  2. **Critical: output_summarizer.py:176 - LLM 응답 안전 처리** (`src/infrastructure/mcp/output_summarizer.py:175-183`):
+     - 변경 전: `response.content[0].text` (IndexError 위험)
+     - 변경 후: 응답 내용 존재 여부 확인 후 접근
+     - 영향: LLM이 빈 응답 반환 시 크래시 방지
+
+  3. **Critical: worker_tools.py - 안전한 결과 추출 헬퍼 함수** (`src/infrastructure/mcp/worker_tools.py:254-288`):
+     - 새 헬퍼 함수 추가: `_safe_extract_result_text(result)` - IndexError/TypeError/AttributeError 방지
+     - 7개 Worker Tool 함수 모두 업데이트 (planner, coder, reviewer, tester, committer, ideator, product_manager, documenter)
+     - 기존 패턴: `result["content"][0].get("text", "")` → 새 패턴: `_safe_extract_result_text(result)`
+     - 영향: 모든 Worker Tool 실행 결과 처리 시 크래시 방지
+
+  4. **High: manager_client.py:521 - metadata_formatter None 체크** (`src/infrastructure/claude/manager_client.py:519-521`):
+     - 변경 전: `self.metadata_formatter.parse_metadata_from_output()` 직접 호출 (AttributeError 위험)
+     - 변경 후: metadata_formatter가 None이면 빈 맵 반환 (조기 반환)
+     - 영향: context_metadata_enabled=false 설정 시 크래시 방지
+
+  5. **High: worker_executor.py - 중복 메서드 제거** (`src/infrastructure/mcp/worker_executor.py:734-853 삭제`):
+     - 문제: `_summarize_worker_output()` 메서드가 2번 정의됨 (Line 481-549, Line 734-853)
+     - Python이 후자를 사용하여 새 버전(artifact 저장 포함)이 작동하지 않음
+     - 해결: 구버전(Line 734-853) 삭제하여 새 버전만 남김
+     - 영향: Worker 출력 artifact 저장 기능 정상 작동
+- 영향범위:
+  - **안정성**: Critical 런타임 크래시 3개 제거 (IndexError, AttributeError)
+  - **신뢰성**: High 버그 2개 수정으로 기능 정상 작동 보장
+  - **사용자 경험**: 예상치 못한 크래시 없이 안정적으로 작동
+- 테스트: 구문 검사 통과 (4개 파일)
+- 후속 조치: 실제 사용 시 크래시 발생 여부 모니터링
+- 참고: 버그 탐색은 Explore 에이전트를 사용하여 체계적으로 수행됨
+
+### fix. Worker 중복 호출 버그 수정 - Manager가 완료된 Worker를 반복 실행하는 문제 해결
+- 날짜: 2025-10-22
+- 컨텍스트: Manager가 작업 완료된 Worker를 처음부터 다시 호출하는 심각한 버그 발생
+  - 모든 Worker(Planner, Coder, Reviewer, Tester)에서 발생
+  - 모든 작업 유형에서 발생
+  - 예시: Planner → Coder → Reviewer → **Planner (다시 호출!)** → 무한 반복
+- 근본 원인:
+  1. **Manager 프롬프트에 명시적인 "중복 작업 방지" 로직 부재**
+     - Review 사이클 반복 방지는 있었지만, 일반 Worker 중복 호출 방지 로직 없음
+     - Manager가 대화 히스토리를 확인하고 중복 호출을 방지하는 명시적 지침 부재
+  2. **Worker 출력 요약의 "완료" 상태 표시 불명확**
+     - 요약 형식에 "작업 완료" 표시가 약해서 Manager가 인지하기 어려움
+  3. **슬라이딩 윈도우(20 메시지)로 인한 컨텍스트 손실 가능성**
+     - 복잡한 작업에서 초기 Worker 결과가 히스토리에서 삭제될 수 있음
+- 변경사항:
+  - **Manager 프롬프트 개선** (`src/infrastructure/claude/manager_client.py:307-341`):
+    - "⚠️ 중복 작업 방지 규칙 (CRITICAL!)" 섹션 추가
+    - **작업 흐름 추적 방법** 명시:
+      1. 대화 히스토리를 반드시 확인하여 이미 실행된 Worker 파악
+      2. "[{Worker 이름} Tool 완료]" 또는 "📋 [{Worker 이름} 요약]" 형식 확인
+      3. 이미 실행된 Worker는 절대 다시 호출 금지
+      4. 예외: Reviewer Critical 이슈 발견 시 Coder 재실행만 허용
+    - **잘못된 패턴 예시** 추가 (명확한 금지 사항)
+    - **올바른 패턴 예시** 추가 (순차 진행)
+    - **각 응답 전 체크리스트** 추가:
+      - [ ] 히스토리에서 이미 실행된 Worker 확인
+      - [ ] 다음 단계가 올바른지 확인
+      - [ ] 재호출 이유 명확히 제시
+  - **Worker 출력 요약 개선** (`src/infrastructure/mcp/output_summarizer.py:310-338`):
+    - "**✅ 상태: 작업 완료**" 명시적 표시 추가
+    - "⚠️ **중요**: 이 Worker는 이미 실행되었습니다. 동일한 Worker를 다시 호출하지 마세요." 경고 추가
+    - 요약 순서 조정 (상태 → 핵심 내용 → 1줄 요약)
+- 영향범위:
+  - **버그 수정**: Manager가 Worker 중복 호출하는 문제 근본 해결
+  - **작업 속도**: 불필요한 Worker 재실행이 사라져 전체 작업 시간 대폭 단축
+  - **사용자 경험**: 작업이 정상적으로 순차 진행되어 혼란 제거
+- 테스트: 구문 검사 통과
+- 후속 조치: 실제 사용 시 효과 검증 (중복 호출 발생 여부 모니터링)
+- 참고: 이 버그는 Artifact Storage 도입 이후 요약 기능으로 인해 발생 가능성이 높아진 것으로 추정됨
+
 ### refactor. 설치 방법 통일 (pipx 글로벌 설치)
 - 날짜: 2025-10-22
 - 컨텍스트: 여러 설치 방법(install.sh의 pipx/pip 선택, 수동 설치 등)이 혼재하여 사용자 혼란

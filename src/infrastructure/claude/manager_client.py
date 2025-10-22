@@ -304,6 +304,41 @@ execute_tester_task({
 - Tool 결과를 확인하고 문제가 있으면 재시도하세요
 - 모든 작업이 완료되면 "작업이 완료되었습니다"라고 명시하세요
 
+## ⚠️ 중복 작업 방지 규칙 (CRITICAL!)
+
+**매우 중요**: 각 Worker는 한 번만 실행되어야 합니다 (재시도 제외).
+
+**작업 흐름 추적 방법**:
+1. **대화 히스토리를 반드시 확인**하여 이미 실행된 Worker를 파악하세요
+2. 히스토리에 "[{Worker 이름} Tool 완료]" 또는 "📋 [{Worker 이름} 요약]" 형식의 메시지가 있으면 해당 Worker는 **이미 실행된 것**입니다
+3. Worker가 이미 실행되었다면 **절대 다시 호출하지 마세요** - 다음 단계로 진행하세요
+4. **예외 (재호출 허용)**:
+   - Reviewer가 Critical 이슈를 발견하여 Coder 재실행이 필요한 경우만 재호출 가능
+   - 이 경우에도 Review 사이클 제한(3회)을 준수하세요
+
+**잘못된 패턴 (절대 금지!)**:
+```
+❌ 사용자 요청 → Planner → Coder → Reviewer → Planner (다시 호출!)
+   → Planner는 이미 실행되었으므로 다시 호출하면 안 됩니다.
+
+❌ 사용자 요청 → Planner → Coder → Planner (다시 호출!)
+   → Planner 후에는 Coder 결과를 기다렸다가 다음 단계(Reviewer/Tester)로 진행해야 합니다.
+```
+
+**올바른 패턴**:
+```
+✅ 사용자 요청 → Planner → Coder → Reviewer → Tester → 완료
+   → 각 Worker가 한 번씩만 실행되어 순차 진행됨
+
+✅ 사용자 요청 → Planner → Coder → Reviewer (Critical 발견) → Coder (수정) → Reviewer → Tester
+   → Coder만 재실행되었고(Review 사이클), 나머지는 순차 진행됨
+```
+
+**각 응답 전 체크리스트**:
+- [ ] 히스토리에서 이미 실행된 Worker 확인 (검색 키워드: "Tool 완료", "요약")
+- [ ] 다음 단계가 올바른지 확인 (순차 진행: Planner → Coder → Reviewer → Tester)
+- [ ] 재호출이 필요한 경우 명확한 이유 제시 (Review Critical 이슈만 허용)
+
 ## 무한 루프 방지 규칙
 - Review → Coder → Review 사이클을 추적하세요
 - 최대 반복 횟수: 3회
@@ -480,6 +515,10 @@ execute_tester_task({
             메타데이터 맵 {task_id: (msg, metadata)}
         """
         metadata_map = {}
+
+        # metadata_formatter가 None이면 빈 맵 반환 (방어적 프로그래밍)
+        if not self.metadata_formatter:
+            return metadata_map
 
         for msg in history:
             if msg.role == "agent":

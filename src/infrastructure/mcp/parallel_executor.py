@@ -302,11 +302,13 @@ class ParallelExecutor:
         completed = []
         failed = []
 
-        for result in results:
+        for task, result in zip(tasks, results):
             if isinstance(result, Exception):
-                logger.error(f"Task execution raised exception: {result}")
-                # Exception 발생한 경우 - failed로 처리
-                # (이론적으로 execute_single_task 내에서 처리되어야 하지만 방어 코드)
+                # Exception 발생한 경우 - task를 FAILED로 마킹하고 failed 리스트에 추가
+                logger.error(f"Task {task.id} execution raised exception: {result}")
+                task.status = TaskStatus.FAILED
+                task.error = str(result)
+                failed.append(task)
                 continue
 
             if result.status == TaskStatus.COMPLETED:

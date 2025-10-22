@@ -48,6 +48,15 @@ class JsonContextRepository(IContextRepository):
             logger.info(f"✅ 프로젝트 컨텍스트 로드: {context.project_name}")
             return context
 
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON 포맷 오류: {self.context_file} - {e}")
+            return None
+        except (KeyError, TypeError, ValueError) as e:
+            logger.error(f"❌ 컨텍스트 데이터 구조 오류: {e}")
+            return None
+        except OSError as e:
+            logger.error(f"❌ 파일 읽기 오류: {self.context_file} - {e}")
+            return None
         except Exception as e:
             logger.error(f"❌ 컨텍스트 로드 실패: {e}")
             return None

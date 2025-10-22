@@ -95,8 +95,7 @@ class InitializationManager:
                 details=str(e)
             )
             self.app.log_manager.write_log(error_panel)
-            worker_status.update(f"❌ 오류: {e}")
-            status_info.update("Error")
+            status_info.update(f"❌ 오류: {e}")
             logger.error(f"초기화 실패: {e}", exc_info=True)
 
     async def _validate_environment(self) -> None:

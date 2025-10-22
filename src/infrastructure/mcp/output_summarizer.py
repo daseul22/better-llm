@@ -14,11 +14,12 @@ from typing import Dict, Tuple, Optional
 from pathlib import Path
 
 from ..logging import get_logger
+from ..config.env_utils import parse_bool_env
 
 logger = get_logger(__name__, component="OutputSummarizer")
 
 # 환경변수로 LLM 요약 on/off (기본값: true)
-ENABLE_LLM_SUMMARIZATION = os.getenv("ENABLE_LLM_SUMMARIZATION", "true").lower() == "true"
+ENABLE_LLM_SUMMARIZATION = parse_bool_env("ENABLE_LLM_SUMMARIZATION", default=True)
 
 
 class WorkerOutputSummarizer:
@@ -172,7 +173,14 @@ Worker 출력:
                 messages=[{"role": "user", "content": prompt}]
             )
 
-            # 응답 파싱
+            # 응답 파싱 (안전한 접근)
+            if not response.content or len(response.content) == 0:
+                logger.warning(
+                    "LLM response content is empty",
+                    worker_name=worker_name
+                )
+                return None
+
             summary_text = response.content[0].text.strip()
 
             # ONE_LINE 추출
@@ -324,13 +332,17 @@ Worker 출력:
         """
         return f"""## 📋 [{worker_name.upper()} 요약 - Manager 전달용]
 
-**상태**: {summary['one_line']}
+**✅ 상태: 작업 완료**
 
 **핵심 내용**:
 {summary['summary']}
 
+**요약**: {summary['one_line']}
+
 ---
 **[전체 로그: artifact `{Path(summary['full_path']).stem}`]**
+
+⚠️ **중요**: 이 Worker는 이미 실행되었습니다. 동일한 Worker를 다시 호출하지 마세요.
 """
 
 

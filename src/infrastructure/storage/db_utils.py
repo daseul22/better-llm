@@ -20,19 +20,21 @@ class DatabaseExecutor:
     Context Manager를 사용하여 Connection 생명주기를 자동 관리합니다.
     """
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, timeout: float = 30.0):
         """DatabaseExecutor 초기화.
 
         Args:
             db_path: SQLite DB 파일 경로
+            timeout: DB 연결 타임아웃 (초, 기본값: 30초)
         """
         self.db_path = db_path
+        self.timeout = timeout
         self.conn: Optional[sqlite3.Connection] = None
         self.cursor: Optional[sqlite3.Cursor] = None
 
     def __enter__(self) -> "DatabaseExecutor":
         """Context Manager 진입."""
-        self.conn = sqlite3.connect(str(self.db_path))
+        self.conn = sqlite3.connect(str(self.db_path), timeout=self.timeout)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
         return self
@@ -79,6 +81,12 @@ class DatabaseExecutor:
             logger.debug(f"{operation} returned {len(results)} rows")
             return results
 
+        except sqlite3.OperationalError as e:
+            if "timeout" in str(e).lower() or "locked" in str(e).lower():
+                logger.error(f"Database timeout/locked during {operation} (timeout: {self.timeout}s): {e}")
+                raise StorageError(f"{operation} timeout after {self.timeout}s") from e
+            logger.error(f"Database operational error during {operation}: {e}")
+            raise StorageError(f"Failed to execute {operation}") from e
         except sqlite3.Error as e:
             logger.error(f"Database error during {operation}: {e}")
             raise StorageError(f"Failed to execute {operation}") from e

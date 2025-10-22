@@ -223,7 +223,8 @@ class TaskRunner:
             except Exception as e:
                 # 화면 종료 중이면 로그 출력 실패할 수 있음 (조용히 무시)
                 logger.debug(f"작업 취소 로그 출력 실패 (화면 종료 중일 수 있음): {e}")
-            raise
+            # CancelledError를 재발생시키지 않고 정상 종료 (graceful cancellation)
+            return
 
         except Exception as stream_error:
             # 에러 발생 시 상태 업데이트

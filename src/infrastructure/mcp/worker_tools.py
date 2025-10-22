@@ -251,6 +251,43 @@ def _load_worker_timeouts_from_config():
         logger.warning(f"system_config.json에서 타임아웃 로드 실패: {e}. 기본값 사용.")
 
 
+def _safe_extract_result_text(result: Dict[str, Any]) -> str:
+    """
+    Worker 실행 결과에서 텍스트를 안전하게 추출
+
+    IndexError, TypeError, AttributeError를 방지하는 안전한 추출 로직.
+
+    Args:
+        result: Worker 실행 결과 딕셔너리
+
+    Returns:
+        추출된 텍스트 (실패 시 빈 문자열)
+    """
+    try:
+        content = result.get("content", [])
+        if not content or len(content) == 0:
+            logger.warning("Worker result content is empty")
+            return ""
+
+        first_item = content[0]
+
+        # dict 타입 확인
+        if isinstance(first_item, dict):
+            return first_item.get("text", "")
+
+        # dict-like object (hasattr 체크)
+        if hasattr(first_item, 'get'):
+            return first_item.get("text", "")
+
+        # 그 외의 경우 빈 문자열
+        logger.warning(f"Unexpected content item type: {type(first_item)}")
+        return ""
+
+    except Exception as e:
+        logger.error(f"Failed to extract result text: {e}")
+        return ""
+
+
 def _load_interaction_config():
     """
     system_config.json에서 interaction 설정 로드
@@ -710,9 +747,9 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     # Artifact Storage 활성화 (전체 출력 저장 및 요약 추출)
     result = await _save_and_summarize_output("planner", result, _state.current_session_id)
 
-    # Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해)
-    if result.get("content") and len(result["content"]) > 0:
-        result_text = result["content"][0].get("text", "")
+    # Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해) - 안전한 추출
+    result_text = _safe_extract_result_text(result)
+    if result_text:
         _state.last_tool_results.append({
             "tool_name": "execute_planner_task",
             "worker_name": "planner",
@@ -757,9 +794,9 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
     # Artifact Storage 활성화
     result = await _save_and_summarize_output("coder", result, _state.current_session_id)
 
-    # Tool 결과 저장
-    if result.get("content") and len(result["content"]) > 0:
-        result_text = result["content"][0].get("text", "")
+    # Tool 결과 저장 - 안전한 추출
+    result_text = _safe_extract_result_text(result)
+    if result_text:
         _state.last_tool_results.append({
             "tool_name": "execute_coder_task",
             "worker_name": "coder",
@@ -804,9 +841,9 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
     # Artifact Storage 활성화
     result = await _save_and_summarize_output("tester", result, _state.current_session_id)
 
-    # Tool 결과 저장
-    if result.get("content") and len(result["content"]) > 0:
-        result_text = result["content"][0].get("text", "")
+    # Tool 결과 저장 - 안전한 추출
+    result_text = _safe_extract_result_text(result)
+    if result_text:
         _state.last_tool_results.append({
             "tool_name": "execute_tester_task",
             "worker_name": "tester",
@@ -863,9 +900,9 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     # Artifact Storage 활성화
     result = await _save_and_summarize_output("reviewer", result, _state.current_session_id)
 
-    # Tool 결과 저장
-    if result.get("content") and len(result["content"]) > 0:
-        result_text = result["content"][0].get("text", "")
+    # Tool 결과 저장 - 안전한 추출
+    result_text = _safe_extract_result_text(result)
+    if result_text:
         _state.last_tool_results.append({
             "tool_name": "execute_reviewer_task",
             "worker_name": "reviewer",
@@ -910,9 +947,9 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     # Artifact Storage 활성화
     result = await _save_and_summarize_output("committer", result, _state.current_session_id)
 
-    # Tool 결과 저장
-    if result.get("content") and len(result["content"]) > 0:
-        result_text = result["content"][0].get("text", "")
+    # Tool 결과 저장 - 안전한 추출
+    result_text = _safe_extract_result_text(result)
+    if result_text:
         _state.last_tool_results.append({
             "tool_name": "execute_committer_task",
             "worker_name": "committer",
@@ -957,9 +994,9 @@ async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
     # Artifact Storage 활성화
     result = await _save_and_summarize_output("ideator", result, _state.current_session_id)
 
-    # Tool 결과 저장
-    if result.get("content") and len(result["content"]) > 0:
-        result_text = result["content"][0].get("text", "")
+    # Tool 결과 저장 - 안전한 추출
+    result_text = _safe_extract_result_text(result)
+    if result_text:
         _state.last_tool_results.append({
             "tool_name": "execute_ideator_task",
             "worker_name": "ideator",
@@ -1004,9 +1041,9 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
     # Artifact Storage 활성화
     result = await _save_and_summarize_output("product_manager", result, _state.current_session_id)
 
-    # Tool 결과 저장
-    if result.get("content") and len(result["content"]) > 0:
-        result_text = result["content"][0].get("text", "")
+    # Tool 결과 저장 - 안전한 추출
+    result_text = _safe_extract_result_text(result)
+    if result_text:
         _state.last_tool_results.append({
             "tool_name": "execute_product_manager_task",
             "worker_name": "product_manager",
@@ -1051,9 +1088,9 @@ async def execute_documenter_task(args: Dict[str, Any]) -> Dict[str, Any]:
     # Artifact Storage 활성화
     result = _save_and_summarize_output("documenter", result, _state.current_session_id)
 
-    # Tool 결과 저장
-    if result.get("content") and len(result["content"]) > 0:
-        result_text = result["content"][0].get("text", "")
+    # Tool 결과 저장 - 안전한 추출
+    result_text = _safe_extract_result_text(result)
+    if result_text:
         _state.last_tool_results.append({
             "tool_name": "execute_documenter_task",
             "worker_name": "documenter",

@@ -171,8 +171,17 @@ class JsonSessionRepository(ISessionRepository):
                 if len(sessions) >= criteria.limit + criteria.offset:
                     break
 
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in session file: {json_file} - skipping")
+                continue
+            except KeyError as e:
+                logger.error(f"Missing required field in session: {json_file} - {e}")
+                continue
+            except OSError as e:
+                logger.error(f"Cannot read session file: {json_file} - {e}")
+                continue
             except Exception as e:
-                logger.error(f"세션 파일 읽기 실패: {json_file} - {e}")
+                logger.error(f"Unexpected error reading session: {json_file} - {e}")
                 continue
 
         # 오프셋 적용

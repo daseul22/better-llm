@@ -207,6 +207,10 @@ class OrchestratorTUI(App):
             user_request="Initial session"
         )
         self.session_manager.start_session(initial_config)
+        # 세션 생성 후 캐시 무효화 (새 세션 반영)
+        # Note: invalidate_session_cache()는 나중에 정의되므로 직접 설정
+        self._cached_current_session = None
+        self._cached_session_index = -1
 
         self.worker_output_manager = WorkerOutputManager()
         self.layout_manager = LayoutManager()
