@@ -555,6 +555,11 @@ execute_tester_task({
         Args:
             usage_dict: 토큰 사용량 딕셔너리
         """
+        self.logger.info(f"[Manager] _update_token_usage called with: {usage_dict}")
+
+        before_input = self.total_input_tokens
+        before_output = self.total_output_tokens
+
         if 'input_tokens' in usage_dict:
             self.total_input_tokens += usage_dict['input_tokens']
         if 'output_tokens' in usage_dict:
@@ -564,12 +569,11 @@ execute_tester_task({
         if 'cache_creation_tokens' in usage_dict:
             self.total_cache_creation_tokens += usage_dict['cache_creation_tokens']
 
-        self.logger.debug(
-            "Token usage updated",
-            input_tokens=self.total_input_tokens,
-            output_tokens=self.total_output_tokens,
-            cache_read_tokens=self.total_cache_read_tokens,
-            cache_creation_tokens=self.total_cache_creation_tokens
+        self.logger.info(
+            f"[Manager] Token usage updated: "
+            f"input {before_input} -> {self.total_input_tokens}, "
+            f"output {before_output} -> {self.total_output_tokens}, "
+            f"total: {self.total_input_tokens + self.total_output_tokens}"
         )
 
     async def analyze_and_plan_stream(self, history: List[Message]):

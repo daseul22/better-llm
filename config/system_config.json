@@ -48,7 +48,7 @@
     "enable_input_validation": true
   },
   "logging": {
-    "level": "INFO",
+    "level": "DEBUG",
     "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     "enable_structured_logging": false
   },

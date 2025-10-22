@@ -99,6 +99,24 @@ class ManagerResponseHandler(SDKResponseHandler):
         Yields:
             str: 추출된 텍스트 청크
         """
+        # 디버깅: 응답 객체 구조 로깅
+        logger.info(f"[Manager] Response type: {type(response).__name__}")
+        logger.info(f"[Manager] Response repr: {repr(response)[:500]}")
+
+        # 모든 속성 확인
+        response_attrs = [attr for attr in dir(response) if not attr.startswith('_')]
+        logger.info(f"[Manager] Response public attributes: {response_attrs}")
+
+        logger.info(f"[Manager] Has usage: {hasattr(response, 'usage')}")
+
+        if hasattr(response, 'usage'):
+            logger.info(f"[Manager] usage type: {type(response.usage)}")
+            logger.info(f"[Manager] usage value: {response.usage}")
+            logger.info(f"[Manager] usage repr: {repr(response.usage)}")
+            if response.usage:
+                usage_attrs = [attr for attr in dir(response.usage) if not attr.startswith('_')]
+                logger.info(f"[Manager] usage attributes: {usage_attrs}")
+
         # usage 정보 추출 및 콜백 호출
         if hasattr(response, 'usage') and response.usage and self.usage_callback:
             usage_dict = {}
@@ -114,14 +132,16 @@ class ManagerResponseHandler(SDKResponseHandler):
             if usage_dict:
                 logger.info(f"[Manager] Token usage received: {usage_dict}")
                 self.usage_callback(usage_dict)
+            else:
+                logger.warning("[Manager] usage_dict is empty after extraction")
         else:
             # 디버깅: usage 정보가 없는 이유 확인
             if not hasattr(response, 'usage'):
-                logger.debug("[Manager] Response has no 'usage' attribute")
+                logger.warning("[Manager] Response has no 'usage' attribute")
             elif not response.usage:
-                logger.debug("[Manager] Response.usage is None/False")
+                logger.warning(f"[Manager] Response.usage is None/False: {response.usage}")
             elif not self.usage_callback:
-                logger.debug("[Manager] No usage_callback provided")
+                logger.warning("[Manager] No usage_callback provided")
 
         # 텍스트 추출
         text = self.extract_text_from_response(response)
@@ -152,6 +172,13 @@ class WorkerResponseHandler(SDKResponseHandler):
         Yields:
             str: 추출된 텍스트 청크
         """
+        # 디버깅: 응답 객체 구조 로깅
+        logger.debug(f"[Worker] Response type: {type(response)}")
+        logger.debug(f"[Worker] Has usage: {hasattr(response, 'usage')}")
+
+        if hasattr(response, 'usage'):
+            logger.debug(f"[Worker] usage value: {response.usage}")
+
         # usage 정보 추출 및 콜백 호출 (Manager와 동일)
         if hasattr(response, 'usage') and response.usage and self.usage_callback:
             usage_dict = {}
@@ -165,7 +192,18 @@ class WorkerResponseHandler(SDKResponseHandler):
                 usage_dict['cache_creation_tokens'] = response.usage.cache_creation_tokens
 
             if usage_dict:
+                logger.info(f"[Worker] Token usage received: {usage_dict}")
                 self.usage_callback(usage_dict)
+            else:
+                logger.warning("[Worker] usage_dict is empty after extraction")
+        else:
+            # 디버깅: usage 정보가 없는 이유 확인
+            if not hasattr(response, 'usage'):
+                logger.warning("[Worker] Response has no 'usage' attribute")
+            elif not response.usage:
+                logger.warning(f"[Worker] Response.usage is None/False: {response.usage}")
+            elif not self.usage_callback:
+                logger.warning("[Worker] No usage_callback provided")
 
         # 텍스트 추출
         text = self.extract_text_from_response(response)
@@ -269,6 +307,30 @@ class ManagerSDKExecutor:
 
             self.logger.debug("Claude Agent SDK call completed (Manager)")
 
+            # 스트리밍 완료 후 client 객체에서 usage 확인
+            self.logger.info(f"[Manager] Checking client for usage after streaming...")
+            self.logger.info(f"[Manager] Client type: {type(client).__name__}")
+            client_attrs = [attr for attr in dir(client) if not attr.startswith('_') and 'usage' in attr.lower()]
+            self.logger.info(f"[Manager] Client usage-related attributes: {client_attrs}")
+
+            # client 객체에 usage 정보가 있는지 확인
+            if hasattr(client, 'usage'):
+                self.logger.info(f"[Manager] client.usage: {client.usage}")
+                if client.usage and self.response_handler.usage_callback:
+                    usage_dict = {}
+                    if hasattr(client.usage, 'input_tokens'):
+                        usage_dict['input_tokens'] = client.usage.input_tokens
+                    if hasattr(client.usage, 'output_tokens'):
+                        usage_dict['output_tokens'] = client.usage.output_tokens
+                    if hasattr(client.usage, 'cache_read_tokens'):
+                        usage_dict['cache_read_tokens'] = client.usage.cache_read_tokens
+                    if hasattr(client.usage, 'cache_creation_tokens'):
+                        usage_dict['cache_creation_tokens'] = client.usage.cache_creation_tokens
+
+                    if usage_dict:
+                        self.logger.info(f"[Manager] Found usage in client: {usage_dict}")
+                        self.response_handler.usage_callback(usage_dict)
+
         except GeneratorExit:
             # Generator가 중간에 종료될 때는 cleanup 하지 않음
             self.logger.debug("Generator exit - cleanup skipped")
@@ -345,6 +407,8 @@ class WorkerSDKExecutor:
             )
 
             chunk_count = 0
+            last_response = None
+
             async for response in query(
                 prompt=prompt,
                 options=ClaudeAgentOptions(
@@ -355,6 +419,8 @@ class WorkerSDKExecutor:
                 )
             ):
                 chunk_count += 1
+                last_response = response  # 마지막 응답 저장
+
                 self.logger.info(
                     f"[{self.worker_name}] response #{chunk_count} 수신: "
                     f"{type(response).__name__}"
@@ -367,6 +433,17 @@ class WorkerSDKExecutor:
                 f"[{self.worker_name}] Claude Agent SDK 실행 완료. "
                 f"총 {chunk_count}개 청크 수신"
             )
+
+            # 마지막 응답에서 usage 정보 재확인
+            if last_response:
+                self.logger.info(f"[{self.worker_name}] Checking last response for usage...")
+                if hasattr(last_response, 'usage') and last_response.usage:
+                    self.logger.info(f"[{self.worker_name}] Last response has usage: {last_response.usage}")
+                    # 한 번 더 process_response 호출 (usage만 처리)
+                    async for _ in self.response_handler.process_response(last_response):
+                        pass  # 텍스트는 무시하고 usage만 수집
+                else:
+                    self.logger.warning(f"[{self.worker_name}] Last response has no usage information")
 
         except Exception as e:
             from src.infrastructure.logging import log_exception_silently

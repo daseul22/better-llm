@@ -127,12 +127,16 @@ class UpdateManager:
 
             # Manager Agent에서 토큰 사용량 가져오기
             manager_usage = self.app.manager.get_token_usage()
+            logger.debug(f"[TUI] Manager usage: {manager_usage}")
+
             manager_total = manager_usage["total_tokens"]
             manager_input = manager_usage["input_tokens"]
             manager_output = manager_usage["output_tokens"]
 
             # Worker Agent 토큰 사용량 가져오기 (세션 메트릭에서)
             session_metrics = self.app.metrics_collector.get_session_summary(self.app.session_id)
+            logger.debug(f"[TUI] Session metrics exists: {session_metrics is not None}")
+
             worker_total = 0
             worker_input = 0
             worker_output = 0
@@ -140,17 +144,29 @@ class UpdateManager:
             worker_cache_creation = 0
 
             if session_metrics:
+                logger.debug(f"[TUI] Number of worker metrics: {len(session_metrics.workers_metrics)}")
                 for metric in session_metrics.workers_metrics:
+                    logger.debug(
+                        f"[TUI] Worker {metric.worker_name}: "
+                        f"input={metric.input_tokens}, output={metric.output_tokens}, "
+                        f"cache_read={metric.cache_read_tokens}, cache_creation={metric.cache_creation_tokens}"
+                    )
                     worker_input += metric.input_tokens or 0
                     worker_output += metric.output_tokens or 0
                     worker_cache_read += metric.cache_read_tokens or 0
                     worker_cache_creation += metric.cache_creation_tokens or 0
                 worker_total = worker_input + worker_output
+            else:
+                logger.debug("[TUI] No session metrics found")
 
             # 전체 토큰 계산
             total_tokens = manager_total + worker_total
             total_input = manager_input + worker_input
             total_output = manager_output + worker_output
+
+            logger.debug(
+                f"[TUI] Total tokens: {total_tokens} (Manager: {manager_total}, Worker: {worker_total})"
+            )
 
             # 모델별 컨텍스트 윈도우 (토큰 수)
             # Claude Sonnet 4.5: 200K context window
