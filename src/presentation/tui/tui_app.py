@@ -339,6 +339,15 @@ class OrchestratorTUI(App):
         task_input = self.query_one("#task-input", MultilineInput)
         task_input.focus()
 
+    async def on_unmount(self) -> None:
+        """앱 종료 시 정리 작업"""
+        logger.info("TUI 앱 종료 시작")
+        # 진행 중인 작업 정리
+        if hasattr(self, 'task_runner') and self.task_runner.is_running:
+            logger.info("진행 중인 작업 중단")
+            await self.task_runner.interrupt_task()
+        logger.info("TUI 앱 종료 완료")
+
     async def on_multiline_input_submitted(self, event: MultilineInput.Submitted) -> None:
         """Ctrl+R 입력 시 작업 실행"""
         logger.info(f"🟢 [TUI] on_multiline_input_submitted 호출됨! event.value={event.value!r}")
@@ -1000,15 +1009,24 @@ def main() -> None:
         logger.error(f"TUI 실행 중 에러 발생: {e}", exc_info=True)
         raise
     finally:
-        # 터미널 상태 복원 (마우스 트래킹 모드 해제)
+        # 터미널 상태 완전 복원
         import sys
-        # ANSI escape codes for disabling mouse tracking
+        # 1. 대체 화면 버퍼 해제 (alternate screen buffer)
+        sys.stdout.write('\033[?1049l')  # Exit alternate screen
+        # 2. 마우스 트래킹 모드 해제
         sys.stdout.write('\033[?1000l')  # Disable mouse tracking
         sys.stdout.write('\033[?1003l')  # Disable all mouse tracking
         sys.stdout.write('\033[?1015l')  # Disable urxvt mouse mode
         sys.stdout.write('\033[?1006l')  # Disable SGR mouse mode
+        # 3. 기타 모드 해제
         sys.stdout.write('\033[?25h')    # Show cursor
         sys.stdout.write('\033[?1004l')  # Disable focus events
+        sys.stdout.write('\033[?2004l')  # Disable bracketed paste mode
+        # 4. 터미널 속성 리셋
+        sys.stdout.write('\033[0m')      # Reset all attributes (colors, styles)
+        sys.stdout.write('\033[H')       # Move cursor to home position
+        sys.stdout.write('\033[2J')      # Clear entire screen
+        # 5. 모든 변경사항 플러시
         sys.stdout.flush()
 
 
