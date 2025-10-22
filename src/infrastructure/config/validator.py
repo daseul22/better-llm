@@ -51,12 +51,42 @@ def validate_environment() -> None:
     oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
 
     if not oauth_token:
-        raise ValueError(
-            "CLAUDE_CODE_OAUTH_TOKEN이 설정되지 않았습니다.\n"
-            "다음 방법으로 설정하세요:\n\n"
-            "  export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token'\n\n"
-            "또는 .env 파일에 추가하세요."
-        )
+        project_root = get_project_root()
+        project_dotenv = project_root / ".env"
+        project_env_example = project_root / ".env.example"
+
+        error_msg = "CLAUDE_CODE_OAUTH_TOKEN이 설정되지 않았습니다.\n\n"
+        error_msg += "다음 방법 중 하나로 설정하세요:\n\n"
+
+        # 방법 1: 환경변수
+        error_msg += "1. 환경변수로 직접 설정:\n"
+        error_msg += "   export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token'\n\n"
+
+        # 방법 2: .env 파일 (현재 디렉토리)
+        error_msg += "2. 현재 디렉토리에 .env 파일 생성:\n"
+        error_msg += f"   현재 디렉토리: {Path.cwd()}\n"
+        error_msg += "   echo \"CLAUDE_CODE_OAUTH_TOKEN='your-token'\" > .env\n\n"
+
+        # 방법 3: .env 파일 (프로젝트 루트)
+        error_msg += "3. 프로젝트 루트에 .env 파일 생성:\n"
+        error_msg += f"   프로젝트 루트: {project_root}\n"
+
+        if project_env_example.exists():
+            error_msg += f"   .env.example 파일을 복사:\n"
+            error_msg += f"   cp {project_env_example} {project_dotenv}\n\n"
+        else:
+            error_msg += f"   cd {project_root}\n"
+            error_msg += "   echo \"CLAUDE_CODE_OAUTH_TOKEN='your-token'\" > .env\n\n"
+
+        # 방법 4: pipx 설치 시 BETTER_LLM_ROOT 설정
+        if "site-packages" in str(Path(__file__)):
+            # pipx 설치 감지
+            error_msg += "4. [pipx 설치 사용자] 소스 코드 위치 지정:\n"
+            error_msg += "   # better-llm 소스 코드를 클론한 위치로 설정\n"
+            error_msg += "   export BETTER_LLM_ROOT='/path/to/better-llm'\n"
+            error_msg += "   # 예: export BETTER_LLM_ROOT='/Users/daniel/dallem-repo/better-llm'\n"
+
+        raise ValueError(error_msg)
 
 
 def get_claude_cli_path() -> str:
