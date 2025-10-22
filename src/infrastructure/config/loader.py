@@ -188,12 +188,12 @@ class JsonConfigLoader(IConfigLoader):
             return SystemConfig()
 
 
-def load_system_config() -> dict:
+def load_system_config() -> SystemConfig:
     """
-    시스템 설정을 dict로 로드 (간편 함수)
+    시스템 설정을 SystemConfig 객체로 로드 (간편 함수)
 
     Returns:
-        dict: 설정 딕셔너리 (파일이 없으면 빈 dict 반환)
+        SystemConfig: 설정 객체 (파일이 없으면 기본 설정 반환)
 
     Raises:
         json.JSONDecodeError: JSON 파싱 실패 시
@@ -204,16 +204,13 @@ def load_system_config() -> dict:
     config_path = get_project_root() / "config" / "system_config.json"
 
     if not config_path.exists():
-        logger.warning(f"Config file not found: {config_path}. Using empty config.")
-        return {}
+        logger.warning(f"Config file not found: {config_path}. Using default config.")
+        return SystemConfig()
 
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, dict):
-                logger.error(f"Config file is not a valid JSON object: {config_path}")
-                return {}
-            return data
+        # JsonConfigLoader를 사용하여 SystemConfig 객체 생성
+        loader = JsonConfigLoader(get_project_root())
+        return loader.load_system_config()
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse config JSON: {config_path} - {e}")
         raise

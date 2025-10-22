@@ -91,6 +91,13 @@ class ParallelTaskExecutor:
             level_tasks = [plan.get_task(tid) for tid in level_task_ids]
             level_tasks = [t for t in level_tasks if t is not None]
 
+            # 이미 취소된 Task는 실행하지 않음 (의존성 실패로 인한 취소)
+            level_tasks = [t for t in level_tasks if t.status != TaskStatus.CANCELLED]
+
+            if not level_tasks:
+                logger.info(f"Level {level_idx + 1}: 모든 Task가 취소됨, 스킵")
+                continue
+
             # 병렬 실행
             results = await self._execute_task_batch(level_tasks)
 
