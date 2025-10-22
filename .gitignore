@@ -60,4 +60,4 @@ htmlcov/
 *.tmp
 *.bak
 
-workspace/*
+workspace/*coverage.xml

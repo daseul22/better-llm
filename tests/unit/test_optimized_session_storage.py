@@ -11,8 +11,8 @@ from pathlib import Path
 from datetime import datetime
 
 from src.infrastructure.storage.optimized_session_storage import OptimizedSessionRepository
-from src.domain.models import SessionResult, SessionStatus, SessionSearchCriteria
-from src.domain.services import ConversationHistory, Message
+from src.domain.models import SessionResult, SessionStatus, SessionSearchCriteria, Message
+from src.domain.services import ConversationHistory
 
 
 @pytest.fixture

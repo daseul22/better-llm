@@ -14,7 +14,7 @@ from src.infrastructure.claude.sdk_executor import (
     ManagerSDKExecutor,
     WorkerSDKExecutor
 )
-from src.domain.exceptions import AgentExecutionError
+# AgentExecutionError는 존재하지 않으므로 import 제거
 
 
 class TestSDKExecutionConfig:
