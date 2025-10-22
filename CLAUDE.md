@@ -80,20 +80,63 @@ Presentation → Application → Domain ← Infrastructure
 
 ### 필수 요구사항
 - Python 3.10+
-- Anthropic API 키
+- Claude Code OAuth 토큰
 - Claude CLI (`~/.claude/local/claude`) - 자동 탐지됨
 
-### 초기 설정
+### 설치 방법
+
+**방법 1: setup.sh 사용 (권장)**
 
 ```bash
-# 1. 의존성 설치
-pip install -r requirements.txt
+./setup.sh
+```
 
-# 2. OAuth 토큰 설정
+설치 모드 선택 시 **개발 모드 (2번)**를 선택하면 소스 코드 변경사항이 바로 반영됩니다.
+
+**방법 2: pipx 수동 설치**
+
+```bash
+# pipx 설치 (없는 경우)
+brew install pipx  # macOS
+# 또는
+python3 -m pip install --user pipx
+
+# 개발 모드로 설치
+pipx install -e .
+```
+
+**방법 3: 가상환경 (로컬 개발)**
+
+```bash
+# 가상환경 생성 및 활성화
+python3 -m venv .venv
+source .venv/bin/activate
+
+# editable 모드로 설치
+pip install -e .
+```
+
+### 환경변수 설정
+
+```bash
+# OAuth 토큰 설정
 export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
 
-# 3. 구문 검사 (코드 변경 후)
-python3 -m py_compile src/*.py *.py
+# 영구 설정 (권장)
+echo "export CLAUDE_CODE_OAUTH_TOKEN='your-token'" >> ~/.zshrc
+```
+
+### 개발 시 유용한 명령어
+
+```bash
+# 구문 검사 (코드 변경 후)
+python3 -m py_compile src/**/*.py
+
+# 린트 (선택사항)
+ruff check src/
+
+# 포맷팅 (선택사항)
+black src/
 ```
 
 ### 데이터 저장 위치
@@ -124,18 +167,45 @@ export LOG_FORMAT="json"               # 로그 포맷 (json/console)
 
 ## 주요 명령어
 
+### 설치
+
+```bash
+# setup.sh로 자동 설치 (권장)
+./setup.sh
+
+# 또는 수동 설치
+pipx install .           # 일반 모드
+pipx install -e .        # 개발 모드
+```
+
 ### 실행
+
+**pipx로 설치한 경우:**
 
 ```bash
 # TUI (권장)
-python tui.py
+better-llm
 
 # CLI
-python orchestrator.py "작업 설명"
+better-llm-cli "작업 설명"
 
-# 옵션 포함
-python orchestrator.py --verbose "작업 설명"
-python orchestrator.py --config custom_config.json "작업 설명"
+# 도움말
+better-llm --help
+better-llm-cli --help
+```
+
+**가상환경에서 개발 중인 경우:**
+
+```bash
+# TUI
+python -m src.presentation.tui.tui_app
+
+# CLI
+python -m src.presentation.cli.orchestrator "작업 설명"
+
+# 또는 직접 실행 (deprecated)
+python tui.py
+python orchestrator.py "작업 설명"
 ```
 
 ### 테스트
@@ -452,6 +522,51 @@ ls -la prompts/
 ---
 
 ## 최근 개선 사항
+
+### refactor. 설치 방법 통일 (pipx 글로벌 설치)
+- 날짜: 2025-10-22
+- 컨텍스트: 여러 설치 방법(install.sh의 pipx/pip 선택, 수동 설치 등)이 혼재하여 사용자 혼란
+  - install.sh가 pipx/pip 선택을 요구하여 복잡
+  - README, installation.md 등 문서마다 설치 방법이 달랐음
+  - 일관성 없는 설치 경험
+- 해결 방안: **pipx 글로벌 설치로 통일**
+- 변경사항:
+  - **setup.sh 작성** (`setup.sh`):
+    - pipx 전용 설치 스크립트 (install.sh 대체)
+    - 설치 모드 선택: 일반 모드 / 개발 모드 (editable)
+    - Python 버전 체크 (3.10+)
+    - pipx 자동 설치 (macOS Homebrew 우선, 없으면 pip)
+    - OAuth 토큰 설정 가이드 (대화형)
+    - 설치 검증 (better-llm, better-llm-cli 명령어 확인)
+  - **install.sh 제거**:
+    - 복잡한 설치 방법 선택 로직 제거
+    - 단일 설치 방법으로 간소화
+  - **문서 업데이트**:
+    - `README.md`: setup.sh 사용 안내, pipx 글로벌 설치 강조
+    - `docs/guides/installation.md`: 3가지 방법 정리 (자동/pipx 수동/pip 로컬)
+    - `CLAUDE.md`: 개발자용 설치 방법 정리, 실행 명령어 구분 (pipx/가상환경)
+- 영향범위:
+  - **사용자 경험**: 설치 방법이 명확하고 간단해짐
+  - **일관성**: 모든 문서에서 동일한 설치 방법 안내
+  - **개발자**: editable 모드 선택으로 코드 변경 시 바로 반영 가능
+- 사용 방법:
+  ```bash
+  # 설치 (자동)
+  ./setup.sh
+  # 설치 모드 선택 시:
+  # 1) 일반 모드 - 일반 사용자용 (권장)
+  # 2) 개발 모드 - 소스 코드 변경 시 바로 반영
+
+  # 설치 (수동)
+  pipx install .           # 일반 모드
+  pipx install -e .        # 개발 모드
+
+  # 실행
+  better-llm               # TUI
+  better-llm-cli "작업"    # CLI
+  ```
+- 테스트: 구문 검사 통과, setup.sh 실행 권한 부여
+- 후속 조치: 사용자 피드백 수집, 설치 오류 모니터링
 
 ### feat. 🚀 수직적 고도화 - LLM 기반 Intelligent Summarizer, Performance Metrics, Context Metadata
 - 날짜: 2025-10-22

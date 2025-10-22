@@ -115,18 +115,42 @@ class UpdateManager:
     def update_token_info(self) -> None:
         """
         타이머: 토큰 사용량 업데이트 (1초마다 호출).
+        Manager + Worker 토큰 사용량을 통합하여 표시합니다.
         """
         try:
-            if not self.app.manager:
-                return
-
             token_info_widget = self.app.query_one("#token-info", Static)
 
+            if not self.app.manager:
+                # Manager 초기화 전: 기본값 표시
+                token_info_widget.update("🟢 Tokens: 0/200K (0% used, 100% free)")
+                return
+
             # Manager Agent에서 토큰 사용량 가져오기
-            usage = self.app.manager.get_token_usage()
-            total_tokens = usage["total_tokens"]
-            input_tokens = usage["input_tokens"]
-            output_tokens = usage["output_tokens"]
+            manager_usage = self.app.manager.get_token_usage()
+            manager_total = manager_usage["total_tokens"]
+            manager_input = manager_usage["input_tokens"]
+            manager_output = manager_usage["output_tokens"]
+
+            # Worker Agent 토큰 사용량 가져오기 (세션 메트릭에서)
+            session_metrics = self.app.metrics_collector.get_session_summary(self.app.session_id)
+            worker_total = 0
+            worker_input = 0
+            worker_output = 0
+            worker_cache_read = 0
+            worker_cache_creation = 0
+
+            if session_metrics:
+                for metric in session_metrics.workers_metrics:
+                    worker_input += metric.input_tokens or 0
+                    worker_output += metric.output_tokens or 0
+                    worker_cache_read += metric.cache_read_tokens or 0
+                    worker_cache_creation += metric.cache_creation_tokens or 0
+                worker_total = worker_input + worker_output
+
+            # 전체 토큰 계산
+            total_tokens = manager_total + worker_total
+            total_input = manager_input + worker_input
+            total_output = manager_output + worker_output
 
             # 모델별 컨텍스트 윈도우 (토큰 수)
             # Claude Sonnet 4.5: 200K context window
@@ -134,23 +158,30 @@ class UpdateManager:
 
             # 사용률 계산
             usage_percentage = (total_tokens / context_window) * 100 if context_window > 0 else 0
+            remaining_percentage = 100 - usage_percentage
 
-            # 표시 형식: "Tokens: 15K/200K (7.5%)"
+            # 표시 형식 생성
             if total_tokens >= 1000:
-                total_display = f"{total_tokens // 1000}K"
+                total_display = f"{total_tokens / 1000:.1f}K"
             else:
                 total_display = str(total_tokens)
 
             # 색상: 초록(< 50%), 노랑(50-80%), 빨강(>= 80%)
             if usage_percentage < 50:
                 color = "green"
+                emoji = "🟢"
             elif usage_percentage < 80:
                 color = "yellow"
+                emoji = "🟡"
             else:
                 color = "red"
+                emoji = "🔴"
 
+            # 상세 정보 표시 (한 줄)
+            # 형식: 🟢 Tokens: 15.2K/200K (7.6% used, 92.4% free) • M: 10K W: 5K
             token_info_widget.update(
-                f"[{color}]Tokens: {total_display}/200K ({usage_percentage:.1f}%)[/{color}]"
+                f"[{color}]{emoji} {total_display}/200K ({usage_percentage:.1f}% used, {remaining_percentage:.1f}% free)[/{color}] "
+                f"[dim]• M:{manager_total:,} W:{worker_total:,}[/dim]"
             )
 
         except Exception as e:

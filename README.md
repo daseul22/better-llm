@@ -49,16 +49,33 @@
 
 ### 1. 설치
 
+**pipx를 사용한 글로벌 설치 (권장):**
+
 ```bash
 git clone https://github.com/simdaseul/better-llm.git
 cd better-llm
-./install.sh
+./setup.sh
 ```
 
-또는 수동 설치:
+설치 스크립트가 자동으로:
+- Python 3.10+ 버전 확인
+- pipx 설치 (필요시)
+- 설치 모드 선택 (일반/개발)
+- better-llm 설치
+- 환경 변수 설정 안내
+- 설치 검증
+
+**수동 설치:**
 
 ```bash
-pip install -e .
+# pipx 설치 (없는 경우)
+brew install pipx  # macOS
+# 또는
+python3 -m pip install --user pipx
+
+# better-llm 설치
+pipx install .           # 일반 모드
+pipx install -e .        # 개발 모드 (코드 변경 시 바로 반영)
 ```
 
 ### 2. 환경 변수 설정

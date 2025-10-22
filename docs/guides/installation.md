@@ -11,7 +11,7 @@ Better-LLM을 설치하는 여러 방법을 안내합니다.
 
 ## 방법 1: 자동 설치 (권장)
 
-가장 간단한 방법입니다. 설치 스크립트가 모든 과정을 자동으로 처리합니다.
+가장 간단하고 권장하는 방법입니다. pipx를 사용해 격리된 환경에 글로벌로 설치합니다.
 
 ### 1. 저장소 클론
 
@@ -23,16 +23,19 @@ cd better-llm
 ### 2. 설치 스크립트 실행
 
 ```bash
-./install.sh
+./setup.sh
 ```
 
 설치 스크립트는 다음을 자동으로 수행합니다:
 
-1. Python 버전 체크 (3.10+)
-2. 설치 방법 선택 (pipx 또는 pip)
-3. 의존성 설치
-4. 환경 변수 설정 가이드
-5. 설치 검증
+1. **Python 버전 체크** (3.10+)
+2. **pipx 설치** (없는 경우 자동 설치)
+3. **설치 모드 선택**:
+   - 일반 모드: 안정적인 글로벌 설치
+   - 개발 모드: 소스 코드 변경 시 바로 반영
+4. **better-llm 설치**
+5. **환경 변수 설정 가이드**
+6. **설치 검증**
 
 ### 3. 환경 변수 설정
 
@@ -59,14 +62,14 @@ better-llm --help
 better-llm-cli --help
 ```
 
-## 방법 2: pipx 사용 (권장)
+## 방법 2: pipx 수동 설치
 
-pipx는 Python 애플리케이션을 격리된 환경에 설치합니다.
+setup.sh를 사용하지 않고 직접 설치하는 방법입니다.
 
 ### 1. pipx 설치
 
 ```bash
-# macOS
+# macOS (Homebrew)
 brew install pipx
 pipx ensurepath
 
@@ -75,8 +78,8 @@ sudo apt install pipx
 pipx ensurepath
 
 # Python pip 사용
-python -m pip install --user pipx
-python -m pipx ensurepath
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath
 ```
 
 ### 2. Better-LLM 설치
@@ -84,18 +87,27 @@ python -m pipx ensurepath
 ```bash
 git clone https://github.com/simdaseul/better-llm.git
 cd better-llm
+
+# 일반 모드 (권장)
+pipx install .
+
+# 개발 모드 (소스 코드 변경 시 바로 반영)
 pipx install -e .
 ```
 
 ### 3. 환경 변수 설정
 
 ```bash
-export ANTHROPIC_API_KEY='your-api-key-here'
+export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
+
+# 영구 설정 (권장)
+echo "export CLAUDE_CODE_OAUTH_TOKEN='your-token'" >> ~/.zshrc  # zsh
+echo "export CLAUDE_CODE_OAUTH_TOKEN='your-token'" >> ~/.bashrc  # bash
 ```
 
-## 방법 3: pip 사용 (개발자용)
+## 방법 3: pip 사용 (개발자용, 로컬 테스트)
 
-가상 환경을 사용하는 것을 권장합니다.
+가상 환경을 사용한 로컬 개발을 위한 방법입니다. pipx 글로벌 설치와 달리, 프로젝트별로 격리된 환경에서 개발할 수 있습니다.
 
 ### 1. 가상 환경 생성
 
@@ -105,54 +117,65 @@ git clone https://github.com/simdaseul/better-llm.git
 cd better-llm
 
 # 가상 환경 생성
-python -m venv venv
+python3 -m venv .venv
 
 # 가상 환경 활성화
 # macOS/Linux
-source venv/bin/activate
+source .venv/bin/activate
 
 # Windows (PowerShell)
-venv\Scripts\Activate.ps1
+.venv\Scripts\Activate.ps1
 ```
 
 ### 2. 의존성 설치
 
 ```bash
-# 프로덕션 의존성
+# editable 모드로 설치 (코드 변경 시 바로 반영)
 pip install -e .
 
-# 개발 의존성 (테스트, 린트 등)
-pip install -r requirements-dev.txt
+# 개발 의존성 추가 (선택사항)
+pip install -e ".[dev]"
 ```
 
 ### 3. 환경 변수 설정
 
 ```bash
 # .env 파일 생성
-cp .env.example .env
-
-# .env 파일 편집
-echo "ANTHROPIC_API_KEY=your-api-key-here" > .env
+echo "CLAUDE_CODE_OAUTH_TOKEN=your-oauth-token-here" > .env
 ```
 
-## API 키 발급
+### 4. 실행
 
-### 1. Anthropic Console 접속
+가상 환경이 활성화된 상태에서:
 
-[https://console.anthropic.com/](https://console.anthropic.com/)
+```bash
+# TUI 실행
+python -m src.presentation.tui.tui_app
 
-### 2. API 키 생성
+# CLI 실행
+python -m src.presentation.cli.orchestrator "작업 설명"
+```
 
-1. 로그인 또는 회원가입
-2. **API Keys** 메뉴로 이동
-3. **Create Key** 클릭
-4. 키 이름 입력 (예: "better-llm")
-5. 생성된 키 복사 (한 번만 표시됨!)
+## OAuth 토큰 발급
+
+Better-LLM은 Claude Code OAuth 토큰을 사용합니다.
+
+### 1. Claude Code 설치
+
+[https://claude.ai/code](https://claude.ai/code)에서 Claude Code를 설치하세요.
+
+### 2. OAuth 토큰 획득
+
+Claude Code 설치 후 OAuth 토큰을 획득할 수 있습니다.
 
 ### 3. 환경 변수 설정
 
 ```bash
-export ANTHROPIC_API_KEY='sk-ant-api...'
+export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
+
+# 영구 설정 (권장)
+echo "export CLAUDE_CODE_OAUTH_TOKEN='your-token'" >> ~/.zshrc  # zsh
+echo "export CLAUDE_CODE_OAUTH_TOKEN='your-token'" >> ~/.bashrc  # bash
 ```
 
 ## 설치 확인
@@ -216,14 +239,14 @@ chmod +x install.sh
 pip install --user -e .
 ```
 
-### API 키 에러
+### OAuth 토큰 에러
 
 ```bash
 # 환경 변수 확인
-echo $ANTHROPIC_API_KEY
+echo $CLAUDE_CODE_OAUTH_TOKEN
 
 # 비어있으면 다시 설정
-export ANTHROPIC_API_KEY='your-api-key-here'
+export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
 ```
 
 ## 다음 단계

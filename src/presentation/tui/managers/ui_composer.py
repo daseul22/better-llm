@@ -86,7 +86,7 @@ class UIComposer:
         with Horizontal(id="info-bar"):
             session_id = self.app.session_id
             yield Static(f"Session: {session_id}", id="session-info")
-            yield Static("Tokens: 0K", id="token-info")
             yield Static("Ready", id="status-info")
+            yield Static("Tokens: 0K", id="token-info")
 
         yield Footer()

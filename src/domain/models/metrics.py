@@ -21,7 +21,11 @@ class WorkerMetrics:
         end_time: 작업 종료 시각
         execution_time: 실행 시간 (초)
         success: 성공 여부
-        tokens_used: 사용한 토큰 수 (선택적)
+        tokens_used: 사용한 토큰 수 (선택적, 하위 호환성 유지)
+        input_tokens: 입력 토큰 수 (선택적)
+        output_tokens: 출력 토큰 수 (선택적)
+        cache_read_tokens: 캐시 읽기 토큰 수 (선택적)
+        cache_creation_tokens: 캐시 생성 토큰 수 (선택적)
         error_message: 에러 메시지 (실패 시)
     """
     worker_name: str
@@ -30,7 +34,11 @@ class WorkerMetrics:
     end_time: datetime
     execution_time: float
     success: bool
-    tokens_used: Optional[int] = None
+    tokens_used: Optional[int] = None  # 하위 호환성
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cache_read_tokens: Optional[int] = None
+    cache_creation_tokens: Optional[int] = None
     error_message: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -43,6 +51,10 @@ class WorkerMetrics:
             "execution_time": self.execution_time,
             "success": self.success,
             "tokens_used": self.tokens_used,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "cache_creation_tokens": self.cache_creation_tokens,
             "error_message": self.error_message,
         }
 

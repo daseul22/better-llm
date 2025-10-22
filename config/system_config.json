@@ -13,13 +13,13 @@
     }
   },
   "timeouts": {
-    "default_worker_timeout": 300,
+    "default_worker_timeout": 600,
     "max_worker_timeout": 1800,
-    "planner_timeout": 300,
+    "planner_timeout": 600,
     "coder_timeout": 600,
-    "reviewer_timeout": 300,
+    "reviewer_timeout": 600,
     "tester_timeout": 600,
-    "committer_timeout": 180
+    "committer_timeout": 600
   },
   "workflow_limits": {
     "max_retry_cycles": 3,
