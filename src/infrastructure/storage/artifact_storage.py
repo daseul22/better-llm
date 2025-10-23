@@ -200,26 +200,16 @@ class ArtifactStorage:
 
                 return summary
 
-        # 모든 패턴 실패 시
+        # 모든 패턴 실패 시 - None 반환하여 재요청 트리거
         logger.warning(
-            "Summary section not found with any pattern, truncating output",
+            "Summary section not found with any pattern, returning None to trigger re-request",
             output_size=len(full_output),
             tried_patterns=len(patterns)
         )
 
-        # 처음 1000자 + 경고 메시지
-        truncated = full_output[:1000]
-        if len(full_output) > 1000:
-            truncated += f"\n\n... (총 {len(full_output):,}자 중 {1000}자만 표시)"
-
-        warning_msg = (
-            "\n\n⚠️ **경고: Worker가 요약 섹션을 출력하지 않았습니다.**\n"
-            "- 전체 로그는 artifact 파일에 저장되어 있습니다.\n"
-            "- Worker 프롬프트에 '## 📋 [XXX 요약 - Manager 전달용]' 섹션이 있는지 확인하세요.\n"
-            f"- 출력 크기: {len(full_output):,}자\n"
-        )
-
-        return truncated + warning_msg
+        # None 반환 → worker_tools.py에서 재요청 트리거
+        # 재요청도 실패하면 worker_tools.py의 폴백 로직이 2000자로 제한
+        return None
 
     def cleanup_old_artifacts(self, days: int = 7) -> int:
         """

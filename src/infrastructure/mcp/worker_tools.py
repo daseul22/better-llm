@@ -601,13 +601,26 @@ async def _save_and_summarize_output(
 
         summary = await _request_summary_from_worker(worker_name, full_output, artifact_id)
 
-        # 재요청 결과도 실패하면 전체 출력 사용 (폴백)
+        # 재요청 결과도 실패하면 강제로 2000자로 제한 (폴백)
         if summary is None:
+            MAX_SUMMARY_SIZE = 2000  # Manager 출력 토큰 초과 방지
             logger.error(
-                f"[{worker_name}] Summary re-request failed, using full output",
-                artifact_id=artifact_id
+                f"[{worker_name}] Summary re-request failed, using truncated output",
+                artifact_id=artifact_id,
+                full_size=len(full_output),
+                truncated_size=MAX_SUMMARY_SIZE
             )
-            summary = full_output
+
+            # 전체 출력 대신 처음 2000자만 사용 + 경고 메시지
+            summary = full_output[:MAX_SUMMARY_SIZE]
+            if len(full_output) > MAX_SUMMARY_SIZE:
+                summary += (
+                    f"\n\n⚠️ **요약 추출 실패 (출력 크기 제한)**\n"
+                    f"- Worker가 요약 섹션(`## 📋 [{worker_name.upper()} 요약 - Manager 전달용]`)을 출력하지 않았습니다.\n"
+                    f"- 전체 출력({len(full_output):,}자)은 artifact `{artifact_id}`에 저장되어 있습니다.\n"
+                    f"- 상세 내용이 필요하면 Worker에게 artifact 파일 읽기를 지시하세요.\n"
+                    f"- Worker 프롬프트를 확인하고 요약 섹션이 필수임을 명시하세요.\n"
+                )
 
     # 4. Manager에게는 요약 + artifact_id만 전달
     summary_with_ref = f"{summary}\n\n**[전체 로그: artifact `{artifact_id}`]**"
