@@ -571,9 +571,11 @@ class WorkerExecutor:
         if context.worker_name == "reviewer" and success:
             # Review 결과를 파싱하여 critical issues 추출 (안전한 인덱싱)
             reviewer_output = ""
-            content = result.get("content", [])
-            if content and len(content) > 0 and isinstance(content[0], dict):
-                reviewer_output = content[0].get("text", "")
+            content = result.get("content")
+            if isinstance(content, list) and len(content) > 0:
+                first_item = content[0]
+                if isinstance(first_item, dict) and "text" in first_item:
+                    reviewer_output = first_item.get("text", "")
 
             critical_issues = self._extract_critical_issues(reviewer_output)
 
@@ -661,10 +663,16 @@ class WorkerExecutor:
             에러 응답 딕셔너리
         """
         # 에러 통계 기록
+        try:
+            context_dict = context.to_dict()
+        except Exception as e:
+            worker_logger.warning(f"Failed to convert context to dict: {e}")
+            context_dict = {"worker_name": context.worker_name}
+
         self.error_manager.record_error(
             worker_name=context.worker_name,
             error=error,
-            context=context.to_dict()
+            context=context_dict
         )
 
         # 타임아웃 에러 처리 (복잡도: 1)

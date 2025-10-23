@@ -108,8 +108,15 @@ class SessionMigration:
             Exception: 마이그레이션 실패 시
         """
         # JSON 파일 읽기
-        with open(json_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON 파싱 실패: {json_file} - {e}")
+            return "failed"
+        except OSError as e:
+            logger.error(f"파일 읽기 실패: {json_file} - {e}")
+            return "failed"
 
         # 필수 필드 확인
         required_fields = ["session_id", "user_request", "messages", "result"]

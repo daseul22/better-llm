@@ -235,11 +235,16 @@ class Orchestrator:
         # Worker Tool 실행 결과를 히스토리에 추가
         tool_results = get_and_clear_tool_results()
         for tool_result in tool_results:
-            self.history.add_message(
-                "agent",
-                tool_result["result"],
-                agent_name=tool_result["worker_name"]
-            )
+            # 안전한 키 접근 (KeyError 방지)
+            if isinstance(tool_result, dict):
+                result = tool_result.get("result", "")
+                worker_name = tool_result.get("worker_name", "unknown")
+                if result:  # 빈 결과는 스킵
+                    self.history.add_message(
+                        "agent",
+                        result,
+                        agent_name=worker_name
+                    )
 
         # Manager 응답을 히스토리에 추가
         self.history.add_message("manager", manager_response)

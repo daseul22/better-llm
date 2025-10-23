@@ -530,13 +530,14 @@ class ManagerSDKExecutor:
                         usage_dict['cache_read_tokens'] = client.usage.get('cache_read_input_tokens', 0)
                         usage_dict['cache_creation_tokens'] = client.usage.get('cache_creation_input_tokens', 0)
                     else:
-                        if hasattr(client.usage, 'input_tokens'):
+                        # hasattr 체크 후 None이 아닌지도 확인
+                        if hasattr(client.usage, 'input_tokens') and client.usage.input_tokens is not None:
                             usage_dict['input_tokens'] = client.usage.input_tokens
-                        if hasattr(client.usage, 'output_tokens'):
+                        if hasattr(client.usage, 'output_tokens') and client.usage.output_tokens is not None:
                             usage_dict['output_tokens'] = client.usage.output_tokens
-                        if hasattr(client.usage, 'cache_read_tokens'):
+                        if hasattr(client.usage, 'cache_read_tokens') and client.usage.cache_read_tokens is not None:
                             usage_dict['cache_read_tokens'] = client.usage.cache_read_tokens
-                        if hasattr(client.usage, 'cache_creation_tokens'):
+                        if hasattr(client.usage, 'cache_creation_tokens') and client.usage.cache_creation_tokens is not None:
                             usage_dict['cache_creation_tokens'] = client.usage.cache_creation_tokens
 
                     if usage_dict:
@@ -547,6 +548,11 @@ class ManagerSDKExecutor:
             # Generator가 중간에 종료될 때는 cleanup 하지 않음
             self.logger.debug("Generator exit - cleanup skipped")
             raise
+
+        except asyncio.CancelledError:
+            # 작업 취소는 정상 종료로 간주 (에러 로깅 없이 조용히 종료)
+            self.logger.debug("Task cancelled by user")
+            return
 
         except Exception as e:
             from src.infrastructure.logging import log_exception_silently

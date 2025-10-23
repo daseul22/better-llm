@@ -402,6 +402,7 @@ execute_tester_task({
             self.metadata_formatter = ContextMetadataFormatter()
 
         # system_config.json에서 max_review_iterations 로드
+        config = None  # 초기화하여 NameError 방지
         try:
             from ..config import load_system_config
             config = load_system_config()
@@ -415,6 +416,7 @@ execute_tester_task({
                 default_value=3
             )
             self.max_review_cycles = 3
+            config = {}  # 기본값 설정하여 이후 사용 가능
 
         # system_config.json에서 컨텍스트 관리 옵션 로드
         try:
@@ -870,7 +872,7 @@ execute_tester_task({
             # Anthropic 공식 count_tokens API 호출
             response = self.anthropic_client.messages.count_tokens(
                 model=self.model,
-                system=self.system_prompt,
+                system=self.SYSTEM_PROMPT,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]

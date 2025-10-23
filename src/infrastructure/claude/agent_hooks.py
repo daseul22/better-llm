@@ -105,6 +105,48 @@ async def validate_worker_input(
 
 # Worker Tool 실행 시간 추적 (tool_use_id -> start_time)
 _worker_execution_times: Dict[str, float] = {}
+_MAX_EXECUTION_TIMES = 1000  # 최대 추적 개수
+_STALE_THRESHOLD = 3600  # 1시간 (초 단위)
+
+
+def _cleanup_stale_execution_times() -> None:
+    """
+    오래된 실행 시간 항목 정리 (메모리 누수 방지).
+
+    - 1시간 이상 된 항목 삭제
+    - 최대 개수 초과 시 오래된 항목부터 삭제
+    """
+    current_time = time.time()
+
+    # 1. 1시간 이상 된 항목 정리
+    to_delete = [
+        tool_id for tool_id, start_time in _worker_execution_times.items()
+        if current_time - start_time > _STALE_THRESHOLD
+    ]
+
+    for tool_id in to_delete:
+        del _worker_execution_times[tool_id]
+
+    if to_delete:
+        logger.debug(
+            "Cleaned up stale execution times",
+            deleted_count=len(to_delete),
+            remaining_count=len(_worker_execution_times)
+        )
+
+    # 2. 최대 개수 초과 시 오래된 항목부터 삭제
+    if len(_worker_execution_times) > _MAX_EXECUTION_TIMES:
+        sorted_items = sorted(_worker_execution_times.items(), key=lambda x: x[1])
+        to_keep = dict(sorted_items[-_MAX_EXECUTION_TIMES:])
+        removed_count = len(_worker_execution_times) - len(to_keep)
+        _worker_execution_times.clear()
+        _worker_execution_times.update(to_keep)
+
+        logger.warning(
+            "Execution times exceeded max limit",
+            max_limit=_MAX_EXECUTION_TIMES,
+            removed_count=removed_count
+        )
 
 
 async def monitor_worker_execution(
@@ -131,6 +173,11 @@ async def monitor_worker_execution(
     # Worker Tool만 모니터링
     if not tool_name.startswith("mcp__workers__"):
         return {}
+
+    # 주기적으로 오래된 항목 정리 (10번에 1번 실행)
+    import random
+    if random.randint(1, 10) == 1:
+        _cleanup_stale_execution_times()
 
     # 실행 시간 계산 (PreToolUse에서 시작 시간 기록 필요)
     start_time = _worker_execution_times.pop(tool_use_id, None)
@@ -196,14 +243,23 @@ def create_worker_hooks(enable_validation: bool = True, enable_monitoring: bool 
 
     hooks = {}
 
+    # PreToolUse: 입력 검증 + 시작 시간 기록
+    # 주의: record_worker_start_time은 monitoring과 함께 활성화해야 메모리 누수 방지
+    pre_hooks = []
     if enable_validation:
+        pre_hooks.append(validate_worker_input)
+    if enable_monitoring:
+        pre_hooks.append(record_worker_start_time)
+
+    if pre_hooks:
         hooks["PreToolUse"] = [
             HookMatcher(
                 matcher="mcp__workers__*",  # 모든 Worker Tool
-                hooks=[validate_worker_input, record_worker_start_time]
+                hooks=pre_hooks
             )
         ]
 
+    # PostToolUse: 실행 모니터링 (시작 시간 pop)
     if enable_monitoring:
         hooks["PostToolUse"] = [
             HookMatcher(

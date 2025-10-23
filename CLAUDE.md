@@ -523,6 +523,135 @@ ls -la prompts/
 
 ## 최근 개선 사항
 
+### fix. 5차 버그 수정 8개 - Manager/Worker Agent, CLI, SDK 안정성 강화
+- 날짜: 2025-10-23 (5차 버그 수정)
+- 컨텍스트: Manager Agent, Worker Agent, CLI, SDK 실행 코드 심층 분석으로 12개 버그 발견 → High 5개, Medium 3개 우선 수정
+  - **High Priority 5개**: config 미정의, system_prompt 속성 오류, usage_dict None 체크, content 구조 검증, 메모리 누수 심화
+  - **Medium Priority 3개**: tool_result 키 검증, to_dict() 예외 처리, CancelledError 미처리
+  - **Low Priority 2개**: 추후 수정 예정 (타입 힌트 오류, ZeroDivisionError)
+- 변경사항:
+  1. **High: manager_client.py:404-419 - config 변수 미정의 에러** (`src/infrastructure/claude/manager_client.py:405-419`):
+     - 문제: try 블록에서 config 정의 후 except 발생 시 미정의 상태로 라인 423에서 사용 → NameError
+     - 변경 전: config를 try 블록 안에서만 정의
+     - 변경 후: `config = None` 초기화, except에서 `config = {}` 기본값 설정
+     - 영향: 설정 파일 로드 실패 시에도 정상 초기화
+
+  2. **High: manager_client.py:873 - system_prompt 속성 오류** (`src/infrastructure/claude/manager_client.py:875`):
+     - 문제: `self.system_prompt` 속성이 정의되지 않음 → AttributeError
+     - 변경 전: `system=self.system_prompt`
+     - 변경 후: `system=self.SYSTEM_PROMPT` (프로퍼티 사용)
+     - 영향: 토큰 계산 기능 정상 작동
+
+  3. **High: sdk_executor.py:533-541 - usage 속성 None 체크 미흡** (`src/infrastructure/claude/sdk_executor.py:534-541`):
+     - 문제: hasattr() 체크는 있지만 속성이 None일 수 있음
+     - 변경 전: `if hasattr(client.usage, 'input_tokens'):`
+     - 변경 후: `if hasattr(...) and client.usage.input_tokens is not None:`
+     - 영향: 토큰 정보가 None일 때 크래시 방지
+
+  4. **High: worker_executor.py:574-578 - content 구조 검증 강화** (`src/infrastructure/mcp/worker_executor.py:574-578`):
+     - 문제: content[0]이 dict라는 확인은 있지만 "text" key 존재 확인 미흡
+     - 변경 전: `if content and len(content) > 0 and isinstance(content[0], dict):`
+     - 변경 후: content 타입 체크 → 길이 체크 → dict 체크 → "text" key 체크
+     - 영향: Reviewer 결과 파싱 시 예외 발생 방지
+
+  5. **High: agent_hooks.py:107-149 - 메모리 누수 방지 강화** (`src/infrastructure/claude/agent_hooks.py:107-149`):
+     - 문제: Tool 호출 실패 시 `_worker_execution_times`에서 pop되지 않아 메모리 누수
+     - 변경 전: 무제한 추적, cleanup 없음
+     - 변경 후:
+       - TTL 메커니즘 추가 (1시간 이상 된 항목 자동 정리)
+       - 최대 1000개 제한, 초과 시 오래된 항목부터 삭제
+       - monitor_worker_execution에서 주기적으로 cleanup 호출 (10번에 1번)
+     - 영향: 장시간 운영 시 메모리 누수 방지
+
+  6. **Medium: orchestrator.py:237-247 - tool_result 키 안전 접근** (`src/presentation/cli/orchestrator.py:237-247`):
+     - 문제: tool_result["result"] 접근 시 KeyError 위험
+     - 변경 전: 직접 키 접근
+     - 변경 후: isinstance() 체크 → .get() 안전 접근 → 빈 결과 스킵
+     - 영향: Worker Tool 결과 처리 시 크래시 방지
+
+  7. **Medium: worker_executor.py:666-676 - to_dict() 예외 처리** (`src/infrastructure/mcp/worker_executor.py:666-676`):
+     - 문제: context.to_dict() 실패 시 에러 기록 자체가 실패
+     - 변경 전: to_dict() 직접 호출
+     - 변경 후: try-except로 감싸고 실패 시 최소 정보만 전달
+     - 영향: 에러 처리 중 추가 에러 발생 방지
+
+  8. **Medium: sdk_executor.py:552-555 - CancelledError 별도 처리** (`src/infrastructure/claude/sdk_executor.py:552-555`):
+     - 문제: asyncio.CancelledError를 Exception으로 처리하여 에러 로깅
+     - 변경 전: Exception 블록에서 모든 예외 처리
+     - 변경 후: CancelledError를 GeneratorExit 다음에 별도 처리, 조용히 종료
+     - 영향: 작업 취소가 정상 동작으로 처리되어 불필요한 에러 메시지 제거
+
+- 영향범위:
+  - **안정성**: 런타임 크래시 5개 제거 (NameError, AttributeError, IndexError 등)
+  - **메모리 관리**: TTL 메커니즘으로 장시간 운영 시 메모리 누수 방지
+  - **에러 처리**: 예외 처리 강화로 에러 전파 차단
+  - **사용자 경험**: 작업 취소가 부드럽게 처리되어 혼란 감소
+- 테스트: 구문 검사 통과 (5개 파일)
+- 후속 조치:
+  - 실제 사용 시 효과 검증 (메모리 사용량, 크래시 발생 빈도)
+  - Low Priority 버그 2개 추후 수정 예정 (manager_client.py:911 타입 힌트, output_summarizer.py:530 ZeroDivisionError)
+- 참고: 5차 버그 탐색은 Explore 에이전트로 Manager/Worker Agent, CLI, SDK 코드 집중 분석 (총 12개 발견: High:5, Medium:5, Low:2)
+
+### fix. 4차 버그 수정 7개 - 전체 코드베이스 안정성 및 에러 처리 강화
+- 날짜: 2025-10-23 (4차 버그 수정)
+- 컨텍스트: 코드베이스 전체 버그 탐색으로 12개 잠재적 버그 발견 → High 3개, Medium 4개 우선 수정
+  - **High Priority 3개**: 메모리 누수, LLM 응답 파싱, 데이터베이스 초기화
+  - **Medium Priority 4개**: 설정 파일 로드, JSON 파싱, 파일 쓰기, 예외 처리
+  - **Low Priority 4개**: 추후 수정 예정 (성능 최적화, 입력 검증)
+- 변경사항:
+  1. **High: agent_hooks.py:199-213 - 메모리 누수 방지** (`src/infrastructure/claude/agent_hooks.py:199-222`):
+     - 문제: `enable_monitoring=False`일 때 `record_worker_start_time`이 시작 시간을 기록하지만 `monitor_worker_execution`이 pop하지 않아 메모리 누수
+     - 변경 전: PreToolUse에 항상 `record_worker_start_time` 등록
+     - 변경 후: `enable_monitoring=True`일 때만 `record_worker_start_time` 등록
+     - 영향: Hooks 설정에 따라 적절히 메모리 관리
+
+  2. **High: output_summarizer.py:184 - 안전한 LLM 응답 파싱** (`src/infrastructure/mcp/output_summarizer.py:184-194`):
+     - 문제: `response.content[0].text`가 None일 수 있어 AttributeError 발생 가능
+     - 변경 전: content 존재만 체크하고 바로 접근
+     - 변경 후: `hasattr` 및 `text` 속성 존재 확인 후 접근
+     - 영향: LLM이 빈 응답이나 특수 content 반환 시 크래시 방지
+
+  3. **High: sqlite_session_repository.py:47-149 - 데이터베이스 초기화 예외 처리** (`src/infrastructure/storage/sqlite_session_repository.py:47-149`):
+     - 문제: CREATE TABLE/INDEX 실행 중 예외 발생 시 불완전한 데이터베이스 생성
+     - 변경 전: with 블록만 사용, 예외 처리 없음
+     - 변경 후: try-except 추가, timeout 설정, 구체적 에러 로깅
+     - 영향: 데이터베이스 초기화 실패 시 명확한 에러 메시지 및 복구 가능
+
+  4. **Medium: tui_config.py:92-115 - 안전한 설정 파일 로드** (`src/presentation/tui/utils/tui_config.py:92-115`):
+     - 문제: 예상치 못한 필드나 타입 오류 시 기존 설정 손실
+     - 변경 전: 모든 예외를 동일하게 처리
+     - 변경 후: 유효한 필드만 필터링, JSONDecodeError/TypeError 별도 처리
+     - 영향: 설정 파일 형식 변경 시에도 정상 작동, 명확한 에러 메시지
+
+  5. **Medium: migration.py:110-119 - JSON 파싱 에러 구별** (`src/infrastructure/storage/migration.py:110-119`):
+     - 문제: JSON 파싱 실패와 필수 필드 누락을 구별하지 못함
+     - 변경 전: JSON 로드 예외 처리 없음
+     - 변경 후: JSONDecodeError, OSError 별도 처리, "failed" 상태 반환
+     - 영향: 마이그레이션 실패 원인 정확히 파악 가능
+
+  6. **Medium: artifact_storage.py:85-105 - 파일 쓰기 예외 처리** (`src/infrastructure/storage/artifact_storage.py:85-105`):
+     - 문제: 디스크 부족, 권한 없음 등으로 파일 쓰기 실패 시 예외 미처리
+     - 변경 전: 파일 쓰기 실패 시에도 artifact_id 반환
+     - 변경 후: IOError, Exception 별도 처리, 실패 시 raise
+     - 영향: 실패한 artifact_id 반환 방지, 호출자가 에러 인지 가능
+
+  7. **Medium: parallel_executor.py:100-105 - JSON 파싱 에러 처리** (`src/infrastructure/mcp/parallel_executor.py:100-105`):
+     - 문제: `TaskExecutionPlan.from_json()` 실패 시 예외 타입 불명확
+     - 변경 전: 예외 직접 전파
+     - 변경 후: JSONDecodeError, KeyError/TypeError를 ValueError로 변환
+     - 영향: 호출자가 예외 타입으로 실패 원인 파악 가능
+
+- 영향범위:
+  - **안정성**: 런타임 크래시 3개 제거, 예외 처리 4개 강화
+  - **디버깅**: 구체적인 에러 타입 및 메시지로 원인 빠르게 파악
+  - **리소스 관리**: 메모리 누수 방지, 파일 쓰기 실패 감지
+  - **사용자 경험**: 예상치 못한 크래시 없이 안정적으로 작동
+- 테스트: 구문 검사 통과 (7개 파일)
+- 후속 조치:
+  - 실제 사용 시 크래시 발생 여부 모니터링
+  - Low Priority 버그 4개 추후 수정 예정 (validator.py 중복 호출, loader.py 불필요 복사, setup.sh 입력 검증, db_utils.py timeout 검증)
+- 참고: 4차 버그 탐색은 Explore 에이전트 사용 (총 12개 발견: High:3, Medium:5, Low:4)
+
 ### refactor. Claude Agent SDK 권장사항 적용 - Permission Mode 개선 및 Hooks 시스템 추가
 - 날짜: 2025-10-23
 - 컨텍스트: `claude-agent-sdk-features.md` 문서 분석 후 SDK 권장사항 적용

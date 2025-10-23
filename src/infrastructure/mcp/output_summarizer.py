@@ -181,7 +181,17 @@ Worker 출력:
                 )
                 return None
 
-            summary_text = response.content[0].text.strip()
+            # content[0].text가 None일 수 있으므로 안전하게 접근
+            content_block = response.content[0]
+            if not hasattr(content_block, 'text') or not content_block.text:
+                logger.warning(
+                    "LLM response content[0].text is None or missing",
+                    worker_name=worker_name,
+                    content_block_type=type(content_block).__name__
+                )
+                return None
+
+            summary_text = content_block.text.strip()
 
             # ONE_LINE 추출
             one_line_match = re.search(r"ONE_LINE:\s*(.+?)(?:\n|$)", summary_text, re.DOTALL)

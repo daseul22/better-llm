@@ -82,8 +82,27 @@ class ArtifactStorage:
 
         # 파일 저장
         artifact_path = artifact_dir / f"{artifact_id}.txt"
-        with open(artifact_path, 'w', encoding='utf-8') as f:
-            f.write(full_output)
+        try:
+            with open(artifact_path, 'w', encoding='utf-8') as f:
+                f.write(full_output)
+        except IOError as e:
+            logger.error(
+                "Artifact 저장 실패 (IOError)",
+                artifact_id=artifact_id,
+                worker_name=worker_name,
+                path=str(artifact_path),
+                error=str(e)
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Artifact 저장 실패",
+                artifact_id=artifact_id,
+                worker_name=worker_name,
+                path=str(artifact_path),
+                error=str(e)
+            )
+            raise
 
         logger.info(
             "Artifact saved",

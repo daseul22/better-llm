@@ -46,99 +46,107 @@ class SqliteSessionRepository(ISessionRepository):
 
     def _init_database(self) -> None:
         """데이터베이스 기본 테이블 생성"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        try:
+            with sqlite3.connect(str(self.db_path), timeout=30.0) as conn:
+                cursor = conn.cursor()
 
-            # Foreign key 활성화
-            cursor.execute("PRAGMA foreign_keys = ON")
+                # Foreign key 활성화
+                cursor.execute("PRAGMA foreign_keys = ON")
 
-            # sessions 테이블
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
-                    session_id TEXT PRIMARY KEY,
-                    created_at TEXT NOT NULL,
-                    completed_at TEXT NOT NULL,
-                    user_request TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    total_turns INTEGER NOT NULL,
-                    tests_passed INTEGER,
-                    error_message TEXT
-                )
-            """)
+                # sessions 테이블
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        session_id TEXT PRIMARY KEY,
+                        created_at TEXT NOT NULL,
+                        completed_at TEXT NOT NULL,
+                        user_request TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        total_turns INTEGER NOT NULL,
+                        tests_passed INTEGER,
+                        error_message TEXT
+                    )
+                """)
 
-            # messages 테이블
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    agent_name TEXT,
-                    timestamp TEXT NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-                )
-            """)
+                # messages 테이블
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        agent_name TEXT,
+                        timestamp TEXT NOT NULL,
+                        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+                    )
+                """)
 
-            # session_files 테이블 (수정 파일)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS session_files (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    file_path TEXT NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-                )
-            """)
+                # session_files 테이블 (수정 파일)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS session_files (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id TEXT NOT NULL,
+                        file_path TEXT NOT NULL,
+                        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+                    )
+                """)
 
-            # session_agents 테이블 (사용 에이전트)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS session_agents (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    agent_name TEXT NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
-                    UNIQUE(session_id, agent_name)
-                )
-            """)
+                # session_agents 테이블 (사용 에이전트)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS session_agents (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id TEXT NOT NULL,
+                        agent_name TEXT NOT NULL,
+                        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
+                        UNIQUE(session_id, agent_name)
+                    )
+                """)
 
-            # FTS5 가상 테이블 (전문 검색용)
-            cursor.execute("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
-                    session_id UNINDEXED,
-                    user_request,
-                    message_content,
-                    content='',
-                    tokenize='porter unicode61'
-                )
-            """)
+                # FTS5 가상 테이블 (전문 검색용)
+                cursor.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
+                        session_id UNINDEXED,
+                        user_request,
+                        message_content,
+                        content='',
+                        tokenize='porter unicode61'
+                    )
+                """)
 
-            # 인덱스 생성
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_sessions_created_at
-                ON sessions(created_at DESC)
-            """)
+                # 인덱스 생성
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_sessions_created_at
+                    ON sessions(created_at DESC)
+                """)
 
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_sessions_status
-                ON sessions(status)
-            """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_sessions_status
+                    ON sessions(status)
+                """)
 
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_messages_session_id
-                ON messages(session_id)
-            """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_messages_session_id
+                    ON messages(session_id)
+                """)
 
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_session_agents_session_id
-                ON session_agents(session_id)
-            """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_session_agents_session_id
+                    ON session_agents(session_id)
+                """)
 
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_session_agents_agent_name
-                ON session_agents(agent_name)
-            """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_session_agents_agent_name
+                    ON session_agents(agent_name)
+                """)
 
-            conn.commit()
-            logger.info(f"데이터베이스 기본 설정 완료: {self.db_path}")
+                conn.commit()
+                logger.info(f"데이터베이스 기본 설정 완료: {self.db_path}")
+
+        except sqlite3.OperationalError as e:
+            logger.error(f"데이터베이스 초기화 실패 (OperationalError): {self.db_path} - {e}")
+            raise
+        except Exception as e:
+            logger.error(f"데이터베이스 초기화 실패: {self.db_path} - {e}")
+            raise
 
     def _escape_fts_keyword(self, keyword: str) -> str:
         """

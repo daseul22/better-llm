@@ -93,11 +93,23 @@ class TUIConfig:
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                return TUISettings(**data)
+
+                # 유효한 필드만 필터링 (예상치 못한 필드 무시)
+                from dataclasses import fields
+                valid_fields = {field.name for field in fields(TUISettings)}
+                filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+                return TUISettings(**filtered_data)
             else:
                 # 기본 설정 반환
                 return TUISettings()
 
+        except json.JSONDecodeError as e:
+            logger.warning(f"설정 파일 JSON 파싱 실패 (기본값 사용): {config_path} - {e}")
+            return TUISettings()
+        except TypeError as e:
+            logger.warning(f"설정 파일 필드 타입 오류 (기본값 사용): {e}")
+            return TUISettings()
         except Exception as e:
             logger.warning(f"설정 로드 실패 (기본값 사용): {e}")
             return TUISettings()

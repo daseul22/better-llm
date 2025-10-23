@@ -90,13 +90,19 @@ class ParallelExecutor:
             ValueError: JSON 파싱 실패 또는 필수 필드 누락
         """
         import re
+        import json
 
         # JSON 추출 (```json ... ``` 마크다운 코드 블록 제거)
         json_match = re.search(r'```json\s*(.*?)\s*```', plan_json, re.DOTALL)
         if json_match:
             plan_json = json_match.group(1).strip()
 
-        return TaskExecutionPlan.from_json(plan_json)
+        try:
+            return TaskExecutionPlan.from_json(plan_json)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid task execution plan JSON: {e}")
+        except (KeyError, TypeError) as e:
+            raise ValueError(f"Missing required fields in task plan: {e}")
 
     def build_dependency_graph(self, tasks: List[ParallelTask]) -> Dict[str, List[str]]:
         """
