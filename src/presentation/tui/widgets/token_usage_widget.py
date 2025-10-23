@@ -16,15 +16,17 @@ logger = get_logger(__name__, component="TokenUsageWidget")
 
 class TokenUsageWidget(Static):
     """
-    토큰 사용량 시각화 위젯
+    토큰 사용량 시각화 위젯 (매니저 토큰 기준)
 
     색상 경고 + 예산 설정으로 토큰 사용량을 직관적으로 표시합니다.
 
     Features:
         - 현재 사용량 / 예산 표시 (예: 15,234 / 150,000 tokens)
+        - **퍼센트 계산은 매니저 토큰만 기준** (워커 토큰 제외)
         - 캐시 토큰 정보 (괄호로 표시: +3,456 cache read)
         - 색상 변화: 녹색 < 70% < 노랑 < 90% < 빨강
         - 실시간 업데이트 (1초마다)
+        - 워커 토큰은 별도 표시 (M:xxx W:yyy 형태)
 
     Example:
         >>> widget = TokenUsageWidget(token_budget=150000)
@@ -109,8 +111,8 @@ class TokenUsageWidget(Static):
             self._cache_read_tokens = cache_read
             self._cache_creation_tokens = cache_creation
 
-            # 전체 토큰 계산
-            self._total_tokens = self._manager_tokens + self._worker_tokens
+            # 전체 토큰 계산 (매니저 토큰만 - 워커 제외)
+            self._total_tokens = self._manager_tokens
 
             # UI 렌더링
             self._render_token_display()

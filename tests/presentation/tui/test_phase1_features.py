@@ -376,9 +376,10 @@ class TestTokenUsageWidget:
         """TokenUsageWidget 기본 초기화 테스트"""
         widget = TokenUsageWidget()
 
-        assert widget.token_budget == 50000
-        assert widget.warn_threshold == 0.5
-        assert widget.alert_threshold == 0.7
+        # TUIConfig의 기본 token_budget은 150000 (Sonnet 4.5의 200K context의 75%)
+        assert widget.token_budget == 150000
+        assert widget.warn_threshold == 0.7  # TUIConfig의 기본 warn_threshold
+        assert widget.alert_threshold == 0.9  # TUIConfig의 기본 alert_threshold
         assert widget._total_tokens == 0
         assert widget._manager_tokens == 0
         assert widget._worker_tokens == 0
@@ -409,6 +410,7 @@ class TestTokenUsageWidget:
 
         assert widget._manager_tokens == 10000
         assert widget._worker_tokens == 0
+        # _total_tokens는 매니저 토큰만 포함 (워커 제외)
         assert widget._total_tokens == 10000
 
     def test_update_token_info_with_workers(self):
@@ -435,7 +437,8 @@ class TestTokenUsageWidget:
 
         assert widget._manager_tokens == 10000
         assert widget._worker_tokens == 5000  # 3000 + 2000
-        assert widget._total_tokens == 15000  # 10000 + 5000
+        # _total_tokens는 매니저 토큰만 포함 (워커 제외)
+        assert widget._total_tokens == 10000
         assert widget._cache_read_tokens == 500
         assert widget._cache_creation_tokens == 100
 
