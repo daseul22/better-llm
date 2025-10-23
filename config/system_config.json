@@ -29,6 +29,7 @@
   },
   "performance": {
     "enable_caching": true,
+    "planner_cache_enabled": true,
     "worker_retry_enabled": true,
     "worker_retry_max_attempts": 3,
     "worker_retry_base_delay": 1.0,
@@ -70,7 +71,7 @@
       "before_test_run": false,
       "before_deployment": false
     },
-    "max_feedback_length": 2000,
+    "max_feedback_length": 8000,
     "auto_approve_on_timeout": false
   },
   "workflow": {

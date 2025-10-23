@@ -31,6 +31,7 @@ from src.infrastructure.mcp.workflow_callback_handler import (
 from src.infrastructure.mcp.error_statistics_manager import ErrorStatisticsManager
 from src.infrastructure.mcp.parallel_executor import ParallelExecutor
 from src.infrastructure.mcp.worker_executor import WorkerExecutor, WorkerExecutionContext
+from ..cache.prompt_cache import PromptCache
 
 logger = get_logger(__name__, component="WorkerTools")
 
@@ -109,6 +110,17 @@ _WORKER_OUTPUT_CALLBACK: Optional[Callable] = _state.worker_output_callback
 _USER_INPUT_CALLBACK: Optional[Callable] = _state.user_input_callback
 _INTERACTION_ENABLED: bool = _state.interaction_enabled
 _LAST_TOOL_RESULTS: list[Dict[str, Any]] = _state.last_tool_results
+
+
+# ============================================================================
+# Worker Result Caching
+# ============================================================================
+
+# Planner Worker 결과 캐싱 (LRU + TTL)
+# - max_size: 100 (최근 100개 요청 캐싱)
+# - default_ttl: 3600 (1시간)
+# - enabled: system_config.json의 performance.planner_cache_enabled로 제어 (기본: True)
+_planner_cache: Optional[PromptCache] = None
 
 
 # ============================================================================
@@ -318,6 +330,60 @@ def _load_interaction_config():
         _state.interaction_enabled = False
 
 
+def _initialize_planner_cache():
+    """
+    Planner Worker 결과 캐시 초기화
+
+    system_config.json의 performance.planner_cache_enabled로 캐싱 활성화 여부 제어
+    (기본값: True)
+
+    설정 예시:
+        {
+            "performance": {
+                "planner_cache_enabled": true,
+                "cache_max_size": 100,
+                "cache_ttl_seconds": 3600
+            }
+        }
+    """
+    global _planner_cache
+
+    try:
+        from ..config import load_system_config
+
+        config = load_system_config()
+        performance = config.get("performance", {})
+
+        # 캐시 활성화 여부 (기본: True)
+        cache_enabled = performance.get("planner_cache_enabled", True)
+
+        # 캐시 설정 (기본값: max_size=100, ttl=3600초)
+        max_size = performance.get("cache_max_size", 100)
+        ttl_seconds = performance.get("cache_ttl_seconds", 3600)
+
+        # PromptCache 인스턴스 생성
+        _planner_cache = PromptCache(
+            max_size=max_size,
+            default_ttl=ttl_seconds,
+            enabled=cache_enabled
+        )
+
+        logger.info(
+            "✅ Planner cache initialized",
+            enabled=cache_enabled,
+            max_size=max_size,
+            ttl_seconds=ttl_seconds
+        )
+
+    except Exception as e:
+        logger.warning(
+            f"Planner cache 초기화 실패: {e}. 캐싱 비활성화.",
+            exc_info=True
+        )
+        # 폴백: 캐싱 비활성화
+        _planner_cache = PromptCache(enabled=False)
+
+
 # ============================================================================
 # 초기화 및 설정 함수
 # ============================================================================
@@ -329,11 +395,16 @@ def initialize_workers(config_path: Path):
     Args:
         config_path: Agent 설정 파일 경로
     """
+    global _planner_cache
+
     # system_config.json에서 타임아웃 설정 로드
     _load_worker_timeouts_from_config()
 
     # interaction 설정 로드
     _load_interaction_config()
+
+    # Planner 캐시 초기화
+    _initialize_planner_cache()
 
     # system_config.json에서 max_review_iterations 로드
     max_cycles = 3
@@ -601,9 +672,9 @@ async def _save_and_summarize_output(
 
         summary = await _request_summary_from_worker(worker_name, full_output, artifact_id)
 
-        # 재요청 결과도 실패하면 강제로 2000자로 제한 (폴백)
+        # 재요청 결과도 실패하면 강제로 5000자로 제한 (폴백)
         if summary is None:
-            MAX_SUMMARY_SIZE = 2000  # Manager 출력 토큰 초과 방지
+            MAX_SUMMARY_SIZE = 5000  # Manager 출력 토큰 초과 방지
             logger.error(
                 f"[{worker_name}] Summary re-request failed, using truncated output",
                 artifact_id=artifact_id,
@@ -737,7 +808,10 @@ async def _request_summary_from_worker(
 )
 async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Planner Agent 실행 (재시도 로직 포함)
+    Planner Agent 실행 (재시도 로직 및 캐싱 포함)
+
+    동일한 task_description에 대한 중복 요청을 캐싱하여 API 호출 최소화.
+    캐시 히트 시 즉시 반환, 미스 시 Worker 실행 후 결과를 캐싱합니다.
 
     Args:
         args: {"task_description": "작업 설명"}
@@ -745,9 +819,39 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Agent 실행 결과 (요약만 포함)
     """
+    task_description = args["task_description"]
+
+    # 1. 캐시 조회 (캐시가 활성화되어 있고 초기화된 경우만)
+    if _planner_cache and _planner_cache.enabled:
+        cached_result = _planner_cache.get(prompt=task_description)
+
+        if cached_result is not None:
+            logger.info(
+                "[planner] Cache HIT - returning cached result",
+                task_preview=task_description[:100]
+            )
+
+            # 캐시된 결과 반환 (Tool 결과는 이미 저장되어 있으므로 재저장 불필요)
+            # 단, 캐시 히트 시에도 last_tool_results에 추가해야 Orchestrator가 인식함
+            result_text = _safe_extract_result_text(cached_result)
+            if result_text:
+                _state.last_tool_results.append({
+                    "tool_name": "execute_planner_task",
+                    "worker_name": "planner",
+                    "result": result_text
+                })
+
+            return cached_result
+
+        logger.debug(
+            "[planner] Cache MISS - executing worker",
+            task_preview=task_description[:100]
+        )
+
+    # 2. 캐시 미스 → Worker 실행
     context = WorkerExecutionContext(
         worker_name="planner",
-        task_description=args["task_description"],
+        task_description=task_description,
         use_retry=True,
         timeout=_WORKER_TIMEOUTS["planner"],
         session_id=_state.current_session_id,
@@ -757,10 +861,19 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     )
     result = await _state.worker_executor.execute(context)
 
-    # Artifact Storage 활성화 (전체 출력 저장 및 요약 추출)
+    # 3. Artifact Storage 활성화 (전체 출력 저장 및 요약 추출)
     result = await _save_and_summarize_output("planner", result, _state.current_session_id)
 
-    # Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해) - 안전한 추출
+    # 4. 캐시 저장 (캐시가 활성화된 경우만)
+    if _planner_cache and _planner_cache.enabled:
+        _planner_cache.set(prompt=task_description, value=result)
+        logger.info(
+            "[planner] Result cached",
+            task_preview=task_description[:100],
+            cache_size=len(_planner_cache)
+        )
+
+    # 5. Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해) - 안전한 추출
     result_text = _safe_extract_result_text(result)
     if result_text:
         _state.last_tool_results.append({
