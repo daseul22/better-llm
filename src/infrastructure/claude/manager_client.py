@@ -4,10 +4,11 @@
 ManagerAgent: Claude Agent SDK를 사용하여 Worker Tool들을 호출하고 작업 조율
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 import logging
 import os
 
+from anthropic import Anthropic
 from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import ClaudeAgentOptions
 
@@ -385,6 +386,12 @@ execute_tester_task({
         self.total_cache_read_tokens = 0
         self.total_cache_creation_tokens = 0
 
+        # Anthropic 클라이언트 (count_tokens API용)
+        self._anthropic_client = None
+
+        # 토큰 관리 설정 로드
+        self.token_config = self._load_token_management_config()
+
         # Context metadata formatter (lazy import to avoid circular dependency)
         self.metadata_formatter = None
         self.context_metadata_enabled = self._load_context_metadata_config()
@@ -417,6 +424,36 @@ execute_tester_task({
             max_review_cycles=self.max_review_cycles,
             context_metadata_enabled=self.context_metadata_enabled
         )
+
+    def _load_token_management_config(self) -> dict:
+        """
+        system_config.json에서 토큰 관리 설정 로드
+
+        Returns:
+            dict: 토큰 관리 설정
+        """
+        try:
+            from ..config import load_system_config
+            config = load_system_config()
+            token_config = config.get("manager", {}).get("token_management", {})
+
+            # 기본값 설정
+            return {
+                "enable_token_precheck": token_config.get("enable_token_precheck", True),
+                "max_context_tokens": token_config.get("max_context_tokens", 200000),
+                "max_output_tokens": token_config.get("max_output_tokens", 8000),
+                "context_warning_threshold": token_config.get("context_warning_threshold", 0.7),
+                "context_critical_threshold": token_config.get("context_critical_threshold", 0.9)
+            }
+        except Exception as e:
+            self.logger.warning(f"토큰 관리 설정 로드 실패, 기본값 사용: {e}")
+            return {
+                "enable_token_precheck": True,
+                "max_context_tokens": 200000,
+                "max_output_tokens": 8000,
+                "context_warning_threshold": 0.7,
+                "context_critical_threshold": 0.9
+            }
 
     def _load_context_metadata_config(self) -> bool:
         """
@@ -628,6 +665,25 @@ execute_tester_task({
         Raises:
             Exception: SDK 호출 실패 시
         """
+        # ✅ 컨텍스트 윈도우 사전 체크 (설정에서 활성화된 경우만)
+        if self.token_config["enable_token_precheck"]:
+            try:
+                context_check = self.check_context_window_limit(history)
+
+                # Critical 경고 (90% 초과) 시 실행 차단
+                if context_check["critical"]:
+                    yield context_check["message"]
+                    return
+
+                # Warning 경고 (70% 초과) 시 경고만 표시하고 진행
+                if context_check["warning"]:
+                    yield context_check["message"]
+                    yield "\n\n계속 진행합니다...\n\n"
+
+            except Exception as e:
+                # 토큰 체크 실패는 경고만 하고 진행
+                self.logger.warning(f"컨텍스트 윈도우 사전 체크 실패: {e}")
+
         # 대화 히스토리를 프롬프트로 변환
         prompt = self._build_prompt_from_history(history)
 
@@ -707,6 +763,152 @@ execute_tester_task({
         self.total_output_tokens = 0
         self.total_cache_read_tokens = 0
         self.total_cache_creation_tokens = 0
+
+    @property
+    def anthropic_client(self) -> Anthropic:
+        """Lazy-load Anthropic client for count_tokens API"""
+        if self._anthropic_client is None:
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다. "
+                    "count_tokens API를 사용하려면 API 키가 필요합니다."
+                )
+            self._anthropic_client = Anthropic(api_key=api_key)
+        return self._anthropic_client
+
+    def count_prompt_tokens(self, history: List[Message]) -> Dict[str, int]:
+        """
+        프롬프트 토큰 수를 정확하게 계산 (Anthropic count_tokens API 사용)
+
+        Args:
+            history: 대화 히스토리
+
+        Returns:
+            dict: {
+                "input_tokens": int,  # 정확한 입력 토큰 수
+                "estimated": bool,    # 추정값 여부 (API 실패 시 True)
+                "error": str          # 에러 메시지 (있는 경우)
+            }
+        """
+        # 프롬프트 빌드
+        prompt = self._build_prompt_from_history(history)
+
+        try:
+            # Anthropic 공식 count_tokens API 호출
+            response = self.anthropic_client.messages.count_tokens(
+                model=self.model,
+                system=self.system_prompt,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+
+            input_tokens = response.input_tokens
+
+            # 로깅
+            max_context = 200000  # Claude Sonnet 4.5
+            usage_percent = (input_tokens / max_context) * 100
+
+            self.logger.info(
+                f"[Manager] Prompt token count: {input_tokens:,} tokens "
+                f"({usage_percent:.1f}% of context window)"
+            )
+
+            return {
+                "input_tokens": input_tokens,
+                "estimated": False,
+                "error": None
+            }
+
+        except Exception as e:
+            # 폴백: 문자 수 기반 추정 (매우 부정확)
+            estimated_tokens = len(prompt) // 3  # 1 토큰 ≈ 3 글자 (한글 기준)
+
+            self.logger.warning(
+                f"count_tokens API 호출 실패: {e}. "
+                f"문자 수 기반 추정을 사용합니다 (부정확): ~{estimated_tokens:,} tokens"
+            )
+
+            return {
+                "input_tokens": estimated_tokens,
+                "estimated": True,
+                "error": str(e)
+            }
+
+    def check_context_window_limit(self, history: List[Message]) -> Dict[str, any]:
+        """
+        컨텍스트 윈도우 사용량을 체크하고 경고 생성
+
+        Args:
+            history: 대화 히스토리
+
+        Returns:
+            dict: {
+                "input_tokens": int,
+                "max_context": int,
+                "max_input": int,     # 출력 예약 후 최대 입력
+                "usage_percent": float,
+                "warning": bool,      # 70% 초과
+                "critical": bool,     # 90% 초과
+                "message": str        # 경고 메시지 (있는 경우)
+            }
+        """
+        # 토큰 수 계산
+        result = self.count_prompt_tokens(history)
+        input_tokens = result["input_tokens"]
+        is_estimated = result["estimated"]
+
+        # 컨텍스트 윈도우 설정 (system_config.json에서 로드)
+        max_context = self.token_config["max_context_tokens"]
+        reserved_for_output = self.token_config["max_output_tokens"]
+        max_input = max_context - reserved_for_output
+
+        usage_percent = (input_tokens / max_input) * 100
+
+        # 경고 체크 (설정 파일의 임계값 사용)
+        warning_threshold = self.token_config["context_warning_threshold"]
+        critical_threshold = self.token_config["context_critical_threshold"]
+
+        warning = usage_percent > (warning_threshold * 100)
+        critical = usage_percent > (critical_threshold * 100)
+
+        # 경고 메시지 생성
+        message = None
+        if critical:
+            message = (
+                f"🚨 **컨텍스트 윈도우 긴급 경고**\n"
+                f"현재 입력 토큰: {input_tokens:,} / {max_input:,} ({usage_percent:.1f}%)\n"
+                f"{'⚠️ 추정값입니다 (API 실패). ' if is_estimated else ''}\n"
+                f"컨텍스트 윈도우가 거의 가득 찼습니다. 다음 중 하나를 선택하세요:\n"
+                f"1. 이전 메시지 일부 삭제\n"
+                f"2. 새로운 대화 시작\n"
+                f"3. Worker 출력 요약 강화\n"
+            )
+            self.logger.error(
+                f"[Manager] Context window critical: {input_tokens:,} / {max_input:,} tokens ({usage_percent:.1f}%)"
+            )
+        elif warning:
+            message = (
+                f"⚠️ **컨텍스트 윈도우 경고**\n"
+                f"현재 입력 토큰: {input_tokens:,} / {max_input:,} ({usage_percent:.1f}%)\n"
+                f"{'⚠️ 추정값입니다 (API 실패). ' if is_estimated else ''}\n"
+                f"컨텍스트 윈도우 사용량이 70%를 초과했습니다.\n"
+            )
+            self.logger.warning(
+                f"[Manager] Context window warning: {input_tokens:,} / {max_input:,} tokens ({usage_percent:.1f}%)"
+            )
+
+        return {
+            "input_tokens": input_tokens,
+            "max_context": max_context,
+            "max_input": max_input,
+            "usage_percent": usage_percent,
+            "warning": warning,
+            "critical": critical,
+            "message": message,
+            "estimated": is_estimated
+        }
 
     def __repr__(self) -> str:
         return f"ManagerAgent(model={self.model})"

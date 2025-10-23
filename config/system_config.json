@@ -2,7 +2,14 @@
   "manager": {
     "model": "claude-sonnet-4-5-20250929",
     "max_history_messages": 20,
-    "max_turns": 10
+    "max_turns": 10,
+    "token_management": {
+      "enable_token_precheck": true,
+      "max_context_tokens": 200000,
+      "max_output_tokens": 8000,
+      "context_warning_threshold": 0.7,
+      "context_critical_threshold": 0.9
+    }
   },
   "resilience": {
     "circuit_breaker": {
@@ -13,14 +20,14 @@
     }
   },
   "timeouts": {
-    "default_worker_timeout": 600,
-    "max_worker_timeout": 1800,
-    "planner_timeout": 600,
-    "coder_timeout": 600,
-    "reviewer_timeout": 600,
-    "tester_timeout": 600,
-    "committer_timeout": 600,
-    "documenter_timeout": 600
+    "default_worker_timeout": 1200,
+    "max_worker_timeout": 3600,
+    "planner_timeout": 1200,
+    "coder_timeout": 1200,
+    "reviewer_timeout": 1200,
+    "tester_timeout": 1200,
+    "committer_timeout": 1200,
+    "documenter_timeout": 1200
   },
   "workflow_limits": {
     "max_retry_cycles": 3,
@@ -64,7 +71,7 @@
   },
   "approval": {
     "enabled": false,
-    "timeout_seconds": 600,
+    "timeout_seconds": 1200,
     "approval_points": {
       "before_code_write": true,
       "after_code_write": true,
