@@ -1257,7 +1257,7 @@ async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
             return result
 
         # 설정 로드
-        config_loader = JsonConfigLoader()
+        config_loader = JsonConfigLoader(get_project_root())
         system_config = config_loader.load_system_config()
         parallel_config = system_config.get("parallel_execution", {})
 

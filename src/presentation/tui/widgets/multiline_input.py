@@ -9,7 +9,13 @@ from typing import Optional
 from textual.widgets import TextArea
 from textual.message import Message
 from textual import events
+from textual.events import Paste
 from textual.binding import Binding
+
+from src.infrastructure.logging import get_logger
+from ..utils.clipboard_helper import ClipboardHelper
+
+logger = get_logger(__name__)
 
 
 class MultilineInput(TextArea):
@@ -28,7 +34,7 @@ class MultilineInput(TextArea):
         Binding("ctrl+r", "insert_newline", "줄바꿈", priority=True),
     ]
 
-    class Submitted(Message):
+    class Submitted(Message, bubble=True):
         """
         Enter로 입력이 제출되었을 때 발생하는 메시지.
 
@@ -46,7 +52,7 @@ class MultilineInput(TextArea):
             super().__init__()
             self.value = value
 
-    class HistoryUp(Message):
+    class HistoryUp(Message, bubble=True):
         """
         Up 키로 히스토리 이전 항목으로 이동 요청.
 
@@ -54,7 +60,7 @@ class MultilineInput(TextArea):
         """
         pass
 
-    class HistoryDown(Message):
+    class HistoryDown(Message, bubble=True):
         """
         Down 키로 히스토리 다음 항목으로 이동 요청.
 
@@ -62,7 +68,7 @@ class MultilineInput(TextArea):
         """
         pass
 
-    class AutocompleteRequested(Message):
+    class AutocompleteRequested(Message, bubble=True):
         """
         Tab 키로 자동 완성이 요청되었을 때 발생하는 메시지.
 
@@ -79,6 +85,24 @@ class MultilineInput(TextArea):
             """
             super().__init__()
             self.current_text = current_text
+
+    class ImagePasted(Message, bubble=True):
+        """
+        이미지가 클립보드에서 붙여넣기되었을 때 발생하는 메시지.
+
+        Attributes:
+            file_path (str): 저장된 이미지 파일 경로
+        """
+
+        def __init__(self, file_path: str) -> None:
+            """
+            ImagePasted 메시지 초기화.
+
+            Args:
+                file_path: 저장된 이미지 파일 경로
+            """
+            super().__init__()
+            self.file_path = file_path
 
     def __init__(
         self,
@@ -113,20 +137,16 @@ class MultilineInput(TextArea):
         on_key()에서 호출됩니다.
         입력창 초기화는 이벤트 핸들러에서 처리합니다.
         """
-        from src.infrastructure.logging import get_logger
-        logger = get_logger(__name__)
-
-        logger.info(f"🔴 [MultilineInput] action_submit_input 호출됨! text={self.text!r}")
+        logger.debug(f"[MultilineInput] action_submit_input 호출됨! text={self.text!r}")
 
         # 빈 입력은 무시
         if not self.text.strip():
-            logger.warning(f"⚠️ [MultilineInput] 빈 입력 무시")
+            logger.debug("[MultilineInput] 빈 입력 무시")
             return
 
         # Submitted 메시지 전송
-        logger.info(f"📤 [MultilineInput] Submitted 메시지 전송: {self.text!r}")
+        logger.debug(f"[MultilineInput] Submitted 메시지 전송: {self.text!r}")
         self.post_message(self.Submitted(self.text))
-        logger.info(f"✅ [MultilineInput] Submitted 메시지 전송 완료")
 
     def action_insert_newline(self) -> None:
         """
@@ -191,6 +211,60 @@ class MultilineInput(TextArea):
                 event.prevent_default()
                 self.post_message(self.HistoryDown())
                 return
+
+    async def on_paste(self, event: Paste) -> None:
+        """
+        Paste 이벤트 처리 (텍스트 또는 이미지).
+
+        이미지를 먼저 확인하고, 이미지가 없으면 텍스트 붙여넣기를 수행합니다.
+        이미지가 발견되면 ImagePasted 메시지를 전송합니다.
+
+        클립보드 이미지 미지원 환경에서는 자동으로 fallback되어 텍스트만 처리합니다.
+
+        Args:
+            event: Paste 이벤트
+        """
+        logger.info(f"[MultilineInput] on_paste 호출됨! event.text={event.text!r}")
+
+        # 1. 먼저 이미지 확인 (우선순위 높음)
+        try:
+            image = ClipboardHelper.get_clipboard_image()
+            if image:
+                event.prevent_default()  # 기본 동작 차단
+                logger.info(f"이미지 발견: {image.size}")
+                try:
+                    # 이미지를 임시 파일로 저장
+                    file_path = ClipboardHelper.save_image_to_temp(image)
+                    logger.info(f"이미지 저장 완료: {file_path}")
+                    # ImagePasted 메시지 전송
+                    self.post_message(self.ImagePasted(file_path))
+                    logger.info(f"ImagePasted 메시지 전송 완료: {file_path}")
+                finally:
+                    # PIL Image 리소스 정리 보장
+                    image.close()
+                return
+
+        except (RuntimeError, NotImplementedError) as e:
+            # 클립보드 이미지 미지원 환경 (Pillow 미설치, Linux 등)
+            logger.warning(f"이미지 붙여넣기 미지원: {e}")
+            # Fallback: 텍스트 붙여넣기로 계속 진행
+
+        except (OSError, ValueError) as e:
+            # 이미지 저장 실패 또는 잘못된 이미지 형식
+            logger.error(f"이미지 처리 실패: {e}", exc_info=True)
+            # Fallback: 텍스트 붙여넣기로 계속 진행
+
+        except Exception as e:
+            # 예상하지 못한 오류 (버그 가능성 높음)
+            logger.critical(f"예상하지 못한 오류 발생: {e}", exc_info=True)
+            # Fallback: 텍스트 붙여넣기로 계속 진행
+
+        # 2. 이미지가 없거나 처리 실패 시 텍스트 붙여넣기
+        if event.text:
+            logger.debug(f"텍스트 붙여넣기: {event.text!r}")
+            self.insert(event.text)
+        else:
+            logger.debug("클립보드에 아무것도 없음")
 
     def clear(self) -> None:
         """입력 내용을 모두 지웁니다."""

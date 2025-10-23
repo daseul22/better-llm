@@ -6,6 +6,7 @@ from .autocomplete import AutocompleteEngine
 from .tui_config import TUIConfig, TUISettings
 from .message_renderer import MessageRenderer
 from .worker_output_parser import WorkerOutputParser
+from .clipboard_helper import ClipboardHelper
 
 __all__ = [
     "InputHistory",
@@ -15,4 +16,5 @@ __all__ = [
     "TUISettings",
     "MessageRenderer",
     "WorkerOutputParser",
+    "ClipboardHelper",
 ]

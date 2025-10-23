@@ -404,6 +404,97 @@ class OrchestratorTUI(App):
         self.current_task = asyncio.create_task(self.task_runner.run_task(user_request))
         logger.info(f"✅ [TUI] asyncio Task 생성 완료")
 
+    async def on_multiline_input_image_pasted(
+        self, event: MultilineInput.ImagePasted
+    ) -> None:
+        """
+        이미지 붙여넣기 이벤트 처리.
+
+        클립보드에서 이미지가 붙여넣어지면 임시 파일로 저장하고,
+        입력창에 파일 경로를 삽입합니다.
+
+        Args:
+            event: ImagePasted 이벤트 (file_path 속성 포함)
+        """
+        try:
+            logger.info(
+                f"🖼️ [TUI] 이미지 붙여넣기 이벤트 수신: {event.file_path}"
+            )
+
+            # 사용자에게 알림 (notification)
+            if self.settings.enable_notifications:
+                self.notify(
+                    f"이미지 붙여넣기: {Path(event.file_path).name}",
+                    severity="information"
+                )
+
+            # 입력창에 파일 경로 삽입
+            task_input = self.query_one("#task-input", MultilineInput)
+            task_input.insert(f"[Image: {event.file_path}]")
+            logger.info(f"📝 [TUI] 입력창에 이미지 경로 삽입: {event.file_path}")
+
+            # 로그에 이미지 정보 출력
+            try:
+                file_path = Path(event.file_path)
+                file_size = file_path.stat().st_size
+
+                # 파일 크기를 사람이 읽기 쉬운 형식으로 변환
+                if file_size < 1024:
+                    size_str = f"{file_size} bytes"
+                elif file_size < 1024 * 1024:
+                    size_str = f"{file_size / 1024:.1f} KB"
+                else:
+                    size_str = f"{file_size / (1024 * 1024):.2f} MB"
+
+                # 이미지 크기 정보 추출 (PIL 사용)
+                try:
+                    from PIL import Image
+                    with Image.open(file_path) as img:
+                        dimensions = f"{img.size[0]}x{img.size[1]} ({img.mode})"
+                except Exception as img_error:
+                    logger.debug(f"이미지 메타데이터 읽기 실패: {img_error}")
+                    dimensions = "N/A"
+
+                # 로그 패널 생성
+                info_text = (
+                    f"[bold cyan]🖼️ 이미지 붙여넣기 완료[/bold cyan]\n\n"
+                    f"**파일명**: {file_path.name}\n"
+                    f"**경로**: {event.file_path}\n"
+                    f"**크기**: {size_str}\n"
+                    f"**해상도**: {dimensions}"
+                )
+
+                self.write_log("")
+                self.write_log(Panel(info_text, border_style="cyan"))
+                self.write_log("")
+
+            except Exception as info_error:
+                logger.error(
+                    f"이미지 정보 추출 실패: {info_error}",
+                    exc_info=True
+                )
+                # 최소한의 정보라도 표시
+                self.write_log("")
+                self.write_log(
+                    Panel(
+                        f"[bold cyan]🖼️ 이미지 붙여넣기 완료[/bold cyan]\n\n"
+                        f"**경로**: {event.file_path}",
+                        border_style="cyan"
+                    )
+                )
+                self.write_log("")
+
+        except Exception as e:
+            logger.error(
+                f"이미지 붙여넣기 처리 실패: {e}",
+                exc_info=True
+            )
+            if self.settings.enable_notifications and self.settings.notify_on_error:
+                self.notify(
+                    f"이미지 처리 실패: {e}",
+                    severity="error"
+                )
+
     async def handle_slash_command(self, command: str) -> None:
         """슬래시 명령 처리 (SlashCommandHandler로 위임)"""
         self.slash_command_handler.sync_state_from_tui(log_lines=self.log_lines)

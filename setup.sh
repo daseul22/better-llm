@@ -48,9 +48,9 @@ check_python() {
     fi
 
     PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-    REQUIRED_VERSION="3.10"
 
-    if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
+    # Python으로 버전 비교 (크로스 플랫폼 호환)
+    if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 10) else 1)"; then
         print_error "Python 버전이 너무 낮습니다: $PYTHON_VERSION"
         echo "  Python 3.10 이상이 필요합니다."
         exit 1

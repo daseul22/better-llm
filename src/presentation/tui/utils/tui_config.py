@@ -61,9 +61,9 @@ class TUISettings:
     show_error_stats_on_complete: bool = False  # 작업 완료 시 자동 표시 여부
 
     # 토큰 예산 설정
-    token_budget: int = 50000  # 기본 예산 (Sonnet 4.5: 200K context의 25%)
-    warn_threshold: float = 0.5  # 경고 시작 (50%)
-    alert_threshold: float = 0.7  # 긴급 경고 (70%)
+    token_budget: int = 150000  # 기본 예산 (Sonnet 4.5: 200K context의 75%, 여유 고려)
+    warn_threshold: float = 0.7  # 경고 시작 (70%)
+    alert_threshold: float = 0.9  # 긴급 경고 (90%)
 
 
 class TUIConfig:

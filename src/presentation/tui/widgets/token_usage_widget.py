@@ -18,34 +18,34 @@ class TokenUsageWidget(Static):
     """
     토큰 사용량 시각화 위젯
 
-    프로그레스 바 + 색상 경고 + 예산 설정으로 토큰 사용량을 직관적으로 표시합니다.
+    색상 경고 + 예산 설정으로 토큰 사용량을 직관적으로 표시합니다.
 
     Features:
-        - 현재 사용량 / 예산 표시 (예: 15,234 / 50,000 tokens)
+        - 현재 사용량 / 예산 표시 (예: 15,234 / 150,000 tokens)
         - 캐시 토큰 정보 (괄호로 표시: +3,456 cache read)
-        - 퍼센트 바 (색상 변화: 녹색 < 50% < 노랑 < 70% < 빨강)
+        - 색상 변화: 녹색 < 70% < 노랑 < 90% < 빨강
         - 실시간 업데이트 (1초마다)
 
     Example:
-        >>> widget = TokenUsageWidget(token_budget=50000)
+        >>> widget = TokenUsageWidget(token_budget=150000)
         >>> session_summary = metrics_collector.get_session_summary(session_id)
         >>> widget.update_token_info(manager_usage, session_summary)
     """
 
     def __init__(
         self,
-        token_budget: int = 50000,
-        warn_threshold: float = 0.5,
-        alert_threshold: float = 0.7,
+        token_budget: int = 150000,
+        warn_threshold: float = 0.7,
+        alert_threshold: float = 0.9,
         **kwargs
     ) -> None:
         """
         TokenUsageWidget 초기화
 
         Args:
-            token_budget: 토큰 예산 (기본값: 50,000)
-            warn_threshold: 경고 시작 임계값 (기본값: 0.5 = 50%)
-            alert_threshold: 긴급 경고 임계값 (기본값: 0.7 = 70%)
+            token_budget: 토큰 예산 (기본값: 150,000)
+            warn_threshold: 경고 시작 임계값 (기본값: 0.7 = 70%)
+            alert_threshold: 긴급 경고 임계값 (기본값: 0.9 = 90%)
             **kwargs: Static 위젯 추가 인자
         """
         super().__init__(**kwargs)
@@ -127,11 +127,10 @@ class TokenUsageWidget(Static):
 
     def _render_token_display(self) -> None:
         """
-        토큰 정보를 Rich 마크업으로 렌더링
+        토큰 정보를 Rich 마크업으로 렌더링 (한 줄 표시)
 
         형식:
-            🟢 15,234 / 50,000 tokens (30.5%) • M: 10,234 W: 5,000 (+3,456 cache)
-            [████████████░░░░░░░░░░░░░░░░░░░░░░░] 30.5%
+            🟢 15.2K / 150.0K tokens (10.1%) • M: 10,234 W: 5,000 (+3,456 cache)
         """
         # 사용률 계산
         usage_ratio = self._total_tokens / self.token_budget if self.token_budget > 0 else 0
@@ -170,17 +169,8 @@ class TokenUsageWidget(Static):
 
         summary_line += "[/dim]"
 
-        # 두 번째 줄: 프로그레스 바 (ASCII)
-        bar_width = 40
-        filled_width = int(bar_width * min(usage_ratio, 1.0))
-        empty_width = bar_width - filled_width
-
-        progress_bar = f"[{color}]{'█' * filled_width}[/{color}]{'░' * empty_width}"
-        progress_line = f"{progress_bar} [{color}]{usage_percent:.1f}%[/{color}]"
-
-        # 최종 출력
-        output = f"{summary_line}\n{progress_line}"
-        self.update(output)
+        # 최종 출력 (프로그레스바 제거, 한 줄로 표시)
+        self.update(summary_line)
 
     def set_budget(self, budget: int) -> None:
         """
