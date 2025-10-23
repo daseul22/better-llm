@@ -1241,18 +1241,38 @@ async def execute_parallel_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
             if not coder_agent:
                 raise RuntimeError("Coder Agent를 찾을 수 없습니다")
 
+            # Worker ID 동적 생성 (병렬 실행용 - 각 Task별로 고유한 Worker ID 생성)
+            worker_id = f"coder_{task.id}"
+
             # Coder에게 전달할 작업 설명
             # Task description에 target_files 정보 추가
             task_description = task.description
             if task.target_files:
                 task_description += f"\n\n**Target Files**: {', '.join(task.target_files)}"
 
+            # Task 시작 메시지 전송 (TUI에서 볼 수 있도록)
+            if _state.worker_output_callback:
+                _state.worker_output_callback(
+                    worker_id,
+                    f"🚀 [Parallel Task {task.id}] 시작\n"
+                    f"📝 설명: {task.description[:100]}...\n"
+                    f"📁 파일: {', '.join(task.target_files)}\n\n"
+                )
+
             result = ""
             async for chunk in coder_agent.execute_task(task_description):
                 result += chunk
-                # Worker 출력 콜백 호출 (TUI 스트리밍)
+                # Worker 출력 콜백 호출 (TUI 스트리밍) - Task별 Worker ID 사용
                 if _state.worker_output_callback:
-                    _state.worker_output_callback("coder", chunk)
+                    _state.worker_output_callback(worker_id, chunk)
+
+            # Task 완료 메시지 전송
+            if _state.worker_output_callback:
+                duration = task.duration_seconds() if task.end_time else 0
+                _state.worker_output_callback(
+                    worker_id,
+                    f"\n\n✅ [Parallel Task {task.id}] 완료 (소요 시간: {duration:.1f}초)\n"
+                )
 
             return result
 
