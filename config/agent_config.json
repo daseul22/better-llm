@@ -6,7 +6,8 @@
       "system_prompt_file": "prompts/planner.txt",
       "tools": [
         "read",
-        "glob"
+        "glob",
+        "grep"
       ],
       "model": "claude-sonnet-4-5-20250929"
     },
@@ -41,7 +42,8 @@
       "tools": [
         "read",
         "bash",
-        "glob"
+        "glob",
+        "grep"
       ],
       "model": "claude-sonnet-4-5-20250929"
     },
@@ -51,7 +53,9 @@
       "system_prompt_file": "prompts/committer.txt",
       "tools": [
         "bash",
-        "read"
+        "read",
+        "glob",
+        "grep"
       ],
       "model": "claude-sonnet-4-5-20250929"
     },
