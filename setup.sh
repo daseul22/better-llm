@@ -40,23 +40,36 @@ print_header() {
 check_python() {
     print_info "Python 버전 확인 중..."
 
-    if ! command -v python3 &> /dev/null; then
-        print_error "Python3가 설치되지 않았습니다."
+    # Python 3.10 이상 버전 찾기 (우선순위: python3.12 > python3.11 > python3.10)
+    PYTHON_CMD=""
+    for py_cmd in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+        if command -v "$py_cmd" &> /dev/null; then
+            # 버전 체크
+            if $py_cmd -c "import sys; exit(0 if sys.version_info >= (3, 10) else 1)" 2>/dev/null; then
+                PYTHON_CMD="$py_cmd"
+                break
+            fi
+        fi
+    done
+
+    if [ -z "$PYTHON_CMD" ]; then
+        print_error "Python 3.10 이상을 찾을 수 없습니다."
+        echo ""
+        echo "  현재 설치된 Python 버전:"
+        for py_cmd in python3.9 python3.10 python3.11 python3.12 python3; do
+            if command -v "$py_cmd" &> /dev/null; then
+                version=$($py_cmd --version 2>&1)
+                echo "    - $py_cmd: $version"
+            fi
+        done
+        echo ""
         echo "  Python 3.10 이상을 설치해주세요:"
         echo "  https://www.python.org/downloads/"
         exit 1
     fi
 
-    PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-
-    # Python으로 버전 비교 (크로스 플랫폼 호환)
-    if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 10) else 1)"; then
-        print_error "Python 버전이 너무 낮습니다: $PYTHON_VERSION"
-        echo "  Python 3.10 이상이 필요합니다."
-        exit 1
-    fi
-
-    print_success "Python $PYTHON_VERSION 확인됨"
+    PYTHON_VERSION=$($PYTHON_CMD -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')
+    print_success "Python $PYTHON_VERSION ($PYTHON_CMD) 확인됨"
 }
 
 # 2. pipx 설치
@@ -76,10 +89,10 @@ install_pipx() {
         pipx ensurepath
         print_success "pipx 설치 완료 (Homebrew)"
 
-    # Linux/macOS - pip 사용
+    # Linux/macOS - pip 사용 (올바른 Python 버전 사용)
     else
-        python3 -m pip install --user pipx
-        python3 -m pipx ensurepath
+        $PYTHON_CMD -m pip install --user pipx
+        $PYTHON_CMD -m pipx ensurepath
         print_success "pipx 설치 완료 (pip)"
     fi
 
@@ -122,7 +135,7 @@ choose_install_mode() {
 # 4. better-llm 설치
 install_better_llm() {
     echo ""
-    print_info "better-llm 설치 중..."
+    print_info "better-llm 설치 중 (Python $PYTHON_VERSION 사용)..."
 
     # 기존 설치 확인
     if pipx list 2>/dev/null | grep -q "better-llm"; then
@@ -130,12 +143,12 @@ install_better_llm() {
         pipx uninstall better-llm || true
     fi
 
-    # 설치 모드에 따라 설치
+    # 설치 모드에 따라 설치 (올바른 Python 버전 명시)
     if [ "$INSTALL_MODE" = "editable" ]; then
-        pipx install -e .
+        pipx install --python "$PYTHON_CMD" -e .
         print_success "better-llm 설치 완료 (개발 모드)"
     else
-        pipx install .
+        pipx install --python "$PYTHON_CMD" .
         print_success "better-llm 설치 완료 (일반 모드)"
     fi
 }
