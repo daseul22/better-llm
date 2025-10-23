@@ -416,6 +416,74 @@ execute_tester_task({
             )
             self.max_review_cycles = 3
 
+        # system_config.json에서 컨텍스트 관리 옵션 로드
+        try:
+            context_config = config.get("context_management", {})
+
+            self.max_turns = context_config.get("max_turns", None)
+            self.continue_conversation = context_config.get("continue_conversation", False)
+            self.setting_sources = context_config.get(
+                "setting_sources", ["user", "project"]
+            )
+
+            self.logger.info(
+                "Context management options loaded",
+                max_turns=self.max_turns,
+                continue_conversation=self.continue_conversation,
+                setting_sources=self.setting_sources
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to load context management options",
+                error=str(e),
+                using_defaults=True
+            )
+            self.max_turns = None
+            self.continue_conversation = False
+            self.setting_sources = ["user", "project"]
+
+        # system_config.json에서 permission_mode 로드
+        try:
+            permission_config = config.get("permission", {})
+            self.permission_mode = permission_config.get("mode", "acceptEdits")
+
+            self.logger.info(
+                "Permission mode loaded",
+                permission_mode=self.permission_mode
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to load permission mode",
+                error=str(e),
+                using_default="acceptEdits"
+            )
+            self.permission_mode = "acceptEdits"
+
+        # system_config.json에서 hooks 설정 로드
+        try:
+            hooks_config = config.get("hooks", {})
+            enable_validation = hooks_config.get("enable_validation", True)
+            enable_monitoring = hooks_config.get("enable_monitoring", True)
+
+            # Hooks 생성
+            if enable_validation or enable_monitoring:
+                from .agent_hooks import create_worker_hooks
+                self.hooks = create_worker_hooks(enable_validation, enable_monitoring)
+                self.logger.info(
+                    "Hooks enabled",
+                    validation=enable_validation,
+                    monitoring=enable_monitoring
+                )
+            else:
+                self.hooks = {}
+        except Exception as e:
+            self.logger.warning(
+                "Failed to load hooks configuration",
+                error=str(e),
+                hooks_disabled=True
+            )
+            self.hooks = {}
+
         self.logger.info(
             "ManagerAgent initialized",
             model=self.model,
@@ -711,11 +779,14 @@ execute_tester_task({
         if self.auto_commit_enabled:
             allowed_tools.append("mcp__workers__execute_committer_task")
 
-        # SDK 실행 설정
+        # SDK 실행 설정 (컨텍스트 관리 옵션 포함)
         config = SDKExecutionConfig(
             model=self.model,
             cli_path=get_claude_cli_path(),
-            permission_mode="bypassPermissions"
+            permission_mode=self.permission_mode,  # system_config.json 또는 환경변수에서 로드
+            max_turns=self.max_turns,
+            continue_conversation=self.continue_conversation,
+            setting_sources=self.setting_sources
         )
 
         # 응답 핸들러 생성 (토큰 사용량 업데이트 콜백 포함)
@@ -729,7 +800,8 @@ execute_tester_task({
             mcp_servers={"workers": self.worker_tools_server},
             allowed_tools=allowed_tools,
             response_handler=response_handler,
-            session_id=self.session_id
+            session_id=self.session_id,
+            hooks=self.hooks  # Hooks 전달
         )
 
         # 스트림 실행

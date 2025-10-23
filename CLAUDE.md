@@ -523,6 +523,48 @@ ls -la prompts/
 
 ## 최근 개선 사항
 
+### refactor. Claude Agent SDK 권장사항 적용 - Permission Mode 개선 및 Hooks 시스템 추가
+- 날짜: 2025-10-23
+- 컨텍스트: `claude-agent-sdk-features.md` 문서 분석 후 SDK 권장사항 적용
+  - 기존: permission_mode="bypassPermissions" 하드코딩 (프로덕션 부적합)
+  - 기존: Hooks 시스템 미사용 (입력 검증 및 모니터링 기능 부재)
+- 변경사항:
+  1. **Permission Mode 개선**:
+     - `system_config.json`에 `permission.mode` 설정 추가 (기본값: "acceptEdits")
+     - `sdk_executor.py`: 환경변수 `PERMISSION_MODE` 지원 추가
+     - `manager_client.py`: system_config.json에서 permission_mode 로드
+     - 우선순위: 환경변수 > system_config.json > 기본값 ("acceptEdits")
+     - 권장 모드:
+       - `acceptEdits`: 파일 편집 자동 승인 (프로덕션 권장)
+       - `default`: 사용자 승인 요청 (대화형 작업)
+       - `bypassPermissions`: 모든 작업 자동 승인 (테스트 환경만!)
+  2. **Hooks 시스템 추가** (`src/infrastructure/claude/agent_hooks.py`):
+     - **PreToolUse Hook**: Worker Tool 호출 전 입력 검증
+       - 과도하게 긴 task_description 차단 (20,000자 초과)
+       - 금지된 패턴 검사 (rm -rf /, sudo rm 등)
+     - **PostToolUse Hook**: Worker Tool 실행 후 모니터링
+       - 실행 시간 로깅 (초 단위)
+       - 성공/실패 통계 수집
+     - `system_config.json`에 `hooks` 섹션 추가 (enable_validation, enable_monitoring)
+     - `manager_client.py`에서 hooks 설정 로드 및 SDK에 전달
+- 영향범위:
+  - **보안**: 프로덕션 환경에서 안전한 permission_mode 사용
+  - **유연성**: 환경변수로 권한 모드 동적 변경 가능
+  - **모니터링**: Worker Tool 실행 시간 및 성공/실패 추적
+  - **입력 검증**: 과도하게 긴 입력 또는 위험한 패턴 자동 차단
+- 사용 방법:
+  ```bash
+  # Permission Mode 변경
+  export PERMISSION_MODE=bypassPermissions  # 테스트용
+  # 또는 system_config.json 수정
+
+  # Hooks 비활성화 (필요 시)
+  # system_config.json: "hooks": {"enable_validation": false, "enable_monitoring": false}
+  ```
+- 테스트: 구문 검사 통과 (4개 파일)
+- 후속 조치: 실제 사용 시 Hooks 효과 검증 (입력 차단, 실행 시간 로깅)
+- 참고: Claude Agent SDK 공식 문서 (`claude-agent-sdk-features.md:463-592, 1457-1463`)
+
 ### fix. 3차 버그 수정 4개 - Presentation Layer 안정성 개선
 - 날짜: 2025-10-23 (3차 버그 수정)
 - 컨텍스트: Presentation Layer, CLI, TUI, 비동기 코드 심층 분석으로 8개 버그 발견 → High/Medium 4개 수정
