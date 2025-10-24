@@ -147,8 +147,10 @@ class WorkerOutputSummarizer:
         # LLM 요약 프롬프트
         prompt = f"""다음은 {worker_name} Worker의 출력입니다. 이를 2가지 형식으로 요약해주세요:
 
+Manager의 컨텍스트 윈도우를 절약하기 위해 극도로 간결하게 작성하세요.
+
 1. **1줄 요약** (최대 200자): 핵심 작업 상태 및 결과
-2. **5-10줄 요약** (최대 500자): 중요 내용, 변경 파일, 주요 결정 사항
+2. **5-10줄 요약** (최대 300자, 핵심만, 극도로 간결하게): 중요 내용, 변경 파일, 주요 결정 사항
 
 출력 형식:
 ```
@@ -210,9 +212,20 @@ Worker 출력:
                 )
                 return None
 
+            # 요약 최대 길이 제한 (Manager 컨텍스트 윈도우 절약)
+            one_line_truncated = one_line[:200]  # 최대 200자
+            summary_truncated = summary[:300]  # 최대 300자 (극도로 간결하게)
+
+            # 전체 요약 크기가 2,000자를 초과하지 않도록 추가 제한
+            total_summary = f"{one_line_truncated}\n{summary_truncated}"
+            if len(total_summary) > 2000:
+                # 2,000자를 초과하면 summary를 더 줄이기
+                remaining_chars = 2000 - len(one_line_truncated) - 100  # 여유 공간
+                summary_truncated = summary_truncated[:remaining_chars] + "... (artifact 참조)"
+
             return {
-                "one_line": one_line[:200],  # 최대 200자
-                "summary": summary[:500]  # 최대 500자
+                "one_line": one_line_truncated,
+                "summary": summary_truncated
             }
 
         except Exception as e:
@@ -296,7 +309,13 @@ Worker 출력:
             if line.strip() and not line.strip().startswith('=') and not line.strip().startswith('-')
         ]
         truncated_lines = meaningful_lines[:self.max_summary_lines]
-        return '\n'.join(truncated_lines)
+        summary = '\n'.join(truncated_lines)
+
+        # 2,000자 하드 제한 추가 (Manager 컨텍스트 윈도우 절약 및 응답 잘림 방지)
+        if len(summary) > 2000:
+            summary = summary[:2000] + "\n\n... (요약 생략, 전체 내용은 artifact 파일 참조)"
+
+        return summary
 
     def _extract_section(self, text: str, section_header_pattern: str) -> str:
         """

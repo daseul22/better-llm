@@ -672,14 +672,17 @@ async def _save_and_summarize_output(
 
         summary = await _request_summary_from_worker(worker_name, full_output, artifact_id)
 
-        # 재요청 결과도 실패하면 강제로 5000자로 제한 (폴백)
+        # 재요청 결과도 실패하면 강제로 2000자로 제한 (폴백)
         if summary is None:
-            MAX_SUMMARY_SIZE = 5000  # Manager 출력 토큰 초과 방지 (요약 실패 시 폴백)
+            # Manager의 max_output_tokens (8,000)의 25%로 제한
+            # 이유: Manager 컨텍스트 윈도우 절약 및 응답 잘림 방지
+            MAX_SUMMARY_SIZE = 2000  # 핵심: 컨텍스트 절약
             logger.error(
-                f"[{worker_name}] Summary re-request failed, using truncated output",
+                f"[{worker_name}] Summary re-request failed, using truncated output (2,000자 제한)",
                 artifact_id=artifact_id,
                 full_size=len(full_output),
-                truncated_size=MAX_SUMMARY_SIZE
+                truncated_size=MAX_SUMMARY_SIZE,
+                reason="Manager 컨텍스트 윈도우 절약 및 응답 잘림 방지"
             )
 
             # 전체 출력 대신 처음 2000자만 사용 + 경고 메시지

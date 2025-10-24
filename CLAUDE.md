@@ -8,179 +8,72 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **그룹 챗 오케스트레이션 시스템 v4.0 (Clean Architecture)** - Manager Agent가 전문화된 Worker Agent들을 조율하여 복잡한 소프트웨어 개발 작업을 자동화하는 시스템입니다.
 
-### 아키텍처: Clean Architecture (4계층)
+### 핵심 개념
 
+#### 1. Worker Tools Pattern
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Presentation Layer                        │
-│  ┌──────────────┐              ┌──────────────┐             │
-│  │     CLI      │              │     TUI      │             │
-│  │ (orchestrator)│              │  (textual)   │             │
-│  └──────────────┘              └──────────────┘             │
-└────────────────────┬──────────────────────┬──────────────────┘
-                     │                      │
-┌─────────────────────────────────────────────────────────────┐
-│                   Application Layer                          │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │              Ports (Interfaces)                       │  │
-│  │  IAgentClient | IConfigLoader | ISessionRepository   │  │
-│  └───────────────────────────────────────────────────────┘  │
-└────────────────────┬────────────────────┬─────────────────  ┘
-                     │                    │
-┌─────────────────────────────────────────────────────────────┐
-│                  Infrastructure Layer                        │
-│  ┌──────────┐  ┌───────┐  ┌─────────┐  ┌──────────┐        │
-│  │  Claude  │  │  MCP  │  │ Storage │  │  Config  │        │
-│  │   SDK    │  │Server │  │  (JSON) │  │  (JSON)  │        │
-│  └──────────┘  └───────┘  └─────────┘  └──────────┘        │
-└─────────────────────────────────────────────────────────────┘
-                             ↑
-┌─────────────────────────────────────────────────────────────┐
-│                     Domain Layer                             │
-│  ┌──────────────┐  ┌────────────┐  ┌──────────────┐        │
-│  │   Models     │  │  Services  │  │    Agents    │        │
-│  │ (Message,    │  │(Conversation│  │  (BaseAgent) │        │
-│  │  Task, etc)  │  │  History)   │  │              │        │
-│  └──────────────┘  └────────────┘  └──────────────┘        │
-└─────────────────────────────────────────────────────────────┘
+사용자 요청
+  ↓
+Manager Agent (ClaudeSDKClient)
+  ↓
+Worker Tools (MCP Server) ← Manager가 Tool로 호출
+  ↓
+Worker Agent (각 전문 분야) ← Tool 내부에서 실행
+  ↓
+결과를 Manager에게 반환
 ```
 
-**핵심 개념 (Worker Tools Pattern + Clean Architecture):**
-- **Domain Layer**: 핵심 비즈니스 로직 (순수 Python, 외부 의존성 없음)
-  - Models: Message, AgentConfig, Task, SessionResult
-  - Services: ConversationHistory, ProjectContext
-  - Agents: BaseAgent (인터페이스)
-- **Application Layer**: Use Cases 및 Ports (의존성 역전)
-  - Ports: IAgentClient, IConfigLoader, ISessionRepository (인터페이스)
-  - Use Cases: (향후 확장 가능)
-- **Infrastructure Layer**: 외부 의존성 구현
-  - Claude SDK: Manager/Worker Agent 클라이언트
-  - MCP: Worker Tools Server
-  - Storage: JSON 기반 세션/컨텍스트 저장소
-  - Config: JSON 설정 로더
-- **Presentation Layer**: 사용자 인터페이스
-  - CLI: orchestrator.py
-  - TUI: tui.py (Textual 기반)
+**중요**: Worker Agent는 직접 호출 불가. 반드시 Manager Agent → Worker Tools → Worker Agent 흐름.
 
-**의존성 방향 (Dependency Rule):**
+#### 2. Artifact Storage (컨텍스트 최적화)
+- Worker 전체 출력: `~/.better-llm/{project}/artifacts/{worker}_{timestamp}.txt`
+- Manager에게는 **요약만** 전달 → 컨텍스트 90% 절감
+- 상세 정보 필요 시: Worker가 read 도구로 artifact 파일 읽기
+
+#### 3. Clean Architecture (4계층)
 ```
-Presentation → Application → Domain ← Infrastructure
-                              ↑
-                         (의존하지 않음)
+Presentation (CLI, TUI)
+    ↓
+Application (Use Cases, Ports)
+    ↓
+Domain (Models, Services) ← 의존성 역전
+    ↑
+Infrastructure (Claude SDK, MCP, Storage, Config)
 ```
 
-**Worker Tools Pattern:**
-- Manager Agent가 Worker Tools (MCP Server)를 호출
-- Worker Tools는 Worker Agent를 `@tool` 데코레이터로 래핑
-- Worker Agents가 실제 작업 수행 (read, write, edit, bash 등)
+**의존성 규칙**: 외부 계층 → 내부 계층만 의존. 내부 계층은 외부 계층을 모름.
 
 ---
 
-## 개발 환경 설정
+## 빠른 시작
 
-### 필수 요구사항
-- Python 3.10+
-- Claude Code OAuth 토큰
-- Claude CLI (`~/.claude/local/claude`) - 자동 탐지됨
-
-### 설치 방법
-
-**방법 1: setup.sh 사용 (권장)**
+### 설치
 
 ```bash
+# 자동 설치 (권장)
 ./setup.sh
-```
 
-설치 모드 선택 시 **개발 모드 (2번)**를 선택하면 소스 코드 변경사항이 바로 반영됩니다.
-
-**방법 2: pipx 수동 설치**
-
-```bash
-# pipx 설치 (없는 경우)
-brew install pipx  # macOS
-# 또는
-python3 -m pip install --user pipx
-
-# 개발 모드로 설치
-pipx install -e .
-```
-
-**방법 3: 가상환경 (로컬 개발)**
-
-```bash
-# 가상환경 생성 및 활성화
-python3 -m venv .venv
-source .venv/bin/activate
-
-# editable 모드로 설치
-pip install -e .
+# 수동 설치
+pipx install -e .  # 개발 모드 (소스 변경 시 바로 반영)
+pipx install .     # 일반 모드
 ```
 
 ### 환경변수 설정
 
 ```bash
-# OAuth 토큰 설정
+# 필수
 export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
 
-# 영구 설정 (권장)
-echo "export CLAUDE_CODE_OAUTH_TOKEN='your-token'" >> ~/.zshrc
-```
-
-### 개발 시 유용한 명령어
-
-```bash
-# 구문 검사 (코드 변경 후)
-python3 -m py_compile src/**/*.py
-
-# 린트 (선택사항)
-ruff check src/
-
-# 포맷팅 (선택사항)
-black src/
-```
-
-### 데이터 저장 위치
-
-세션, 로그 등 실행 데이터는 `~/.better-llm/{project-name}/` 디렉토리에 저장됩니다.
-
-```bash
-~/.better-llm/
-└── {project-name}/       # Git 저장소 이름 또는 현재 디렉토리 이름
-    ├── sessions/         # 세션 히스토리 (JSON)
-    ├── logs/             # 로그 파일 (better-llm.log, better-llm-error.log)
-    └── data/             # 데이터베이스 (sessions.db)
-```
-
-**환경변수 오버라이드**:
-```bash
-export LOG_DIR="/custom/log/path"      # 로그 디렉토리 변경
-export LOG_LEVEL="DEBUG"               # 로그 레벨 변경
-export LOG_FORMAT="json"               # 로그 포맷 (json/console)
-```
-
-**장점**:
-- 프로젝트별 독립적인 세션/로그 관리
-- 프로젝트 디렉토리를 깨끗하게 유지
-- 여러 프로젝트를 동시에 사용해도 충돌 없음
-
----
-
-## 주요 명령어
-
-### 설치
-
-```bash
-# setup.sh로 자동 설치 (권장)
-./setup.sh
-
-# 또는 수동 설치
-pipx install .           # 일반 모드
-pipx install -e .        # 개발 모드
+# 선택 (기본값 있음)
+export PERMISSION_MODE=acceptEdits           # bypassPermissions (테스트), default (수동 승인)
+export ENABLE_LLM_SUMMARIZATION=true         # LLM 기반 요약 (false: 패턴 매칭)
+export ENABLE_INTERACTIVE=false              # Human-in-the-Loop 활성화
+export LOG_LEVEL=INFO                        # DEBUG, INFO, WARNING, ERROR
+export LOG_FORMAT=console                    # json, console
+export LOG_DIR=/custom/path                  # 기본값: ~/.better-llm/{project}/logs
 ```
 
 ### 실행
-
-**pipx로 설치한 경우:**
 
 ```bash
 # TUI (권장)
@@ -189,23 +82,29 @@ better-llm
 # CLI
 better-llm-cli "작업 설명"
 
-# 도움말
-better-llm --help
-better-llm-cli --help
+# 개발 중인 경우 (가상환경)
+python -m src.presentation.tui.tui_app
+python -m src.presentation.cli.orchestrator "작업"
 ```
 
-**가상환경에서 개발 중인 경우:**
+---
+
+## 주요 명령어
+
+### 개발 명령어
 
 ```bash
-# TUI
-python -m src.presentation.tui.tui_app
+# 구문 검사 (코드 변경 후 필수)
+python3 -m py_compile src/**/*.py
 
-# CLI
-python -m src.presentation.cli.orchestrator "작업 설명"
+# 특정 파일만 검사
+python3 -m py_compile src/infrastructure/claude/manager_client.py
 
-# 또는 직접 실행 (deprecated)
-python tui.py
-python orchestrator.py "작업 설명"
+# 린트 (선택)
+ruff check src/
+
+# 포맷 (선택)
+black src/
 ```
 
 ### 테스트
@@ -214,21 +113,17 @@ python orchestrator.py "작업 설명"
 # 통합 테스트
 python test_integration.py
 
-# 개선사항 테스트
-python test_improvements.py
-
 # Worker Tools 단독 테스트
 python test_worker_tools.py
 
-# 특정 모듈 테스트 (예시)
+# 특정 모듈 테스트
 pytest tests/unit/test_math_utils.py -v
 pytest tests/unit/test_math_utils.py::TestMultiply -v
 ```
 
-### Git 작업
+### Git (Conventional Commits)
 
 ```bash
-# 변경사항 커밋 (Conventional Commits)
 git add <files>
 git commit -m "feat: 새 기능 추가
 
@@ -241,165 +136,205 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 ---
 
-## 코드 아키텍처
-
-### 디렉토리 구조 (Clean Architecture)
+## 디렉토리 구조 (Clean Architecture)
 
 ```
 src/
-├── domain/                    # Domain Layer (순수 Python)
-│   ├── models/               # 도메인 모델
-│   │   ├── message.py        # Message, Role
-│   │   ├── agent.py          # AgentConfig, AgentRole
-│   │   ├── session.py        # SessionResult, SessionStatus
-│   │   └── task.py           # Task, TaskResult, TaskStatus
-│   ├── agents/               # Agent 인터페이스
-│   │   └── base.py           # BaseAgent (ABC)
-│   └── services/             # 도메인 서비스
-│       ├── conversation.py   # ConversationHistory
-│       └── context.py        # ProjectContext, CodingStyle
+├── domain/                    # 순수 Python, 외부 의존성 없음
+│   ├── models/               # Message, AgentConfig, Task, SessionResult
+│   ├── services/             # ConversationHistory, ProjectContext
+│   └── agents/               # BaseAgent (인터페이스)
 │
-├── application/               # Application Layer
-│   ├── use_cases/            # Use Cases (향후 확장)
-│   └── ports/                # Ports (인터페이스)
-│       ├── agent_port.py     # IAgentClient
-│       ├── config_port.py    # IConfigLoader, ISystemConfig
-│       └── storage_port.py   # ISessionRepository, IContextRepository
+├── application/               # Use Cases 및 의존성 역전
+│   └── ports/                # IAgentClient, IConfigLoader, ISessionRepository
 │
-├── infrastructure/            # Infrastructure Layer
-│   ├── config/               # 설정 구현
-│   │   ├── loader.py         # JsonConfigLoader, SystemConfig
-│   │   └── validator.py      # validate_environment, get_claude_cli_path
-│   ├── storage/              # 저장소 구현
-│   │   ├── session_repository.py   # JsonSessionRepository
-│   │   └── context_repository.py   # JsonContextRepository
-│   ├── claude/               # Claude SDK (기존 코드 재사용)
-│   └── mcp/                  # MCP Server (기존 코드 재사용)
+├── infrastructure/            # 외부 의존성 구현
+│   ├── claude/               # Manager/Worker Agent 클라이언트
+│   ├── mcp/                  # Worker Tools MCP Server
+│   ├── storage/              # JSON/SQLite 저장소, Artifact Storage
+│   └── config/               # JSON 설정 로더, 환경 검증
 │
-└── presentation/              # Presentation Layer
-    ├── cli/                  # CLI
-    │   └── orchestrator_cli.py
-    └── tui/                  # TUI (Textual)
-        └── tui_app.py
+└── presentation/              # 사용자 인터페이스
+    ├── cli/                  # orchestrator.py
+    └── tui/                  # tui.py (Textual)
 
-# 기존 코드 (호환성 유지)
-src/
-├── manager_agent.py          # Manager Agent (기존)
-├── worker_agent.py           # Worker Agent (기존)
-├── worker_tools.py           # Worker Tools (기존)
-├── conversation.py           # → domain.services.conversation (호환성)
-├── project_context.py        # → domain.services.context (호환성)
-├── models.py                 # → domain.models (호환성)
-└── utils.py                  # → infrastructure.config (일부 이동)
+config/                        # 설정 파일
+├── agent_config.json         # Worker Agent 설정 (name, role, tools, model)
+└── system_config.json        # 시스템 설정 (max_turns, hooks, permission 등)
+
+prompts/                       # Worker Agent 시스템 프롬프트
+├── planner.txt               # 계획 수립 전문가
+├── coder.txt                 # 코드 작성 전문가 (Reflective Agent)
+├── reviewer.txt              # 코드 리뷰 전문가 (🔴 Critical, 🟡 Warning, 🔵 Info)
+├── tester.txt                # 테스트 및 검증 전문가
+├── committer.txt             # Git 커밋 전문가
+├── ideator.txt               # 아이디어 생성 전문가
+└── product_manager.txt       # 제품 기획 전문가
+
+~/.better-llm/{project}/       # 실행 데이터 (프로젝트별 독립)
+├── sessions/                 # 세션 히스토리 (JSON)
+├── logs/                     # 로그 파일
+├── data/                     # SQLite DB
+└── artifacts/                # Worker 출력 전체 로그
 ```
-
-### 주요 모듈 (계층별)
-
-**Domain Layer (src/domain/)**
-- `models/`: Message, AgentConfig, Task, SessionResult 등 핵심 도메인 모델
-- `services/`: ConversationHistory, ProjectContext (비즈니스 로직)
-- `agents/`: BaseAgent 인터페이스 (모든 Agent가 구현)
-
-**Application Layer (src/application/)**
-- `ports/`: 외부 의존성 인터페이스 (의존성 역전)
-  - IAgentClient, IConfigLoader, ISessionRepository
-
-**Infrastructure Layer (src/infrastructure/)**
-- `config/`: JsonConfigLoader, SystemConfig (JSON 파일 기반)
-- `storage/`: JsonSessionRepository, JsonContextRepository
-- `claude/`: Manager/Worker Agent 클라이언트 (기존 코드)
-- `mcp/`: Worker Tools MCP Server (기존 코드)
-
-**Presentation Layer (src/presentation/)**
-- `cli/`: orchestrator.py (명령줄 인터페이스)
-- `tui/`: tui.py (Textual 기반 터미널 UI)
-
-**기존 코드 호환성**
-- src/models.py → domain.models로 re-export
-- src/conversation.py → domain.services로 re-export
-- 기존 import 경로 그대로 동작
-
-### 설정 파일
-
-**config/agent_config.json** - Worker Agent 설정
-- 각 Worker의 name, role, system_prompt_file, tools, model 정의
-- Planner: read, glob
-- Coder: read, write, edit, glob, grep, bash
-- Reviewer: read, glob, grep
-- Tester: read, bash, write
-- Committer: bash, read
-- Ideator: read, glob
-- Product Manager: read, glob, grep
-
-**config/system_config.json** - 시스템 설정
-- manager: max_history_messages, max_turns
-- performance: enable_caching, worker_retry 관련
-- security: max_input_length, enable_input_validation
-- logging: level, format, enable_structured_logging
-
-**.context.json** - 프로젝트 컨텍스트
-- 프로젝트 메타데이터, 코딩 스타일, 테스팅 방침
-- Worker Agent 초기화 시 자동 로드
-
-**prompts/*.txt** - Worker Agent 시스템 프롬프트
-- planner.txt: 계획 수립 전문가
-- coder.txt: 코드 작성 전문가
-- reviewer.txt: 코드 리뷰 전문가 (심각도 분류: 🔴 Critical, 🟡 Warning, 🔵 Info)
-- tester.txt: 테스트 및 검증 전문가
-- committer.txt: Git 커밋 전문가
-- ideator.txt: 아이디어 생성 및 브레인스토밍 전문가
-- product_manager.txt: 제품 기획 및 요구사항 정의 전문가
 
 ---
 
 ## 워크플로우
 
-### 일반적인 작업 흐름
+### 일반 작업 흐름
 
 ```
 사용자 요청
   ↓
-[Manager Agent] 작업 분석 및 Worker Tool 호출
+[Manager Agent] 작업 분석 및 Worker Tool 호출 결정
   ↓
-[Planner Tool] 요구사항 분석 및 계획 수립
+[Planner Tool] 요구사항 분석 → 계획 수립
   ↓
-[Coder Tool] 코드 작성/수정
+[Coder Tool] 계획에 따라 코드 작성 (자가 평가 포함)
   ↓
-[Reviewer Tool] 코드 품질 검증
-  ↓ (Critical 이슈 있으면)
-[Coder Tool] 수정 후 재검토
+[Reviewer Tool] 코드 품질 검증 (Critical 이슈 있으면 Coder 재호출)
   ↓
 [Tester Tool] 테스트 실행 및 검증
+  ↓
+[Committer Tool] Git 커밋 (선택)
   ↓
 작업 완료
 ```
 
-### Manager Agent 동작
+### Manager Agent 동작 원리
 
 1. 사용자 입력 검증 (`validate_user_input`)
-2. 프롬프트 히스토리 빌드 (슬라이딩 윈도우)
+2. 슬라이딩 윈도우로 프롬프트 히스토리 빌드 (최대 20 메시지)
 3. ClaudeSDKClient로 스트리밍 실행
-4. Manager가 Worker Tool 호출 결정
-5. Worker Tool 실행 (재시도 로직 포함)
-6. 결과를 Manager에게 반환
-7. Manager가 최종 응답 생성
+4. Manager가 Worker Tool 호출 결정 (대화 히스토리 기반)
+5. Worker Tool 실행 (재시도 로직: 지수 백오프, 최대 3회)
+6. **Artifact Storage**: 전체 출력 파일 저장 + 요약만 Manager에게 반환
+7. Manager가 다음 단계 결정 또는 최종 응답 생성
 
-### Worker Tool 실행
+### Worker Tools 패턴
 
 ```python
-# Worker Tools에서
-@tool("execute_planner_task", "설명", {"task_description": str})
+# Worker Tools (MCP Server)
+@tool("execute_planner_task", "계획 수립", {"task_description": str})
 async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    # 1. _WORKER_AGENTS에서 Worker 가져오기
+    # 1. Worker Agent 가져오기
     worker = _WORKER_AGENTS.get("planner")
 
-    # 2. execute_task() 스트리밍 실행
+    # 2. Worker 실행 (스트리밍)
     result = ""
     async for chunk in worker.execute_task(task):
         result += chunk
 
-    # 3. Tool 응답 형식으로 반환
-    return {"content": [{"type": "text", "text": result}]}
+    # 3. Artifact 저장 + 요약 추출
+    summary = _save_and_summarize_output("planner", result)
+
+    # 4. Manager에게 요약만 반환
+    return {"content": [{"type": "text", "text": summary}]}
+```
+
+---
+
+## 설정 파일
+
+### agent_config.json - Worker Agent 설정
+
+각 Worker의 역할, 도구, 모델 정의:
+
+- **Planner**: read, glob (읽기 전용)
+- **Coder**: read, write, edit, glob, grep (bash 제외 - 빌드는 보고만)
+- **Reviewer**: read, glob, grep (읽기 전용)
+- **Tester**: read, bash, glob (write 제외 - 테스트 작성은 Coder에게 위임)
+- **Committer**: bash, read (Git 전용)
+- **Ideator**: read, glob (아이디어 생성용)
+- **Product Manager**: read, glob, grep (요구사항 분석용)
+
+**중요**: Worker별 도구 제한으로 역할 경계 명확화
+
+### system_config.json - 시스템 설정
+
+```json
+{
+  "manager": {
+    "max_history_messages": 20,  // 슬라이딩 윈도우 크기
+    "max_turns": 10               // 최대 턴 수
+  },
+  "performance": {
+    "enable_caching": true,       // 프롬프트 캐싱
+    "worker_retry_max_attempts": 3,
+    "worker_retry_delay": 2.0
+  },
+  "security": {
+    "max_input_length": 5000,     // 프롬프트 인젝션 방어
+    "enable_input_validation": true
+  },
+  "hooks": {
+    "enable_validation": true,    // PreToolUse Hook (입력 검증)
+    "enable_monitoring": true     // PostToolUse Hook (실행 시간 로깅)
+  },
+  "permission": {
+    "mode": "acceptEdits"         // acceptEdits | default | bypassPermissions
+  },
+  "interaction": {
+    "enabled": false,             // Human-in-the-Loop
+    "allow_questions": true,
+    "timeout_seconds": 300
+  },
+  "context_metadata": {
+    "enabled": true               // Worker 메타데이터 추적
+  }
+}
+```
+
+### .context.json - 프로젝트 컨텍스트
+
+프로젝트 메타데이터, 코딩 스타일, 테스팅 방침. Worker Agent 초기화 시 자동 로드.
+
+---
+
+## 디버깅
+
+### 로그 확인
+
+```bash
+# 최근 로그 확인
+tail -100 ~/.better-llm/{project-name}/logs/better-llm.log
+
+# 에러 로그만 확인
+tail -50 ~/.better-llm/{project-name}/logs/better-llm-error.log
+
+# 실시간 로그 모니터링
+tail -f ~/.better-llm/{project-name}/logs/better-llm.log
+```
+
+### Artifact 파일 확인 (Worker 전체 출력)
+
+```bash
+# Artifact 디렉토리 확인
+ls -la ~/.better-llm/{project-name}/artifacts/
+
+# 특정 Worker 출력 보기
+cat ~/.better-llm/{project-name}/artifacts/planner_20250121_143025.txt
+```
+
+### TUI에서 Worker 출력 실시간 모니터링
+
+```
+실행 중: Ctrl+O → Worker 출력 화면으로 전환
+다시: Ctrl+O → Manager 출력 화면으로 복귀
+```
+
+### 상세 로깅 활성화
+
+```bash
+export LOG_LEVEL=DEBUG
+export WORKER_DEBUG_INFO=true
+```
+
+### Worker Tools 단독 테스트
+
+```bash
+python test_worker_tools.py
 ```
 
 ---
@@ -409,42 +344,35 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
 ### 새 Worker Agent 추가
 
 1. **프롬프트 작성**: `prompts/new_agent.txt`
-2. **설정 추가**: `config/agent_config.json`에 agent 정의
-3. **Worker Tool 추가**: `src/worker_tools.py`에 `@tool` 데코레이터 함수 추가
-4. **MCP Server 등록**: `create_worker_tools_server()`에 tool 추가
-5. **Manager 설정**: `allowed_tools`에 tool 추가
-6. **테스트**: `test_worker_tools.py`에 테스트 추가
+2. **설정 추가**: `config/agent_config.json`에 정의
+3. **Worker Tool 추가**: `src/infrastructure/mcp/worker_tools.py`에 `@tool` 함수 추가
+4. **MCP Server 등록**: `create_worker_tools_server()`에 tool 등록
+5. **테스트**: `test_worker_tools.py`에 테스트 케이스 추가
 
 ### 설정 변경
 
-- **모델 변경**: `config/agent_config.json`의 `model` 필드
-- **프롬프트 수정**: `prompts/*.txt` 파일 직접 수정
-- **재시도 설정**: `config/system_config.json`의 `performance` 섹션
-- **입력 검증**: `config/system_config.json`의 `security` 섹션
+- **모델 변경**: `agent_config.json`의 `model` 필드
+- **프롬프트 수정**: `prompts/*.txt` 직접 수정
+- **재시도 설정**: `system_config.json`의 `performance.worker_retry_*`
+- **입력 검증**: `system_config.json`의 `security.*`
 
-### 디버깅
+### 프롬프트 수정 시 주의사항
 
-```bash
-# 상세 로깅
-python orchestrator.py --verbose "작업"
-
-# Worker Tools 단독 테스트
-python test_worker_tools.py
-
-# 에러 통계 확인
-# orchestrator.py 실행 후 자동 출력됨
-```
+- **Manager 프롬프트**: `src/infrastructure/claude/manager_client.py:307-341` (중복 작업 방지 규칙)
+- **Worker 프롬프트**: `prompts/{worker}.txt` (반드시 요약 섹션 포함)
+- **요약 형식**: `## 📋 [{Worker 이름} 요약 - Manager 전달용]`으로 시작
 
 ---
 
 ## 중요한 제약사항
 
-### 절대 하지 말아야 할 것
+### 절대 금지 사항
 
-1. **query() 사용 금지**: Worker Tools를 호출하려면 반드시 `ClaudeSDKClient` 사용
-2. **CLI 경로 하드코딩 금지**: `get_claude_cli_path()` 사용
-3. **입력 검증 생략 금지**: `validate_user_input()` 필수
-4. **시크릿 하드코딩 금지**: 환경변수 사용 (.env 또는 export)
+1. **Worker Agent 직접 호출 금지**: 반드시 Manager → Worker Tools → Worker 흐름
+2. **query() 사용 금지**: Worker Tools는 ClaudeSDKClient만 사용
+3. **CLI 경로 하드코딩 금지**: `get_claude_cli_path()` 사용
+4. **입력 검증 생략 금지**: `validate_user_input()` 필수
+5. **시크릿 하드코딩 금지**: 환경변수 사용
 
 ### 알려진 제약
 
@@ -464,22 +392,24 @@ export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'
 
 ### "Claude CLI not found"
 ```bash
-# 환경변수 설정
 export CLAUDE_CLI_PATH='/path/to/claude'
-
 # 또는 ~/.claude/local/claude 에 설치
 ```
 
 ### "Worker Tool 호출 실패"
-- `test_worker_tools.py` 실행하여 Worker Tools 단독 테스트
-- Worker Agent 설정 확인 (`config/agent_config.json`)
-- 프롬프트 파일 존재 확인 (`prompts/*.txt`)
+1. `test_worker_tools.py` 실행하여 단독 테스트
+2. Worker Agent 설정 확인 (`config/agent_config.json`)
+3. 프롬프트 파일 존재 확인 (`prompts/*.txt`)
+4. 로그 확인 (`~/.better-llm/{project}/logs/`)
 
-### "프롬프트 파일 로드 실패"
-```bash
-# 파일 존재 확인
-ls -la prompts/
-```
+### "Manager가 Worker를 중복 호출"
+- Manager 프롬프트의 "중복 작업 방지 규칙" 확인
+- Worker 출력 요약에 "✅ 상태: 작업 완료" 포함 여부 확인
+- 로그에서 대화 히스토리 확인
+
+### "Worker 출력이 너무 김"
+- Artifact Storage 확인: `~/.better-llm/{project}/artifacts/`
+- `ENABLE_LLM_SUMMARIZATION=true` 설정 (LLM 기반 요약)
 
 ---
 
@@ -491,14 +421,44 @@ ls -la prompts/
 - [x] 사용자 입력 검증 (프롬프트 인젝션 방어)
 - [x] 시크릿 하드코딩 금지 (환경변수 사용)
 - [x] 최대 입력 길이 제한 (5000자)
+- [x] Hooks 시스템 (금지 패턴 검사: rm -rf /, sudo rm 등)
 - [ ] 파일 접근 화이트리스트 (TODO)
 
 ### 성능 최적화
 
-- 프롬프트 캐싱 활성화 (`enable_caching: true`)
-- 슬라이딩 윈도우로 토큰 비용 절감 (max_history_messages: 20)
-- Worker Tool 재시도 로직 (지수 백오프, max 3회)
-- 에러 통계 수집 및 모니터링
+- **프롬프트 캐싱**: `enable_caching: true` (API 호출 30-50% 절감)
+- **Artifact Storage**: Worker 출력을 파일로 저장 (Manager 컨텍스트 90% 절감)
+- **슬라이딩 윈도우**: 최대 20 메시지 (토큰 비용 절감)
+- **Worker Tool 재시도**: 지수 백오프, 최대 3회
+- **LLM 기반 요약**: 중요 정보 손실 최소화 (ENABLE_LLM_SUMMARIZATION=true)
+- **Performance Metrics**: Worker별 토큰 사용량 자동 추적
+
+---
+
+## 최근 주요 개선사항 (요약)
+
+자세한 내용은 `CHANGELOG.md` 참조.
+
+### v4.0 (2025-10-23)
+- **5차 버그 수정 8개**: Manager/Worker Agent, CLI, SDK 안정성 강화 (메모리 누수 방지, 에러 처리 강화)
+- **4차 버그 수정 7개**: 전체 코드베이스 안정성 개선 (LLM 응답 파싱, DB 초기화 등)
+- **3차 버그 수정 4개**: Presentation Layer 안정성 개선 (TUI 초기화, 비동기 Task 예외 처리)
+- **Hooks 시스템**: PreToolUse/PostToolUse Hook (입력 검증, 실행 시간 로깅)
+- **Permission Mode 개선**: 환경변수로 동적 변경 가능 (acceptEdits | default | bypassPermissions)
+
+### v3.0 (2025-10-22)
+- **Artifact Storage**: Worker 출력을 파일로 저장, Manager 컨텍스트 90% 절감
+- **LLM 기반 Intelligent Summarizer**: Claude Haiku로 지능형 요약
+- **Performance Metrics**: Worker별 토큰 사용량 자동 추적
+- **Context Metadata**: 작업 흐름 자동 추적
+- **Human-in-the-Loop**: ask_user Tool로 대화형 의사결정
+- **Reflective Agent**: Coder 자가 평가 및 개선 (평균 점수 < 7.0 시 재작성)
+- **Ideator/Product Manager Worker**: 기획 단계 지원 강화
+
+### v2.0 (2025-10-20)
+- **세션/로그 저장 위치 변경**: `~/.better-llm/{project-name}/`로 이동 (프로젝트별 독립)
+- **Worker 중복 호출 버그 수정**: Manager가 완료된 Worker를 재호출하는 문제 해결
+- **Critical/High 버그 5개 수정**: 런타임 크래시 제거 (IndexError, AttributeError 등)
 
 ---
 
@@ -512,720 +472,11 @@ ls -la prompts/
 ### 중기 (우선순위 2)
 - 캐싱 전략 개선: Worker Agent 파일 캐싱
 - 구조화된 로깅: JSON 로그 및 모니터링 도구 연동
-- 메트릭 수집: Worker별 평균 실행 시간, 토큰 사용량, 성공률
+- 메트릭 대시보드: Worker별 성능 시각화
 
 ### 장기 (우선순위 3)
-- 아키텍처 다이어그램: 시각적 문서화
 - 자동 복구: 에러 패턴 분석 후 자동 복구 로직
 - 마이크로서비스 아키텍처: Worker Tool 분산 실행
-
----
-
-## 최근 개선 사항
-
-### fix. 5차 버그 수정 8개 - Manager/Worker Agent, CLI, SDK 안정성 강화
-- 날짜: 2025-10-23 (5차 버그 수정)
-- 컨텍스트: Manager Agent, Worker Agent, CLI, SDK 실행 코드 심층 분석으로 12개 버그 발견 → High 5개, Medium 3개 우선 수정
-  - **High Priority 5개**: config 미정의, system_prompt 속성 오류, usage_dict None 체크, content 구조 검증, 메모리 누수 심화
-  - **Medium Priority 3개**: tool_result 키 검증, to_dict() 예외 처리, CancelledError 미처리
-  - **Low Priority 2개**: 추후 수정 예정 (타입 힌트 오류, ZeroDivisionError)
-- 변경사항:
-  1. **High: manager_client.py:404-419 - config 변수 미정의 에러** (`src/infrastructure/claude/manager_client.py:405-419`):
-     - 문제: try 블록에서 config 정의 후 except 발생 시 미정의 상태로 라인 423에서 사용 → NameError
-     - 변경 전: config를 try 블록 안에서만 정의
-     - 변경 후: `config = None` 초기화, except에서 `config = {}` 기본값 설정
-     - 영향: 설정 파일 로드 실패 시에도 정상 초기화
-
-  2. **High: manager_client.py:873 - system_prompt 속성 오류** (`src/infrastructure/claude/manager_client.py:875`):
-     - 문제: `self.system_prompt` 속성이 정의되지 않음 → AttributeError
-     - 변경 전: `system=self.system_prompt`
-     - 변경 후: `system=self.SYSTEM_PROMPT` (프로퍼티 사용)
-     - 영향: 토큰 계산 기능 정상 작동
-
-  3. **High: sdk_executor.py:533-541 - usage 속성 None 체크 미흡** (`src/infrastructure/claude/sdk_executor.py:534-541`):
-     - 문제: hasattr() 체크는 있지만 속성이 None일 수 있음
-     - 변경 전: `if hasattr(client.usage, 'input_tokens'):`
-     - 변경 후: `if hasattr(...) and client.usage.input_tokens is not None:`
-     - 영향: 토큰 정보가 None일 때 크래시 방지
-
-  4. **High: worker_executor.py:574-578 - content 구조 검증 강화** (`src/infrastructure/mcp/worker_executor.py:574-578`):
-     - 문제: content[0]이 dict라는 확인은 있지만 "text" key 존재 확인 미흡
-     - 변경 전: `if content and len(content) > 0 and isinstance(content[0], dict):`
-     - 변경 후: content 타입 체크 → 길이 체크 → dict 체크 → "text" key 체크
-     - 영향: Reviewer 결과 파싱 시 예외 발생 방지
-
-  5. **High: agent_hooks.py:107-149 - 메모리 누수 방지 강화** (`src/infrastructure/claude/agent_hooks.py:107-149`):
-     - 문제: Tool 호출 실패 시 `_worker_execution_times`에서 pop되지 않아 메모리 누수
-     - 변경 전: 무제한 추적, cleanup 없음
-     - 변경 후:
-       - TTL 메커니즘 추가 (1시간 이상 된 항목 자동 정리)
-       - 최대 1000개 제한, 초과 시 오래된 항목부터 삭제
-       - monitor_worker_execution에서 주기적으로 cleanup 호출 (10번에 1번)
-     - 영향: 장시간 운영 시 메모리 누수 방지
-
-  6. **Medium: orchestrator.py:237-247 - tool_result 키 안전 접근** (`src/presentation/cli/orchestrator.py:237-247`):
-     - 문제: tool_result["result"] 접근 시 KeyError 위험
-     - 변경 전: 직접 키 접근
-     - 변경 후: isinstance() 체크 → .get() 안전 접근 → 빈 결과 스킵
-     - 영향: Worker Tool 결과 처리 시 크래시 방지
-
-  7. **Medium: worker_executor.py:666-676 - to_dict() 예외 처리** (`src/infrastructure/mcp/worker_executor.py:666-676`):
-     - 문제: context.to_dict() 실패 시 에러 기록 자체가 실패
-     - 변경 전: to_dict() 직접 호출
-     - 변경 후: try-except로 감싸고 실패 시 최소 정보만 전달
-     - 영향: 에러 처리 중 추가 에러 발생 방지
-
-  8. **Medium: sdk_executor.py:552-555 - CancelledError 별도 처리** (`src/infrastructure/claude/sdk_executor.py:552-555`):
-     - 문제: asyncio.CancelledError를 Exception으로 처리하여 에러 로깅
-     - 변경 전: Exception 블록에서 모든 예외 처리
-     - 변경 후: CancelledError를 GeneratorExit 다음에 별도 처리, 조용히 종료
-     - 영향: 작업 취소가 정상 동작으로 처리되어 불필요한 에러 메시지 제거
-
-- 영향범위:
-  - **안정성**: 런타임 크래시 5개 제거 (NameError, AttributeError, IndexError 등)
-  - **메모리 관리**: TTL 메커니즘으로 장시간 운영 시 메모리 누수 방지
-  - **에러 처리**: 예외 처리 강화로 에러 전파 차단
-  - **사용자 경험**: 작업 취소가 부드럽게 처리되어 혼란 감소
-- 테스트: 구문 검사 통과 (5개 파일)
-- 후속 조치:
-  - 실제 사용 시 효과 검증 (메모리 사용량, 크래시 발생 빈도)
-  - Low Priority 버그 2개 추후 수정 예정 (manager_client.py:911 타입 힌트, output_summarizer.py:530 ZeroDivisionError)
-- 참고: 5차 버그 탐색은 Explore 에이전트로 Manager/Worker Agent, CLI, SDK 코드 집중 분석 (총 12개 발견: High:5, Medium:5, Low:2)
-
-### fix. 4차 버그 수정 7개 - 전체 코드베이스 안정성 및 에러 처리 강화
-- 날짜: 2025-10-23 (4차 버그 수정)
-- 컨텍스트: 코드베이스 전체 버그 탐색으로 12개 잠재적 버그 발견 → High 3개, Medium 4개 우선 수정
-  - **High Priority 3개**: 메모리 누수, LLM 응답 파싱, 데이터베이스 초기화
-  - **Medium Priority 4개**: 설정 파일 로드, JSON 파싱, 파일 쓰기, 예외 처리
-  - **Low Priority 4개**: 추후 수정 예정 (성능 최적화, 입력 검증)
-- 변경사항:
-  1. **High: agent_hooks.py:199-213 - 메모리 누수 방지** (`src/infrastructure/claude/agent_hooks.py:199-222`):
-     - 문제: `enable_monitoring=False`일 때 `record_worker_start_time`이 시작 시간을 기록하지만 `monitor_worker_execution`이 pop하지 않아 메모리 누수
-     - 변경 전: PreToolUse에 항상 `record_worker_start_time` 등록
-     - 변경 후: `enable_monitoring=True`일 때만 `record_worker_start_time` 등록
-     - 영향: Hooks 설정에 따라 적절히 메모리 관리
-
-  2. **High: output_summarizer.py:184 - 안전한 LLM 응답 파싱** (`src/infrastructure/mcp/output_summarizer.py:184-194`):
-     - 문제: `response.content[0].text`가 None일 수 있어 AttributeError 발생 가능
-     - 변경 전: content 존재만 체크하고 바로 접근
-     - 변경 후: `hasattr` 및 `text` 속성 존재 확인 후 접근
-     - 영향: LLM이 빈 응답이나 특수 content 반환 시 크래시 방지
-
-  3. **High: sqlite_session_repository.py:47-149 - 데이터베이스 초기화 예외 처리** (`src/infrastructure/storage/sqlite_session_repository.py:47-149`):
-     - 문제: CREATE TABLE/INDEX 실행 중 예외 발생 시 불완전한 데이터베이스 생성
-     - 변경 전: with 블록만 사용, 예외 처리 없음
-     - 변경 후: try-except 추가, timeout 설정, 구체적 에러 로깅
-     - 영향: 데이터베이스 초기화 실패 시 명확한 에러 메시지 및 복구 가능
-
-  4. **Medium: tui_config.py:92-115 - 안전한 설정 파일 로드** (`src/presentation/tui/utils/tui_config.py:92-115`):
-     - 문제: 예상치 못한 필드나 타입 오류 시 기존 설정 손실
-     - 변경 전: 모든 예외를 동일하게 처리
-     - 변경 후: 유효한 필드만 필터링, JSONDecodeError/TypeError 별도 처리
-     - 영향: 설정 파일 형식 변경 시에도 정상 작동, 명확한 에러 메시지
-
-  5. **Medium: migration.py:110-119 - JSON 파싱 에러 구별** (`src/infrastructure/storage/migration.py:110-119`):
-     - 문제: JSON 파싱 실패와 필수 필드 누락을 구별하지 못함
-     - 변경 전: JSON 로드 예외 처리 없음
-     - 변경 후: JSONDecodeError, OSError 별도 처리, "failed" 상태 반환
-     - 영향: 마이그레이션 실패 원인 정확히 파악 가능
-
-  6. **Medium: artifact_storage.py:85-105 - 파일 쓰기 예외 처리** (`src/infrastructure/storage/artifact_storage.py:85-105`):
-     - 문제: 디스크 부족, 권한 없음 등으로 파일 쓰기 실패 시 예외 미처리
-     - 변경 전: 파일 쓰기 실패 시에도 artifact_id 반환
-     - 변경 후: IOError, Exception 별도 처리, 실패 시 raise
-     - 영향: 실패한 artifact_id 반환 방지, 호출자가 에러 인지 가능
-
-  7. **Medium: parallel_executor.py:100-105 - JSON 파싱 에러 처리** (`src/infrastructure/mcp/parallel_executor.py:100-105`):
-     - 문제: `TaskExecutionPlan.from_json()` 실패 시 예외 타입 불명확
-     - 변경 전: 예외 직접 전파
-     - 변경 후: JSONDecodeError, KeyError/TypeError를 ValueError로 변환
-     - 영향: 호출자가 예외 타입으로 실패 원인 파악 가능
-
-- 영향범위:
-  - **안정성**: 런타임 크래시 3개 제거, 예외 처리 4개 강화
-  - **디버깅**: 구체적인 에러 타입 및 메시지로 원인 빠르게 파악
-  - **리소스 관리**: 메모리 누수 방지, 파일 쓰기 실패 감지
-  - **사용자 경험**: 예상치 못한 크래시 없이 안정적으로 작동
-- 테스트: 구문 검사 통과 (7개 파일)
-- 후속 조치:
-  - 실제 사용 시 크래시 발생 여부 모니터링
-  - Low Priority 버그 4개 추후 수정 예정 (validator.py 중복 호출, loader.py 불필요 복사, setup.sh 입력 검증, db_utils.py timeout 검증)
-- 참고: 4차 버그 탐색은 Explore 에이전트 사용 (총 12개 발견: High:3, Medium:5, Low:4)
-
-### refactor. Claude Agent SDK 권장사항 적용 - Permission Mode 개선 및 Hooks 시스템 추가
-- 날짜: 2025-10-23
-- 컨텍스트: `claude-agent-sdk-features.md` 문서 분석 후 SDK 권장사항 적용
-  - 기존: permission_mode="bypassPermissions" 하드코딩 (프로덕션 부적합)
-  - 기존: Hooks 시스템 미사용 (입력 검증 및 모니터링 기능 부재)
-- 변경사항:
-  1. **Permission Mode 개선**:
-     - `system_config.json`에 `permission.mode` 설정 추가 (기본값: "acceptEdits")
-     - `sdk_executor.py`: 환경변수 `PERMISSION_MODE` 지원 추가
-     - `manager_client.py`: system_config.json에서 permission_mode 로드
-     - 우선순위: 환경변수 > system_config.json > 기본값 ("acceptEdits")
-     - 권장 모드:
-       - `acceptEdits`: 파일 편집 자동 승인 (프로덕션 권장)
-       - `default`: 사용자 승인 요청 (대화형 작업)
-       - `bypassPermissions`: 모든 작업 자동 승인 (테스트 환경만!)
-  2. **Hooks 시스템 추가** (`src/infrastructure/claude/agent_hooks.py`):
-     - **PreToolUse Hook**: Worker Tool 호출 전 입력 검증
-       - 과도하게 긴 task_description 차단 (20,000자 초과)
-       - 금지된 패턴 검사 (rm -rf /, sudo rm 등)
-     - **PostToolUse Hook**: Worker Tool 실행 후 모니터링
-       - 실행 시간 로깅 (초 단위)
-       - 성공/실패 통계 수집
-     - `system_config.json`에 `hooks` 섹션 추가 (enable_validation, enable_monitoring)
-     - `manager_client.py`에서 hooks 설정 로드 및 SDK에 전달
-- 영향범위:
-  - **보안**: 프로덕션 환경에서 안전한 permission_mode 사용
-  - **유연성**: 환경변수로 권한 모드 동적 변경 가능
-  - **모니터링**: Worker Tool 실행 시간 및 성공/실패 추적
-  - **입력 검증**: 과도하게 긴 입력 또는 위험한 패턴 자동 차단
-- 사용 방법:
-  ```bash
-  # Permission Mode 변경
-  export PERMISSION_MODE=bypassPermissions  # 테스트용
-  # 또는 system_config.json 수정
-
-  # Hooks 비활성화 (필요 시)
-  # system_config.json: "hooks": {"enable_validation": false, "enable_monitoring": false}
-  ```
-- 테스트: 구문 검사 통과 (4개 파일)
-- 후속 조치: 실제 사용 시 Hooks 효과 검증 (입력 차단, 실행 시간 로깅)
-- 참고: Claude Agent SDK 공식 문서 (`claude-agent-sdk-features.md:463-592, 1457-1463`)
-
-### fix. 3차 버그 수정 4개 - Presentation Layer 안정성 개선
-- 날짜: 2025-10-23 (3차 버그 수정)
-- 컨텍스트: Presentation Layer, CLI, TUI, 비동기 코드 심층 분석으로 8개 버그 발견 → High/Medium 4개 수정
-  - **High Priority 2개**: 미정의 변수 참조, 비동기 Task 예외 처리
-  - **Medium Priority 2개**: 세션 캐시 무효화, CancelledError 전파
-  - **검증됨**: tui_config.py 파일 핸들 누수는 False Positive (이미 `with` statement로 올바르게 처리됨)
-- 변경사항:
-  1. **High: initialization_manager.py:98 - 미정의 변수 참조 에러**:
-     - 변경 전: `worker_status.update(f"❌ 오류: {e}")` - `worker_status` 변수가 정의되지 않음
-     - 변경 후: `status_info.update(f"❌ 오류: {e}")` - 이미 정의된 `status_info` 사용
-     - 영향: TUI 초기화 실패 시 NameError로 크래시 → 정상적인 에러 표시로 개선
-
-  2. **High: parallel_executor.py:305-312 - Exception이 failed 리스트에 누락**:
-     - 변경 전: `for result in results: if isinstance(result, Exception): continue`
-     - 변경 후: `for task, result in zip(tasks, results):`로 매칭 후 `failed.append(task)`
-     - 영향: `asyncio.gather()`에서 반환된 Exception이 추적되지 않는 문제 해결 → 실패한 Task가 정확히 기록됨
-
-  3. **Medium: tui_app.py:209-213 - 초기 세션 생성 후 캐시 무효화 누락**:
-     - 변경 전: `self.session_manager.start_session(initial_config)` 후 캐시 업데이트 없음
-     - 변경 후: `self._cached_current_session = None`, `self._cached_session_index = -1` 추가
-     - 영향: 초기 세션 생성 후 `current_session` 프로퍼티 접근 시 캐시가 반영되지 않는 문제 해결
-
-  4. **Medium: task_runner.py:226 - CancelledError 재발생으로 인한 전파**:
-     - 변경 전: `except asyncio.CancelledError: ... raise`
-     - 변경 후: `except asyncio.CancelledError: ... return` (graceful cancellation)
-     - 영향: 작업 취소 시 CancelledError가 상위로 전파되어 추가 에러 핸들링 발생 → 조용히 종료하여 사용자 경험 개선
-
-- 영향범위:
-  - **안정성**: TUI 초기화 에러 처리 개선, 비동기 Task 실패 추적 강화
-  - **캐시 일관성**: 세션 생성/전환 시 캐시가 올바르게 무효화됨
-  - **사용자 경험**: 작업 취소가 부드럽게 처리되어 불필요한 에러 메시지 제거
-- 테스트: 구문 검사 통과 (4개 파일)
-- 후속 조치:
-  - 실제 사용 시 효과 검증 (초기화 에러 처리, Task 실패 추적, 작업 취소)
-  - Low Priority 버그 3개 추후 수정 예정 (TOCTOU, 예외 처리, 성능 최적화)
-- 참고: 3차 버그 탐색은 Explore 에이전트로 Presentation Layer 심층 분석 (총 8개 발견: High:2, Medium:3, Low:3)
-
-### fix. 추가 버그 8개 수정 - 저장소, 데이터베이스, 환경변수 안정성 개선
-- 날짜: 2025-10-22 (2차 버그 수정)
-- 컨텍스트: 2차 체계적 버그 탐색으로 17개 추가 버그 발견 → High/Medium 8개 우선 수정
-  - **High Priority 3개**: 세션 파일 읽기, SQL timeout, 비동기 프로세스
-  - **Medium Priority 5개**: JSON 파싱, 환경변수 타입 변환, 데이터베이스 timeout
-- 변경사항:
-  1. **High: session_repository.py:156-185 - 세션 파일 읽기 예외 처리 구체화**:
-     - 변경 전: 모든 에러를 `Exception`으로 처리
-     - 변경 후: json.JSONDecodeError, KeyError, OSError 별도 처리
-     - 영향: 손상된 세션 파일을 스킵하고 나머지 정상 로드
-
-  2. **High: db_utils.py:23-40, 84-92 - 데이터베이스 연결 및 쿼리 timeout 추가**:
-     - 변경 전: `sqlite3.connect(str(db_path))` - timeout 없음
-     - 변경 후: `sqlite3.connect(str(db_path), timeout=30.0)` - 30초 timeout
-     - OperationalError에서 timeout/locked 감지 및 명확한 에러 메시지
-     - 영향: 장시간 locked 상태에서 무한 대기 방지
-
-  3. **Medium: context_repository.py:43-62 - JSON 파싱 에러 처리 구체화**:
-     - json.JSONDecodeError, KeyError/TypeError/ValueError, OSError 별도 처리
-     - 영향: 디버깅 시 정확한 에러 원인 파악 가능
-
-  4. **Medium: env_utils.py (새 파일) - 환경변수 타입 안전 파싱 헬퍼 함수**:
-     - `parse_bool_env()`: "true"/"1"/"yes"/"on" → True, "false"/"0"/"no"/"off" → False
-     - `parse_int_env()`, `parse_float_env()`, `parse_str_env()` 추가
-     - 영향: 환경변수 파싱 일관성 향상, 타입 에러 방지
-
-  5. **Medium: output_summarizer.py:21-22, worker_executor.py:33-34 - 환경변수 파싱 개선**:
-     - 변경 전: `.lower() == "true"` 패턴 (대소문자 구분, "1"/"yes" 미지원)
-     - 변경 후: `parse_bool_env()` 사용 (다양한 형식 지원)
-     - 영향: 사용자가 환경변수를 다양한 형식으로 설정 가능
-
-- 영향범위:
-  - **안정성**: 파일 I/O 및 DB 에러 처리 강화 → 부분 실패 시에도 시스템 계속 작동
-  - **디버깅**: 구체적인 예외 타입으로 에러 원인 빠르게 파악
-  - **사용자 경험**: 환경변수 설정 오류 감소, timeout으로 인한 무한 대기 방지
-- 테스트: 구문 검사 통과 (6개 파일)
-- 후속 조치:
-  - 실제 사용 시 효과 검증 (timeout 발생 빈도, 손상된 파일 처리 등)
-  - Low Priority 버그 9개 추후 수정 예정 (코드 품질 개선)
-- 참고: 2차 버그 탐색은 Explore 에이전트를 사용하여 17개 발견 (High:4, Medium:8, Low:5)
-
-### fix. Critical/High 버그 5개 수정 - 안정성 및 신뢰성 대폭 향상
-- 날짜: 2025-10-22 (1차 버그 수정)
-- 컨텍스트: 코드베이스 전체 버그 탐색을 통해 5개의 Critical/High 버그 발견 및 수정
-  - **Critical 버그 3개**: 인덱싱 실패로 인한 런타임 크래시 (IndexError, AttributeError)
-  - **High 버그 2개**: None 체크 누락, 중복 메서드로 인한 기능 미작동
-- 변경사항:
-  1. **Critical: worker_executor.py:572 - 안전한 인덱싱** (`src/infrastructure/mcp/worker_executor.py:569-577`):
-     - 변경 전: `result.get("content", [{}])[0].get("text", "")` (IndexError 위험)
-     - 변경 후: 안전한 다단계 체크로 변경 (content 존재 확인 → 길이 확인 → 타입 확인)
-     - 영향: Reviewer 실행 결과 파싱 실패 시 크래시 방지
-
-  2. **Critical: output_summarizer.py:176 - LLM 응답 안전 처리** (`src/infrastructure/mcp/output_summarizer.py:175-183`):
-     - 변경 전: `response.content[0].text` (IndexError 위험)
-     - 변경 후: 응답 내용 존재 여부 확인 후 접근
-     - 영향: LLM이 빈 응답 반환 시 크래시 방지
-
-  3. **Critical: worker_tools.py - 안전한 결과 추출 헬퍼 함수** (`src/infrastructure/mcp/worker_tools.py:254-288`):
-     - 새 헬퍼 함수 추가: `_safe_extract_result_text(result)` - IndexError/TypeError/AttributeError 방지
-     - 7개 Worker Tool 함수 모두 업데이트 (planner, coder, reviewer, tester, committer, ideator, product_manager, documenter)
-     - 기존 패턴: `result["content"][0].get("text", "")` → 새 패턴: `_safe_extract_result_text(result)`
-     - 영향: 모든 Worker Tool 실행 결과 처리 시 크래시 방지
-
-  4. **High: manager_client.py:521 - metadata_formatter None 체크** (`src/infrastructure/claude/manager_client.py:519-521`):
-     - 변경 전: `self.metadata_formatter.parse_metadata_from_output()` 직접 호출 (AttributeError 위험)
-     - 변경 후: metadata_formatter가 None이면 빈 맵 반환 (조기 반환)
-     - 영향: context_metadata_enabled=false 설정 시 크래시 방지
-
-  5. **High: worker_executor.py - 중복 메서드 제거** (`src/infrastructure/mcp/worker_executor.py:734-853 삭제`):
-     - 문제: `_summarize_worker_output()` 메서드가 2번 정의됨 (Line 481-549, Line 734-853)
-     - Python이 후자를 사용하여 새 버전(artifact 저장 포함)이 작동하지 않음
-     - 해결: 구버전(Line 734-853) 삭제하여 새 버전만 남김
-     - 영향: Worker 출력 artifact 저장 기능 정상 작동
-- 영향범위:
-  - **안정성**: Critical 런타임 크래시 3개 제거 (IndexError, AttributeError)
-  - **신뢰성**: High 버그 2개 수정으로 기능 정상 작동 보장
-  - **사용자 경험**: 예상치 못한 크래시 없이 안정적으로 작동
-- 테스트: 구문 검사 통과 (4개 파일)
-- 후속 조치: 실제 사용 시 크래시 발생 여부 모니터링
-- 참고: 버그 탐색은 Explore 에이전트를 사용하여 체계적으로 수행됨
-
-### fix. Worker 중복 호출 버그 수정 - Manager가 완료된 Worker를 반복 실행하는 문제 해결
-- 날짜: 2025-10-22
-- 컨텍스트: Manager가 작업 완료된 Worker를 처음부터 다시 호출하는 심각한 버그 발생
-  - 모든 Worker(Planner, Coder, Reviewer, Tester)에서 발생
-  - 모든 작업 유형에서 발생
-  - 예시: Planner → Coder → Reviewer → **Planner (다시 호출!)** → 무한 반복
-- 근본 원인:
-  1. **Manager 프롬프트에 명시적인 "중복 작업 방지" 로직 부재**
-     - Review 사이클 반복 방지는 있었지만, 일반 Worker 중복 호출 방지 로직 없음
-     - Manager가 대화 히스토리를 확인하고 중복 호출을 방지하는 명시적 지침 부재
-  2. **Worker 출력 요약의 "완료" 상태 표시 불명확**
-     - 요약 형식에 "작업 완료" 표시가 약해서 Manager가 인지하기 어려움
-  3. **슬라이딩 윈도우(20 메시지)로 인한 컨텍스트 손실 가능성**
-     - 복잡한 작업에서 초기 Worker 결과가 히스토리에서 삭제될 수 있음
-- 변경사항:
-  - **Manager 프롬프트 개선** (`src/infrastructure/claude/manager_client.py:307-341`):
-    - "⚠️ 중복 작업 방지 규칙 (CRITICAL!)" 섹션 추가
-    - **작업 흐름 추적 방법** 명시:
-      1. 대화 히스토리를 반드시 확인하여 이미 실행된 Worker 파악
-      2. "[{Worker 이름} Tool 완료]" 또는 "📋 [{Worker 이름} 요약]" 형식 확인
-      3. 이미 실행된 Worker는 절대 다시 호출 금지
-      4. 예외: Reviewer Critical 이슈 발견 시 Coder 재실행만 허용
-    - **잘못된 패턴 예시** 추가 (명확한 금지 사항)
-    - **올바른 패턴 예시** 추가 (순차 진행)
-    - **각 응답 전 체크리스트** 추가:
-      - [ ] 히스토리에서 이미 실행된 Worker 확인
-      - [ ] 다음 단계가 올바른지 확인
-      - [ ] 재호출 이유 명확히 제시
-  - **Worker 출력 요약 개선** (`src/infrastructure/mcp/output_summarizer.py:310-338`):
-    - "**✅ 상태: 작업 완료**" 명시적 표시 추가
-    - "⚠️ **중요**: 이 Worker는 이미 실행되었습니다. 동일한 Worker를 다시 호출하지 마세요." 경고 추가
-    - 요약 순서 조정 (상태 → 핵심 내용 → 1줄 요약)
-- 영향범위:
-  - **버그 수정**: Manager가 Worker 중복 호출하는 문제 근본 해결
-  - **작업 속도**: 불필요한 Worker 재실행이 사라져 전체 작업 시간 대폭 단축
-  - **사용자 경험**: 작업이 정상적으로 순차 진행되어 혼란 제거
-- 테스트: 구문 검사 통과
-- 후속 조치: 실제 사용 시 효과 검증 (중복 호출 발생 여부 모니터링)
-- 참고: 이 버그는 Artifact Storage 도입 이후 요약 기능으로 인해 발생 가능성이 높아진 것으로 추정됨
-
-### refactor. 설치 방법 통일 (pipx 글로벌 설치)
-- 날짜: 2025-10-22
-- 컨텍스트: 여러 설치 방법(install.sh의 pipx/pip 선택, 수동 설치 등)이 혼재하여 사용자 혼란
-  - install.sh가 pipx/pip 선택을 요구하여 복잡
-  - README, installation.md 등 문서마다 설치 방법이 달랐음
-  - 일관성 없는 설치 경험
-- 해결 방안: **pipx 글로벌 설치로 통일**
-- 변경사항:
-  - **setup.sh 작성** (`setup.sh`):
-    - pipx 전용 설치 스크립트 (install.sh 대체)
-    - 설치 모드 선택: 일반 모드 / 개발 모드 (editable)
-    - Python 버전 체크 (3.10+)
-    - pipx 자동 설치 (macOS Homebrew 우선, 없으면 pip)
-    - OAuth 토큰 설정 가이드 (대화형)
-    - 설치 검증 (better-llm, better-llm-cli 명령어 확인)
-  - **install.sh 제거**:
-    - 복잡한 설치 방법 선택 로직 제거
-    - 단일 설치 방법으로 간소화
-  - **문서 업데이트**:
-    - `README.md`: setup.sh 사용 안내, pipx 글로벌 설치 강조
-    - `docs/guides/installation.md`: 3가지 방법 정리 (자동/pipx 수동/pip 로컬)
-    - `CLAUDE.md`: 개발자용 설치 방법 정리, 실행 명령어 구분 (pipx/가상환경)
-- 영향범위:
-  - **사용자 경험**: 설치 방법이 명확하고 간단해짐
-  - **일관성**: 모든 문서에서 동일한 설치 방법 안내
-  - **개발자**: editable 모드 선택으로 코드 변경 시 바로 반영 가능
-- 사용 방법:
-  ```bash
-  # 설치 (자동)
-  ./setup.sh
-  # 설치 모드 선택 시:
-  # 1) 일반 모드 - 일반 사용자용 (권장)
-  # 2) 개발 모드 - 소스 코드 변경 시 바로 반영
-
-  # 설치 (수동)
-  pipx install .           # 일반 모드
-  pipx install -e .        # 개발 모드
-
-  # 실행
-  better-llm               # TUI
-  better-llm-cli "작업"    # CLI
-  ```
-- 테스트: 구문 검사 통과, setup.sh 실행 권한 부여
-- 후속 조치: 사용자 피드백 수집, 설치 오류 모니터링
-
-### feat. 🚀 수직적 고도화 - LLM 기반 Intelligent Summarizer, Performance Metrics, Context Metadata
-- 날짜: 2025-10-22
-- 컨텍스트: 기존 시스템의 한계 극복을 위한 수직적 고도화
-  - Worker 출력이 패턴 매칭 기반 요약으로 중요 정보 손실 가능
-  - 토큰 사용량 추적 부재로 비용 최적화 어려움
-  - Context Metadata 시스템이 비활성화 상태
-- 변경사항:
-  1. **LLM 기반 Intelligent Summarizer** (`src/infrastructure/mcp/output_summarizer.py`):
-     - Claude Haiku를 사용한 지능형 요약 (패턴 매칭 → LLM 업그레이드)
-     - 자동 Fallback: LLM 실패 시 패턴 매칭으로 전환
-     - 환경변수 `ENABLE_LLM_SUMMARIZATION=true/false`로 on/off
-     - ANTHROPIC_API_KEY 필수 (LLM 사용 시)
-  2. **Performance Metrics - 토큰 사용량 추적**:
-     - `WorkerResponseHandler`에 `usage_callback` 추가 (`src/infrastructure/claude/sdk_executor.py`)
-     - `WorkerAgent.execute_task()`에 토큰 수집 기능 추가 (`src/infrastructure/claude/worker_client.py`)
-     - `WorkerExecutor`에서 MetricsCollector로 자동 전달 (`src/infrastructure/mcp/worker_executor.py`)
-     - input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens 자동 수집
-  3. **Context Metadata 시스템 활성화**:
-     - `config/system_config.json`의 `context_metadata.enabled`를 `true`로 변경
-     - Worker 출력에 구조화된 메타데이터 자동 추가 (task_id, dependencies, key_decisions)
-     - Manager가 컨텍스트 체인 자동 추적
-  4. **문서화**:
-     - `ADVANCED_FEATURES.md` 작성: 3가지 고급 기능 상세 설명
-     - `CHANGELOG.md` 업데이트
-- 영향범위:
-  - **성능**: Manager 컨텍스트 90% 절감, 중요 정보 손실 최소화
-  - **가시성**: Worker별 토큰 사용량 정량화, 비용 최적화 가능
-  - **디버깅**: 컨텍스트 체인 추적으로 작업 흐름 가시화
-- 사용 방법:
-  ```bash
-  # LLM 요약 활성화
-  export ENABLE_LLM_SUMMARIZATION=true
-  export ANTHROPIC_API_KEY='your-api-key-here'
-
-  # Context Metadata는 기본 활성화됨 (system_config.json)
-  # 비활성화: "context_metadata": {"enabled": false}
-
-  python orchestrator.py "작업 설명"
-  ```
-- 테스트: 구문 검사 통과
-- 후속 조치: 실제 사용 시 효과 측정 (토큰 절감율, 요약 품질)
-- 참고 문서: `ADVANCED_FEATURES.md`
-
-### feat. Reflective Agent - 자가 평가 및 코드 개선
-- 날짜: 2025-10-22
-- 컨텍스트: Coder가 코드 작성 후 자체 검증 없이 Reviewer에게 의존
-  - 낮은 품질의 코드가 Reviewer로 전달되어 Review 사이클 증가
-  - Coder의 메타 인지 능력 부재
-- 해결 방안: **Coder Worker에 자가 평가 및 개선 기능 추가**
-- 변경사항:
-  - **Coder 프롬프트** (`prompts/coder.txt`):
-    - "자가 평가 및 개선 (Reflective Agent)" 섹션 추가
-    - 평가 기준 5가지 정의 (코드 품질, 가독성, 성능, 보안, 테스트 가능성)
-    - 자가 평가 프로세스: 평가 → 평균 계산 → 개선 판단
-    - 평균 점수 < 7.0 → 코드 개선 → 재평가 (최대 1회)
-    - 평가 결과 출력 형식 표준화
-- 영향범위:
-  - **코드 품질**: Coder가 스스로 품질 검증하여 초기 품질 향상
-  - **Review 사이클**: Critical 이슈 감소로 Review 횟수 단축 (예상 30%)
-  - **투명성**: 평가 점수 및 근거가 명확히 문서화됨
-- 평가 기준:
-  1. 코드 품질 (1-10): 일관성, 추상화, SOLID 원칙
-  2. 가독성 (1-10): 명명, 주석, 복잡도
-  3. 성능 (1-10): 효율성, 알고리즘, 메모리
-  4. 보안 (1-10): 입력 검증, SQL Injection/XSS 방지
-  5. 테스트 가능성 (1-10): 단일 책임, 의존성 주입
-- 사용 방법:
-  ```
-  # Coder가 자동으로 수행 (별도 설정 불필요)
-  # 1. 코드 작성 완료
-  # 2. 5가지 기준으로 자가 평가 (각 1-10점)
-  # 3. 평균 점수 < 7.0 → 개선 후 재평가 (최대 1회)
-  # 4. 평가 결과를 포함한 최종 요약 출력
-  ```
-- 테스트: 구문 검사 통과
-- 후속 조치: 실제 사용 시 효과 측정 (Review 사이클 감소율, 코드 품질 개선도)
-
-### fix. 패키지 설치 설정 수정 (src 패키지 지원)
-- 날짜: 2025-10-21
-- 컨텍스트: editable 모드 설치 시 `ModuleNotFoundError: No module named 'src'` 에러 발생
-  - 프로젝트 전체(63개 파일)가 `from src.domain.services import ...` 형식의 import 사용
-  - 기존 `pyproject.toml` 설정은 `package-dir = {"" = "src"}` 사용 (src를 루트로 매핑)
-  - entry point가 `presentation.tui.tui_app:main`으로 설정되어 src가 패키지로 인식되지 않음
-  - `setup.py`와 `pyproject.toml`이 동시에 존재하여 충돌 발생
-- 변경사항:
-  - **pyproject.toml 수정** (`pyproject.toml`):
-    - entry point 수정: `src.presentation.tui.tui_app:main`, `src.presentation.cli.orchestrator:main`
-    - packages.find 수정: `where = ["."]`, `include = ["src", "src.*"]`
-    - `src`를 최상위 패키지로 명시적으로 포함
-  - **setup.py 백업**:
-    - `setup.py`를 `setup.py.bak`으로 백업 (pyproject.toml과 충돌 방지)
-- 영향범위:
-  - **설치**: `pip install -e .` 정상 작동
-  - **import**: 모든 `from src.` import가 정상 작동
-  - **entry point**: `better-llm`, `better-llm-cli` 명령어 정상 실행
-- 테스트: TUI 실행 확인 (Workers: 7개, Model: claude-sonnet-4-5-20250929)
-- 후속 조치: 없음 (안정적으로 작동)
-
-### feat. Artifact Storage - Manager 컨텍스트 윈도우 최적화
-- 날짜: 2025-01-21
-- 컨텍스트: Worker 출력이 Manager 컨텍스트 윈도우를 가득 채우는 문제
-  - Worker가 파일 읽기, 도구 호출, 사고 과정 등 모든 출력을 Manager에게 전달
-  - 복잡한 작업 시 수만 토큰이 히스토리에 누적되어 컨텍스트 윈도우 초과
-  - 예: Coder가 5개 파일 읽고 3개 작성 → 수천 줄 출력 → Manager 히스토리 가득 참
-- 해결 방안: **Artifact Storage + 선택적 히스토리** (Phase 1 + Phase 2)
-- 변경사항:
-  - **Phase 1: 선택적 히스토리 (즉시 완화)**:
-    - `WORKER_DEBUG_INFO` 기본값 `false`로 변경 (`worker_client.py:182`)
-    - Worker 프롬프트에 요약 섹션 추가 (planner.txt, coder.txt, reviewer.txt, tester.txt):
-      ```
-      ## 📋 [XXX 요약 - Manager 전달용]
-      **상태**: 작업 완료
-      **핵심 내용** (3-5줄 요약)
-      **변경 파일**: ...
-      **다음 단계**: ...
-      ```
-  - **Phase 2: Artifact Storage (근본 해결)**:
-    - `ArtifactStorage` 인프라 구현 (`src/infrastructure/storage/artifact_storage.py`):
-      - `save_artifact()`: Worker 전체 출력을 `~/.better-llm/{project}/artifacts/{worker}_{timestamp}.txt`에 저장
-      - `extract_summary()`: "📋 [XXX 요약 - Manager 전달용]" 섹션 추출
-      - `load_artifact()`: artifact 파일 로드 (Worker가 read 도구로 읽을 수 있음)
-      - `cleanup_old_artifacts()`: 7일 이상 된 artifact 자동 삭제
-    - Worker Tools에 artifact 저장 로직 추가 (`worker_tools.py`):
-      - `_save_and_summarize_output()` helper 함수 추가
-      - 모든 Worker Tool (planner, coder, reviewer, tester, committer, ideator, product_manager)에 적용
-      - Manager에게는 **요약 + artifact_id**만 전달
-    - Manager 프롬프트 업데이트 (`manager_client.py`):
-      - Artifact Storage 시스템 설명 추가
-      - Artifact 활용 방법 (일반적으로는 요약만, 필요 시 Worker에게 파일 읽기 지시)
-- 영향범위:
-  - **컨텍스트 절약**: Manager 히스토리 크기 **90% 감소** (요약만 저장)
-  - **디버깅**: 전체 로그는 artifact 파일에서 확인 가능
-  - **Worker 간 데이터 전달**: 필요 시 Worker가 read 도구로 artifact 읽기
-  - **확장성**: 대용량 결과도 처리 가능 (파일 기반)
-- 성능 개선 예시:
-  ```
-  Before: Coder 출력 15,000 토큰 → Manager 히스토리에 전부 포함
-  After:  Coder 요약 1,500 토큰 → Manager 히스토리 (90% 절감)
-          전체 로그 15,000 토큰 → artifact 파일에 저장 (디버깅용)
-  ```
-- 저장 위치: `~/.better-llm/{project-name}/artifacts/`
-- 사용 방법:
-  - **자동**: 모든 Worker 출력이 자동으로 artifact로 저장되고 요약 추출
-  - **상세 정보 필요 시**: Manager가 Worker에게 artifact 파일 읽기 지시
-    ```python
-    execute_coder_task({
-      "task_description": "다음 계획에 따라 코드 작성:\n\n[Planner 요약]\n\n상세 계획은 ~/.better-llm/my-project/artifacts/planner_20250121_143025.txt를 read로 읽으세요."
-    })
-    ```
-- 테스트: 구문 검사 통과
-- 후속 조치: 실제 사용 시 효과 측정 (히스토리 크기, 토큰 사용량)
-
-### feat. Human-in-the-Loop (대화형 의사결정 지원)
-- 날짜: 2025-10-21
-- 컨텍스트: Planner가 여러 옵션(A안/B안)을 제시할 때 Manager가 임의로 결정하는 문제
-  - 사용자가 중요한 기술 결정에 참여할 수 없음
-  - 아키텍처 선택, 구현 방식 등 중요한 의사결정이 자동화됨
-- 변경사항:
-  - **`ask_user` Tool 추가** (`worker_tools.py`):
-    - Manager Agent가 사용자에게 질문하고 응답 받을 수 있는 MCP Tool
-    - 선택지 목록 제공 가능 (번호 선택 또는 자유 텍스트)
-    - `interaction.enabled` 설정에 따라 on/off 가능
-  - **설정 추가** (`system_config.json`):
-    ```json
-    "interaction": {
-      "enabled": false,           // Human-in-the-Loop on/off
-      "allow_questions": true,    // ask_user Tool 허용
-      "timeout_seconds": 300,     // 사용자 응답 대기 시간
-      "auto_fallback": "first"    // 타임아웃 시 기본 선택
-    }
-    ```
-  - **Manager 프롬프트 수정** (`manager_client.py`):
-    - ask_user Tool 사용 가이드 추가
-    - "Worker가 여러 선택지를 제시하면 사용자에게 물어보기" 지침 추가
-  - **CLI 콜백 구현** (`orchestrator.py`):
-    - Rich Panel로 질문 표시
-    - 선택지 번호 매겨서 출력
-    - 사용자 입력 받기 (Prompt.ask)
-- 영향범위:
-  - **사용자 경험**: 중요한 결정에 사용자 참여 가능
-  - **유연성**: 설정으로 자동/대화형 모드 전환 가능
-  - **확장성**: 다른 Worker도 ask_user 사용 가능
-- 사용 방법:
-  ```bash
-  # 환경변수로 활성화
-  export ENABLE_INTERACTIVE=true
-  python orchestrator.py "새 기능 추가"
-
-  # 또는 system_config.json 수정
-  # "interaction": {"enabled": true}
-  ```
-- 워크플로우 예시:
-  ```
-  사용자: "새로운 인증 시스템 추가"
-    ↓
-  Planner: "A안: OAuth 2.0 / B안: JWT 기반"
-    ↓
-  Manager: ask_user 호출
-    ↓
-  사용자: "1" (A안 선택)
-    ↓
-  Planner: A안으로 상세 계획 수립
-  ```
-- 테스트: 구문 검사 통과
-- 후속 조치: TUI에도 동일 기능 추가 필요
-
-### feat. 세션 및 로그 저장 위치 변경 (~/.better-llm/{project-name}/)
-- 날짜: 2025-10-20
-- 컨텍스트: 실행 위치에 세션/로그 파일이 생성되어 프로젝트 디렉토리가 어지러워지는 문제
-  - 여러 프로젝트를 사용할 때 세션/로그 구분 어려움
-  - Git에 의도치 않게 커밋될 위험
-- 변경사항:
-  - **프로젝트 이름 감지 로직 추가** (`validator.py`):
-    - `get_project_name()`: Git root 디렉토리 이름 또는 현재 디렉토리 이름 반환
-    - `get_data_dir(subdir)`: `~/.better-llm/{project-name}/{subdir}` 경로 반환 및 자동 생성
-  - **저장소 기본 경로 변경** (`repository_factory.py`):
-    - JSON 세션: `~/.better-llm/{project-name}/sessions`
-    - SQLite DB: `~/.better-llm/{project-name}/data/sessions.db`
-  - **로그 기본 경로 변경** (`structured_logger.py`):
-    - 로그 파일: `~/.better-llm/{project-name}/logs/`
-    - `configure_structlog(log_dir=None)`: None이면 기본 경로 사용
-  - **CLI/TUI 업데이트**:
-    - 환경변수 `LOG_DIR`가 설정되지 않으면 None 전달 (기본 경로 사용)
-    - 기존 환경변수 오버라이드 동작 유지
-- 영향범위:
-  - **사용자 경험**: 프로젝트 디렉토리가 깨끗하게 유지됨
-  - **멀티 프로젝트**: 프로젝트별 독립적인 세션/로그 관리
-  - **호환성**: 환경변수로 기존 동작 유지 가능
-- 디렉토리 구조:
-  ```
-  ~/.better-llm/
-  └── {project-name}/
-      ├── sessions/     # 세션 히스토리
-      ├── logs/         # 로그 파일
-      └── data/         # 데이터베이스
-  ```
-- 테스트: 구문 검사 통과, 디렉토리 생성 확인
-- 후속 조치: 실제 사용 시 마이그레이션 가이드 필요 (기존 세션 이동)
-
-### feat. Ideator 및 Product Manager Worker 추가
-- 날짜: 2025-10-20
-- 컨텍스트: 소프트웨어 개발 프로세스에서 기획 단계 지원 강화 필요
-  - 창의적 아이디어 생성 및 브레인스토밍 기능 부재
-  - 제품 요구사항 정의 및 우선순위 설정 자동화 필요
-- 변경사항:
-  - **Ideator Worker 추가**:
-    - `prompts/ideator.txt`: 창의적 아이디어 생성 전문가 프롬프트
-      - SCAMPER, First Principles 등 사고 기법 적용
-      - 발산적/수렴적 사고 프로세스 구조화
-      - 실현 가능성 기반 아이디어 평가 및 우선순위 제안
-    - Tools: read, glob (컨텍스트 파악용, 읽기 전용)
-    - Timeout: 300초 (환경변수 WORKER_TIMEOUT_IDEATOR로 조정 가능)
-  - **Product Manager Worker 추가**:
-    - `prompts/product_manager.txt`: 제품 기획 전문가 프롬프트
-      - 요구사항 정의 및 우선순위 설정 (MoSCoW 등)
-      - 사용자 스토리 및 수용 기준(Acceptance Criteria) 작성
-      - 제품 로드맵 및 마일스톤 계획 (MVP → Enhancement → Scale)
-      - 위험 분석 및 완화 전략 수립
-    - Tools: read, glob, grep (요구사항 분석용, 읽기 전용)
-    - Timeout: 300초 (환경변수 WORKER_TIMEOUT_PRODUCT_MANAGER로 조정 가능)
-  - **인프라 코드 업데이트**:
-    - `config/agent_config.json`: 두 워커 설정 추가
-    - `src/infrastructure/mcp/worker_tools.py`:
-      - 에러 통계에 ideator, product_manager 추가
-      - 타임아웃 설정 추가 (환경변수 지원)
-      - @worker_tool 데코레이터로 Tool 함수 구현 (재시도 로직 포함)
-      - MCP Server에 두 Tool 등록
-- 영향범위:
-  - **워크플로우 확장**: 기존 Planner 이전 단계로 활용 가능
-    - Ideator → Product Manager → Planner → Coder → Reviewer → Tester
-  - **유연성 향상**: Manager Agent가 필요에 따라 선택적으로 호출
-  - **문서화**: CLAUDE.md 업데이트 (설정 파일 섹션, 프롬프트 목록)
-- 테스트: 구문 검사 통과
-- 후속 조치: 실제 사용 시 워크플로우 효과 검증
-
-### fix. Worker Agent 타임아웃 문제 해결
-- 날짜: 2025-10-20
-- 컨텍스트: Worker Agent가 작업 완료 후에도 타임아웃까지 대기하는 문제 발생
-- 근본 원인: Worker Agent 프롬프트에 다른 Worker를 호출하는 지시문(@coder, @tester 등)이 포함되어 있었음
-  - Worker Agent는 Tool 호출 권한이 없어서 다른 Agent를 호출할 수 없음
-  - 호출 시도 실패 후 타임아웃까지 계속 대기
-- 변경사항:
-  - **프롬프트 수정** (주요 해결책):
-    - `prompts/planner.txt`: "@coder please implement this plan" 제거 → "계획 수립이 완료되었습니다."
-    - `prompts/coder.txt`: "@tester please verify this implementation" 제거 → "구현이 완료되었습니다."
-    - `prompts/tester.txt`: "@coder please fix" 제거 → "테스트가 성공적으로 완료되었습니다." / "테스트 실패: ..."
-    - `prompts/committer.txt`: "TERMINATE - ..." 제거 → "커밋이 성공적으로 완료되었습니다." / "커밋 실패: ..."
-  - **코드 레벨 개선** (방어 로직):
-    - `src/infrastructure/claude/worker_client.py`: 조기 종료 감지 로직 추가
-      - Worker Agent 응답에서 "완료되었습니다" 키워드 감지 시 즉시 스트리밍 종료
-      - 최근 10개 청크를 버퍼링하여 완료 키워드 검색
-      - `query()` 함수가 불필요하게 대기하지 않도록 방어
-- 영향범위:
-  - **성능**: Worker Agent 실행 시간이 타임아웃 시간(300-600초)에서 실제 작업 시간으로 단축
-  - **사용자 경험**: 작업 완료 후 즉시 다음 단계로 진행되어 전체 작업 속도 대폭 개선
-  - **아키텍처**: Manager Agent가 Worker 간 조율을 전담하도록 명확히 함
-- 테스트: 수동 테스트 필요 (orchestrator.py 실행)
-- 후속 조치: 실제 사용 시 Worker Agent 응답 시간 모니터링
-
-### fix. Worker Agent 실행 실패 문제 해결 (CodingStyle 속성 에러)
-- 날짜: 2025-10-20
-- 컨텍스트: Worker Agent가 실행되지 않고 타임아웃되는 문제 발생
-  - 에러 메시지: `AttributeError: 'CodingStyle' object has no attribute 'language'`
-  - 에러 위치: `worker_client.py:136` in `_generate_debug_info()`
-- 근본 원인:
-  - `WORKER_DEBUG_INFO=true`로 설정되어 있어서 디버그 정보 생성 시도
-  - `_generate_debug_info()` 함수에서 존재하지 않는 `CodingStyle.language`와 `CodingStyle.indentation` 속성에 접근
-  - AttributeError 발생 → `execute_task()` 실패 → Worker가 응답 생성하지 못함
-  - Claude SDK의 `query()` 함수가 전혀 호출되지 않음
-- 변경사항:
-  - **`src/infrastructure/claude/worker_client.py` (Line 136)**:
-    - 변경 전: `lines.append(f"   - Coding Style: {style.language}, indentation={style.indentation}")`
-    - 변경 후: `lines.append(f"   - Coding Style: line_length={style.line_length}, quote_style={style.quote_style}")`
-    - CodingStyle 모델에 실제 존재하는 속성 사용 (`line_length`, `quote_style`)
-  - **조기 종료 로직 제거**:
-    - 30초 타임아웃 감지 로직 제거
-    - 완료 키워드 감지 로직 제거
-    - 에러 키워드 감지 로직 제거
-    - Worker가 자연스럽게 스트리밍을 완료할 때까지 대기
-  - **로깅 강화**:
-    - `logger.debug()` → `logger.info()`로 변경
-    - query() 호출 전 상세 정보 로깅 (Prompt 길이, Model, Tools, CLI 경로)
-    - 수신된 청크 개수 추적 및 로깅
-- 영향범위:
-  - **Worker 실행**: 이제 Worker가 정상적으로 실행되고 응답 생성
-  - **디버깅**: AttributeError 해결로 디버그 모드 사용 가능
-  - **성능**: Worker가 완전히 완료될 때까지 대기 (타임아웃은 `worker_tools.py`에서만 관리)
-- 테스트: 구문 검사 통과
-- 후속 조치: 실제 실행 테스트로 Worker 정상 동작 확인 필요
 
 ---
 
@@ -1235,9 +486,10 @@ ls -la prompts/
 - [query() vs ClaudeSDKClient](https://docs.anthropic.com/en/docs/agent-sdk/python/query-vs-client)
 - [MCP Server 가이드](https://docs.anthropic.com/en/docs/agent-sdk/python/mcp-servers)
 - [Conventional Commits](https://www.conventionalcommits.org/)
+- [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 
 ---
 
-**개발 히스토리**: 상세한 개발 히스토리는 `CLAUDE_HISTORY.md` 참조
+**개발 히스토리**: 상세한 개발 히스토리는 `CHANGELOG.md` 참조
 
-**최종 업데이트**: 2025-10-20 (Ideator, Product Manager Worker 추가 / 세션/로그 저장 위치 변경)
+**최종 업데이트**: 2025-10-24 (CLAUDE.md 개선 - 핵심 내용 강조, 반복 제거)

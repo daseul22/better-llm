@@ -34,8 +34,10 @@ DEFAULT_SENSITIVE_CONTENT_PATTERNS = [
     r"password\s*[:=]\s*['\"][\w@#$%^&*]+['\"]",          # 비밀번호
     r"secret[_-]?key\s*[:=]",                             # Secret 키
     r"aws[_-]?access[_-]?key",                            # AWS Access Key
-    r"anthropic[_-]?api[_-]?key",                         # Anthropic API Key
-    r"openai[_-]?api[_-]?key",                            # OpenAI API Key
+    # Anthropic API Key 하드코딩 탐지 (sk-ant-로 시작하는 실제 값만)
+    r"anthropic[_-]?api[_-]?key\s*[:=]\s*['\"]sk-ant-[\w-]+['\"]",
+    # OpenAI API Key 하드코딩 탐지 (sk-로 시작하는 실제 값만)
+    r"openai[_-]?api[_-]?key\s*[:=]\s*['\"]sk-[\w-]+['\"]",
     r"private[_-]?key\s*[:=]",                            # Private Key
     r"bearer\s+[a-zA-Z0-9\-._~+/]+=*",                    # Bearer 토큰
     r"token\s*[:=]\s*['\"]?[\w-]{20,}",                   # 일반 토큰
