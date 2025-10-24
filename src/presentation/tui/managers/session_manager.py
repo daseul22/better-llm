@@ -94,6 +94,59 @@ class SessionManager:
         self._active_session_index: int = 0
         logger.info("SessionManager initialized")
 
+    # ============================================================================
+    # 헬퍼 메서드 (중복 코드 제거)
+    # ============================================================================
+
+    def _ensure_session_exists(self, session_id: str) -> SessionData:
+        """
+        세션 존재 여부 검증 및 반환 (헬퍼 메서드)
+
+        Args:
+            session_id: 조회할 세션 ID
+
+        Returns:
+            세션 데이터
+
+        Raises:
+            KeyError: 존재하지 않는 세션 ID인 경우
+        """
+        if session_id not in self._sessions:
+            logger.error(f"Session not found: {session_id}")
+            raise KeyError(f"Session with ID '{session_id}' not found")
+        return self._sessions[session_id]
+
+    def _sync_session_index(
+        self,
+        index: int,
+        old_session: SessionData,
+        new_session: SessionData
+    ) -> None:
+        """
+        세션 인덱스/딕셔너리 동기화 헬퍼 (단일 책임)
+
+        Args:
+            index: 세션 인덱스
+            old_session: 기존 세션 데이터
+            new_session: 새로운 세션 데이터
+        """
+        # 기존 세션을 딕셔너리에서 제거
+        if old_session.session_id in self._sessions:
+            del self._sessions[old_session.session_id]
+
+        # 새 세션 저장
+        self._sessions[new_session.session_id] = new_session
+        self._session_list[index] = new_session
+
+        logger.info(
+            f"Synced session at index {index}: "
+            f"{old_session.session_id} -> {new_session.session_id}"
+        )
+
+    # ============================================================================
+    # 세션 생명주기 관리
+    # ============================================================================
+
     def start_session(self, session_config: SessionConfig) -> str:
         """
         새로운 세션을 시작합니다.
@@ -157,11 +210,7 @@ class SessionManager:
             >>> session_id = manager.start_session(config)
             >>> manager.stop_session(session_id)
         """
-        if session_id not in self._sessions:
-            logger.error(f"Session not found: {session_id}")
-            raise KeyError(f"Session with ID '{session_id}' not found")
-
-        session_data = self._sessions[session_id]
+        session_data = self._ensure_session_exists(session_id)
         session_data.end_time = time.time()
         session_data.status = SessionStatus.TERMINATED
 
@@ -189,11 +238,7 @@ class SessionManager:
             >>> manager.stop_session(session_id)
             >>> manager.restart_session(session_id)
         """
-        if session_id not in self._sessions:
-            logger.error(f"Session not found: {session_id}")
-            raise KeyError(f"Session with ID '{session_id}' not found")
-
-        session_data = self._sessions[session_id]
+        session_data = self._ensure_session_exists(session_id)
         session_data.start_time = time.time()
         session_data.end_time = None
         session_data.status = SessionStatus.COMPLETED
@@ -223,11 +268,8 @@ class SessionManager:
             >>> print(status)
             SessionStatus.COMPLETED
         """
-        if session_id not in self._sessions:
-            logger.error(f"Session not found: {session_id}")
-            raise KeyError(f"Session with ID '{session_id}' not found")
-
-        return self._sessions[session_id].status
+        session_data = self._ensure_session_exists(session_id)
+        return session_data.status
 
     def get_session_data(self, session_id: str) -> SessionData:
         """
@@ -250,11 +292,7 @@ class SessionManager:
             >>> print(data.session_id)
             test-001
         """
-        if session_id not in self._sessions:
-            logger.error(f"Session not found: {session_id}")
-            raise KeyError(f"Session with ID '{session_id}' not found")
-
-        return self._sessions[session_id]
+        return self._ensure_session_exists(session_id)
 
     def get_active_session_id(self) -> Optional[str]:
         """
@@ -308,14 +346,18 @@ class SessionManager:
             >>> session_id = manager.start_session(config)
             >>> manager.delete_session(session_id)
         """
-        if session_id not in self._sessions:
-            logger.error(f"Session not found: {session_id}")
-            raise KeyError(f"Session with ID '{session_id}' not found")
+        session_data = self._ensure_session_exists(session_id)
 
         if self._active_session_id == session_id:
             self._active_session_id = None
 
+        # 딕셔너리에서 삭제
         del self._sessions[session_id]
+
+        # 리스트에서도 삭제 (동기화)
+        if session_data in self._session_list:
+            self._session_list.remove(session_data)
+
         logger.info(f"Session deleted: {session_id}")
 
     def clear_all_sessions(self) -> None:
@@ -333,6 +375,7 @@ class SessionManager:
             0
         """
         self._sessions.clear()
+        self._session_list.clear()  # 리스트도 동기화
         self._active_session_id = None
         logger.info("All sessions cleared")
 
@@ -360,11 +403,8 @@ class SessionManager:
             >>> print(status)
             SessionStatus.ERROR
         """
-        if session_id not in self._sessions:
-            logger.error(f"Session not found: {session_id}")
-            raise KeyError(f"Session with ID '{session_id}' not found")
-
-        self._sessions[session_id].status = status
+        session_data = self._ensure_session_exists(session_id)
+        session_data.status = status
         logger.info(f"Session status updated: {session_id} -> {status}")
 
     def get_session_duration(self, session_id: str) -> float:
@@ -390,11 +430,7 @@ class SessionManager:
             >>> print(duration > 0)
             True
         """
-        if session_id not in self._sessions:
-            logger.error(f"Session not found: {session_id}")
-            raise KeyError(f"Session with ID '{session_id}' not found")
-
-        session_data = self._sessions[session_id]
+        session_data = self._ensure_session_exists(session_id)
         end_time = session_data.end_time or time.time()
         return end_time - session_data.start_time
 
@@ -562,14 +598,9 @@ class SessionManager:
             user_request=user_request
         )
 
-        # 기존 세션이 있다면 딕셔너리에서 제거
+        # 세션 인덱스 동기화 (헬퍼 메서드 사용)
         old_session = self._session_list[index]
-        if old_session.session_id in self._sessions:
-            del self._sessions[old_session.session_id]
-
-        # 새 세션 저장
-        self._sessions[session_id] = session_data
-        self._session_list[index] = session_data
+        self._sync_session_index(index, old_session, session_data)
 
         logger.info(f"Created session at index {index}: {session_id}")
         return session_data
@@ -601,14 +632,7 @@ class SessionManager:
             raise IndexError(f"Session index {index} out of range")
 
         old_session = self._session_list[index]
-
-        # 기존 세션을 딕셔너리에서 제거
-        if old_session.session_id in self._sessions:
-            del self._sessions[old_session.session_id]
-
-        # 새 세션 저장
-        self._sessions[session_data.session_id] = session_data
-        self._session_list[index] = session_data
+        self._sync_session_index(index, old_session, session_data)
 
         logger.info(
             f"Updated session at index {index}: "
@@ -773,14 +797,7 @@ class SessionManager:
             return False
 
         old_session = self._session_list[index]
-
-        # 기존 세션을 딕셔너리에서 제거
-        if old_session.session_id in self._sessions:
-            del self._sessions[old_session.session_id]
-
-        # 새 세션 저장
-        self._sessions[session_data.session_id] = session_data
-        self._session_list[index] = session_data
+        self._sync_session_index(index, old_session, session_data)
 
         logger.info(
             f"Replaced session at index {index}: "
