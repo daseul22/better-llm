@@ -26,8 +26,8 @@ class MessageRenderer:
     AI_EMOJI = "🤖"
     AI_TITLE = "Assistant"
 
-    INDENT_PREFIX = "│ "
-    SEPARATOR = "└" + "─" * 78
+    INDENT_PREFIX = "  "  # 단순 스페이스 2개로 변경 (가독성 개선)
+    SEPARATOR = ""  # 구분선 제거 (가독성 개선)
 
     # 줄바꿈 관련 상수
     OUTPUT_LOG_PADDING = 7  # padding(1)*2 + scrollbar(1) + border(2) + indent(2)

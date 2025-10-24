@@ -189,10 +189,14 @@ class ArtifactStorage:
             r'##\s*📋.*?요약.*?Manager.*?전달용',
             # 패턴 4: 영문 대체 (PLANNER 요약, CODER 요약 등)
             r'##\s*📋\s*\[[A-Z]+\s*요약\s*-\s*Manager\s*전달용\]',
+            # 패턴 5: 대괄호/이모지 선택 (매우 관대)
+            r'##\s*📋?\s*\[?[A-Z가-힣]+\s*요약.*?Manager.*?전달용\]?',
+            # 패턴 6: 헤더 없이 키워드만 (최후의 폴백)
+            r'요약.*?Manager.*?전달용',
         ]
 
-        # 디버깅: 출력 샘플 로그
-        sample = full_output[:500].replace('\n', '\\n')
+        # 디버깅: 출력 샘플 로그 (500자 → 1000자로 증가)
+        sample = full_output[:1000].replace('\n', '\\n')
         logger.debug(
             "Attempting to extract summary",
             output_size=len(full_output),
@@ -221,9 +225,10 @@ class ArtifactStorage:
 
         # 모든 패턴 실패 시 - None 반환하여 재요청 트리거
         logger.warning(
-            "Summary section not found with any pattern, returning None to trigger re-request",
+            "All summary extraction patterns failed",
             output_size=len(full_output),
-            tried_patterns=len(patterns)
+            tried_patterns=len(patterns),
+            output_preview=full_output[:1000]
         )
 
         # None 반환 → worker_tools.py에서 재요청 트리거
