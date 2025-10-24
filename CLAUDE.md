@@ -413,6 +413,8 @@ export CLAUDE_CLI_PATH='/path/to/claude'
 
 ---
 
+---
+
 ## 보안 및 성능
 
 ### 보안 체크리스트
@@ -480,8 +482,133 @@ export CLAUDE_CLI_PATH='/path/to/claude'
 
 ---
 
+## Claude Agent SDK Best Practice
+
+본 프로젝트는 Claude Agent SDK v0.1.0+의 최신 Best Practice를 모두 적용하고 있습니다.
+
+### 1. ClaudeAgentOptions 사용 ✅
+
+```python
+from claude_agent_sdk.types import ClaudeAgentOptions
+
+options = ClaudeAgentOptions(
+    model="claude-sonnet-4-5-20250929",
+    allowed_tools=["read", "write", "edit"],
+    cli_path="/path/to/claude",
+    permission_mode="acceptEdits",  # acceptEdits | default | bypassPermissions
+    setting_sources=["user", "project"]  # 명시적 설정 (SDK v0.1.0+)
+)
+```
+
+**주의**: `ClaudeCodeOptions` → `ClaudeAgentOptions` 변경 (SDK v0.1.0+)
+
+### 2. System Prompt 명시적 설정 ✅
+
+- **Manager Agent**: `self.SYSTEM_PROMPT` 속성으로 관리 (`manager_client.py` - 중복 작업 방지 규칙 포함)
+- **Worker Agent**: `prompts/*.txt` 파일에서 로드 (`worker_client.py:68-105` - _load_system_prompt 메서드)
+- SDK 호출 시 프롬프트에 포함하여 전달 (현재 방식 유지)
+
+```python
+# Worker Agent 예시
+full_prompt = f"{self.system_prompt}\n\n{task_description}"
+async for response in query(prompt=full_prompt, options=options):
+    ...
+```
+
+### 3. 에러 처리 패턴 ✅
+
+```python
+from claude_agent_sdk import (
+    CLINotFoundError,
+    ProcessError,
+    CLIJSONDecodeError,
+    ClaudeSDKError
+)
+
+try:
+    async for response in query(prompt, options):
+        ...
+except CLINotFoundError:
+    # Claude CLI 미설치 → 설치 가이드 제공
+except ProcessError as e:
+    # CLI 프로세스 실행 실패 → exit_code 확인
+except CLIJSONDecodeError:
+    # CLI 응답 파싱 실패 → CLI 버전 확인 요청
+except ClaudeSDKError:
+    # 기타 SDK 에러 → 로그 확인 요청
+```
+
+**구현 위치**: `sdk_executor.py:568-615` (Manager), `sdk_executor.py:736-789` (Worker)
+
+### 4. 스트리밍 응답 처리 (Template Method Pattern) ✅
+
+```python
+from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
+# 공통 ResponseHandler 추상 클래스 활용
+class SDKResponseHandler(ABC):
+    def extract_text_from_response(self, response) -> Optional[str]:
+        # AssistantMessage → TextBlock/ThinkingBlock 추출
+        # ResultMessage → usage 정보만 (텍스트 없음)
+        # Fallback → hasattr()로 동적 추출
+
+# Manager/Worker별 구체적인 구현
+class ManagerResponseHandler(SDKResponseHandler):
+    async def process_response(self, response):
+        # usage 정보 추출 → 콜백 호출
+        # 텍스트 추출 → yield
+```
+
+**구현 위치**: `sdk_executor.py:75-416`
+
+### 5. 프롬프트 캐싱 활용 ✅
+
+- **Planner 결과 캐싱**: Planner Worker 결과 캐싱 (LRU + TTL, 애플리케이션 레벨)
+- **설정**: `system_config.json`의 `performance.planner_cache_enabled` (기본: True)
+- **효과**: 동일 요청 시 API 호출 절감 (최대 100개 캐싱, 1시간 TTL)
+
+**주의**: 이는 Anthropic의 Prompt Caching Beta API가 아닌 애플리케이션 레벨 캐싱입니다.
+
+**구현 위치**: `cache/prompt_cache.py`, `mcp/worker_tools.py:119-124`
+
+### 6. Permission Mode 설정 ✅
+
+| Mode | 설명 | 사용 시나리오 |
+|------|------|--------------|
+| **acceptEdits** | 파일 편집 자동 승인 (권장) | 프로덕션, CI/CD |
+| **default** | 모든 작업 수동 승인 | 대화형 개발 |
+| **bypassPermissions** | 모든 작업 자동 승인 | 테스트, 자동화 |
+| **plan** | 계획만 수립 (실행 안 함) | 계획 검토 |
+
+```bash
+# 환경변수로 동적 변경 (시스템 설정보다 우선)
+export PERMISSION_MODE=acceptEdits
+```
+
+**구현 위치**: `sdk_executor.py:51-74` (환경변수 오버라이드 로직 포함)
+
+### 7. Context 관리 ✅
+
+```python
+options = ClaudeAgentOptions(
+    max_turns=10,  # 최대 대화 턴 수 (None이면 무제한)
+    continue_conversation=False,  # 세션 재개 여부
+    setting_sources=["user", "project"]  # 설정 로드 소스
+)
+```
+
+**Manager Agent 슬라이딩 윈도우**:
+- 최대 20개 메시지 유지 (`max_history_messages=20`)
+- 첫 번째 사용자 요청 + 최근 메시지 포함
+- 컨텍스트 윈도우 사용량 90% 초과 시 경고
+
+**구현 위치**: `manager_client.py:636-692`, `manager_client.py:996-1068`
+
+---
+
 ## 참고 자료
 
+- [Claude Agent SDK 마이그레이션 가이드](https://docs.claude.com/en/docs/claude-code/sdk/migration-guide.md) ⭐
 - [Claude Agent SDK 공식 문서](https://docs.anthropic.com/en/docs/agent-sdk/python)
 - [query() vs ClaudeSDKClient](https://docs.anthropic.com/en/docs/agent-sdk/python/query-vs-client)
 - [MCP Server 가이드](https://docs.anthropic.com/en/docs/agent-sdk/python/mcp-servers)
@@ -492,4 +619,4 @@ export CLAUDE_CLI_PATH='/path/to/claude'
 
 **개발 히스토리**: 상세한 개발 히스토리는 `CHANGELOG.md` 참조
 
-**최종 업데이트**: 2025-10-24 (CLAUDE.md 개선 - 핵심 내용 강조, 반복 제거)
+**최종 업데이트**: 2025-10-25 (Claude Agent SDK Best Practice 문서화)
