@@ -19,6 +19,7 @@ from src.presentation.tui.managers.callback_handlers import CallbackHandlers
 from src.presentation.tui.managers.log_manager import LogManager
 from src.presentation.tui.managers.session_switcher import SessionSwitcher
 from src.presentation.tui.managers.image_handler import ImageHandler
+from src.presentation.tui.managers.log_filter_manager import LogFilterManager
 
 __all__ = [
     # Level 1
@@ -35,4 +36,5 @@ __all__ = [
     "LogManager",
     "SessionSwitcher",
     "ImageHandler",
+    "LogFilterManager",
 ]

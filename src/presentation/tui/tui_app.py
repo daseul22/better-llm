@@ -85,6 +85,7 @@ from .managers import (
     LogManager,
     SessionSwitcher,
     ImageHandler,
+    LogFilterManager,
 )
 from .managers.session_manager import SessionData
 from .commands import SlashCommandHandler
@@ -250,7 +251,7 @@ class OrchestratorTUI(App):
         self.metrics_ui_manager = MetricsUIManager()
         self.workflow_ui_manager = WorkflowUIManager()
 
-        # Level 2 매니저 초기화 (7개)
+        # Level 2 매니저 초기화 (8개)
         self.ui_composer = UIComposer(self)
         self.log_manager = LogManager(self)
         self.initialization_manager = InitializationManager(self)
@@ -258,6 +259,7 @@ class OrchestratorTUI(App):
         self.callback_handlers = CallbackHandlers(self)
         self.session_switcher = SessionSwitcher(self)
         self.image_handler = ImageHandler(self)
+        self.log_filter_manager = LogFilterManager(self)
 
         # 슬래시 커맨드 핸들러 초기화
         self.slash_command_handler = SlashCommandHandler(
@@ -635,116 +637,12 @@ class OrchestratorTUI(App):
         await self.action_handler.action_search_log()
 
     async def action_show_log_filter(self) -> None:
-        """
-        Ctrl+Shift+F: 로그 필터 모달 표시.
-
-        로그 레벨, Worker, 시간대별 필터링 옵션을 제공합니다.
-        """
-        try:
-            # Worker 목록 추출 (LogFilter 사용)
-            from .utils.log_filter import LogFilter
-            log_filter = LogFilter()
-            available_workers = log_filter.extract_workers(self.log_lines)
-
-            # 로그 필터 모달 표시
-            result = await self.push_screen(
-                LogFilterModal(self.log_lines, available_workers)
-            )
-
-            # 필터 적용 결과 처리
-            if result is not None:
-                await self.apply_log_filter(result)
-
-        except Exception as e:
-            logger.error(f"로그 필터 모달 표시 실패: {e}", exc_info=True)
-            if self.settings.enable_notifications and self.settings.notify_on_error:
-                self.notify(f"로그 필터 표시 실패: {e}", severity="error")
+        """Ctrl+Shift+F: 로그 필터 모달 표시 (LogFilterManager로 위임)"""
+        await self.log_filter_manager.show_log_filter()
 
     async def apply_log_filter(self, filter_config) -> None:
-        """
-        로그 필터 적용.
-
-        Args:
-            filter_config: FilterConfig 객체 (levels, worker, start_time, end_time)
-        """
-        try:
-            from .utils.log_filter import LogFilter
-
-            # 필터 적용
-            log_filter = LogFilter()
-            filtered_lines = log_filter.apply_filters(
-                self.log_lines,
-                levels=filter_config.levels,
-                worker=filter_config.worker,
-                start_time=filter_config.start_time,
-                end_time=filter_config.end_time
-            )
-
-            # 출력 로그 갱신
-            output_log = self.query_one("#output-log", RichLog)
-            output_log.clear()
-
-            # 필터 정보 표시
-            from rich.panel import Panel
-            filter_info = self._format_filter_info(filter_config)
-            output_log.write(Panel(
-                f"[bold cyan]🔍 로그 필터 적용[/bold cyan]\n\n{filter_info}",
-                border_style="cyan"
-            ))
-            output_log.write("")
-
-            # 필터링된 로그 출력
-            if filtered_lines:
-                for line in filtered_lines:
-                    output_log.write(line)
-                output_log.write("")
-                output_log.write(
-                    f"[dim]총 {len(filtered_lines)}개 라인 (전체: {len(self.log_lines)}개)[/dim]"
-                )
-            else:
-                output_log.write("[yellow]⚠️ 필터링된 로그가 없습니다[/yellow]")
-
-            # 알림 표시
-            if self.settings.enable_notifications:
-                self.notify(
-                    f"로그 필터 적용: {len(filtered_lines)}개 라인",
-                    severity="information"
-                )
-
-        except Exception as e:
-            logger.error(f"로그 필터 적용 실패: {e}", exc_info=True)
-            if self.settings.enable_notifications and self.settings.notify_on_error:
-                self.notify(f"로그 필터 적용 실패: {e}", severity="error")
-
-    def _format_filter_info(self, filter_config) -> str:
-        """
-        필터 설정 정보 포매팅.
-
-        Args:
-            filter_config: FilterConfig 객체
-
-        Returns:
-            포매팅된 필터 정보 문자열
-        """
-        lines = []
-
-        # 로그 레벨
-        levels_str = ", ".join(sorted(filter_config.levels))
-        lines.append(f"**레벨**: {levels_str}")
-
-        # Worker
-        worker_str = filter_config.worker or "All"
-        lines.append(f"**Worker**: {worker_str}")
-
-        # 시간대
-        if filter_config.start_time or filter_config.end_time:
-            start_str = filter_config.start_time.strftime("%H:%M:%S") if filter_config.start_time else "제한 없음"
-            end_str = filter_config.end_time.strftime("%H:%M:%S") if filter_config.end_time else "제한 없음"
-            lines.append(f"**시간대**: {start_str} ~ {end_str}")
-        else:
-            lines.append("**시간대**: 제한 없음")
-
-        return "\n".join(lines)
+        """로그 필터 적용 (LogFilterManager로 위임)"""
+        await self.log_filter_manager.apply_log_filter(filter_config)
 
     async def perform_search(self, query: str) -> None:
         """
