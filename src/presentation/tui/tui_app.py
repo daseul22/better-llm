@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import Optional, List, Tuple, Union, Dict, Any, Callable
 from enum import Enum
+from functools import wraps
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, ScrollableContainer, Horizontal
@@ -88,6 +89,31 @@ from .commands import SlashCommandHandler
 from .runners import TaskRunner
 
 logger = get_logger(__name__, component="TUI")
+
+
+# ============================================================================
+# 데코레이터 (액션 메서드 상태 동기화)
+# ============================================================================
+
+def sync_action_state(func):
+    """
+    액션 메서드 상태 동기화 데코레이터
+
+    ActionHandler와의 상태 동기화를 자동화합니다.
+    - 메서드 실행 전: TUI 상태 → ActionHandler 동기화
+    - 메서드 실행 후: ActionHandler 상태 → TUI 반영
+
+    Usage:
+        @sync_action_state
+        async def action_xxx(self) -> None:
+            await self.action_handler.action_xxx()
+    """
+    @wraps(func)
+    async def wrapper(self):
+        self._sync_action_handler_state()
+        await func(self)
+        self._apply_action_handler_state()
+    return wrapper
 
 
 class LayoutMode(Enum):
@@ -531,11 +557,10 @@ class OrchestratorTUI(App):
         self.output_mode = state_updates["output_mode"]
         self.current_worker_tab = state_updates["current_worker_tab"]
 
+    @sync_action_state
     async def action_new_session(self) -> None:
         """Ctrl+N: 새 세션 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_new_session()
-        self._apply_action_handler_state()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """입력 변경 이벤트 - 현재는 사용하지 않음."""
@@ -675,23 +700,20 @@ class OrchestratorTUI(App):
         except Exception as e:
             logger.warning(f"출력 모드 적용 실패: {e}")
 
+    @sync_action_state
     async def action_save_log(self) -> None:
         """Ctrl+S: 로그 저장 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_save_log()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_show_session_browser(self) -> None:
         """Ctrl+L: 세션 브라우저 표시 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_show_session_browser()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_search_log(self) -> None:
         """Ctrl+F: 로그 검색 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_search_log()
-        self._apply_action_handler_state()
 
     async def action_show_log_filter(self) -> None:
         """
@@ -978,41 +1000,35 @@ class OrchestratorTUI(App):
         except Exception as e:
             logger.error(f"에러 통계 표시 실패: {e}")
 
+    @sync_action_state
     async def action_show_error_stats(self) -> None:
         """F6 키: 에러 통계 표시 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_show_error_stats()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_next_worker_tab(self) -> None:
         """Ctrl+Tab: 다음 워커 탭으로 전환 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_next_worker_tab()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_prev_worker_tab(self) -> None:
         """Ctrl+Shift+Tab: 이전 워커 탭으로 전환 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_prev_worker_tab()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_switch_to_session_1(self) -> None:
         """Ctrl+1: 세션 1로 전환 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_switch_to_session_1()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_switch_to_session_2(self) -> None:
         """Ctrl+2: 세션 2로 전환 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_switch_to_session_2()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_switch_to_session_3(self) -> None:
         """Ctrl+3: 세션 3로 전환 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_switch_to_session_3()
-        self._apply_action_handler_state()
 
     def _ensure_session_exists(self, index: int) -> None:
         """
@@ -1134,59 +1150,50 @@ class OrchestratorTUI(App):
         except Exception as e:
             self._handle_session_switch_error(e)
 
+    @sync_action_state
     async def action_interrupt_or_quit(self) -> None:
         """Ctrl+C: 작업 중단 또는 종료 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_interrupt_or_quit()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_show_help(self) -> None:
         """?: 도움말 표시 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_show_help()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_show_settings(self) -> None:
         """F2: 설정 표시 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_show_settings()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_toggle_metrics_panel(self) -> None:
         """Ctrl+M: 메트릭 패널 토글 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_toggle_metrics_panel()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_toggle_workflow_panel(self) -> None:
         """F4: 워크플로우 패널 토글 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_toggle_workflow_panel()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_toggle_worker_status(self) -> None:
         """F5: Worker 상태 패널 토글 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_toggle_worker_status()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_history_up(self) -> None:
         """Up: 이전 입력 히스토리 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_history_up()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_history_down(self) -> None:
         """Down: 다음 입력 히스토리 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_history_down()
-        self._apply_action_handler_state()
 
+    @sync_action_state
     async def action_toggle_output_mode(self) -> None:
         """Ctrl+O: Manager/Worker 출력 전환 (ActionHandler로 위임)"""
-        self._sync_action_handler_state()
         await self.action_handler.action_toggle_output_mode()
-        self._apply_action_handler_state()
 
     async def action_show_command_palette(self) -> None:
         """
