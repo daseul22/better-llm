@@ -801,6 +801,196 @@ async def _request_summary_from_worker(
 
 
 # ============================================================================
+# Worker Tool Factory Pattern (중복 코드 제거)
+# ============================================================================
+
+class WorkerToolFactory:
+    """
+    Worker Tool 실행의 공통 로직을 중앙화하는 팩토리 클래스
+
+    Template Method Pattern을 사용하여 각 Worker Tool의 중복 코드를 제거합니다.
+
+    책임:
+        - Worker 설정 관리 (캐싱, 재시도, 타임아웃)
+        - WorkerExecutionContext 생성
+        - Worker 실행 및 결과 처리
+        - Artifact 저장 및 요약 추출
+        - Tool 결과 기록
+
+    Example:
+        >>> result = await WorkerToolFactory.execute_worker_task(
+        ...     worker_name="planner",
+        ...     task_description="작업 설명",
+        ...     use_cache=True,
+        ...     use_retry=True
+        ... )
+    """
+
+    # Worker별 설정 (캐싱 활성화 여부, 재시도 정책)
+    TOOL_CONFIG = {
+        "planner": {"use_cache": True, "use_retry": True},
+        "coder": {"use_cache": False, "use_retry": False},
+        "reviewer": {"use_cache": False, "use_retry": False},
+        "tester": {"use_cache": False, "use_retry": False},
+        "committer": {"use_cache": False, "use_retry": False},
+        "ideator": {"use_cache": False, "use_retry": True},
+        "product_manager": {"use_cache": False, "use_retry": True},
+        "documenter": {"use_cache": False, "use_retry": False},
+    }
+
+    @staticmethod
+    async def execute_worker_task(
+        worker_name: str,
+        task_description: str,
+        use_cache: bool = False,
+        use_retry: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Worker Task 실행의 공통 로직 통합 (Template Method)
+
+        단일 책임: 모든 Worker Tool의 공통 실행 프로세스를 중앙화
+
+        프로세스:
+            1. 캐시 확인 (Planner만)
+            2. WorkerExecutionContext 생성
+            3. Worker 실행
+            4. Artifact 저장 및 요약 추출
+            5. 캐시 저장 (Planner만)
+            6. 결과 기록
+
+        Args:
+            worker_name: Worker 이름 (예: "planner", "coder")
+            task_description: 작업 설명
+            use_cache: 캐싱 사용 여부 (Planner만 지원)
+            use_retry: 재시도 사용 여부
+
+        Returns:
+            Worker 실행 결과 (요약 포함)
+
+        Example:
+            >>> result = await WorkerToolFactory.execute_worker_task(
+            ...     worker_name="planner",
+            ...     task_description="새 기능 계획 수립",
+            ...     use_cache=True,
+            ...     use_retry=True
+            ... )
+        """
+        # Step 1: 캐시 확인 (Planner만)
+        if use_cache and worker_name == "planner":
+            cache = _get_planner_cache()
+            if cache:
+                cached = cache.get(prompt=task_description)
+                if cached:
+                    logger.info(
+                        f"[{worker_name}] Cache HIT - returning cached result",
+                        task_preview=task_description[:100]
+                    )
+                    # 캐시 히트 시에도 last_tool_results에 추가 (Orchestrator 인식용)
+                    _record_tool_result(worker_name, cached)
+                    return cached
+
+            logger.debug(
+                f"[{worker_name}] Cache MISS - executing worker",
+                task_preview=task_description[:100]
+            )
+
+        # Step 2: WorkerExecutionContext 생성
+        context = _create_execution_context(worker_name, task_description, use_retry)
+
+        # Step 3: Worker 실행 (재시도 로직은 WorkerExecutor에서 처리)
+        result = await _state.worker_executor.execute(context)
+
+        # Step 4: Artifact 저장 및 요약 추출
+        result = await _save_and_summarize_output(worker_name, result, _state.current_session_id)
+
+        # Step 5: 캐시 저장 (Planner만)
+        if use_cache and worker_name == "planner":
+            _cache_result(worker_name, task_description, result)
+
+        # Step 6: 결과 기록
+        _record_tool_result(worker_name, result)
+
+        return result
+
+
+def _create_execution_context(
+    worker_name: str,
+    task_description: str,
+    use_retry: bool
+) -> WorkerExecutionContext:
+    """
+    WorkerExecutionContext 생성 (공통 로직)
+
+    Args:
+        worker_name: Worker 이름
+        task_description: 작업 설명
+        use_retry: 재시도 사용 여부
+
+    Returns:
+        WorkerExecutionContext 인스턴스
+    """
+    return WorkerExecutionContext(
+        worker_name=worker_name,
+        task_description=task_description,
+        use_retry=use_retry,
+        timeout=_WORKER_TIMEOUTS.get(worker_name, 300),
+        session_id=_state.current_session_id,
+        metrics_collector=_state.metrics_collector,
+        worker_agent=_state.worker_agents.get(worker_name),
+        worker_output_callback=_state.worker_output_callback
+    )
+
+
+def _record_tool_result(worker_name: str, result: Dict[str, Any]) -> None:
+    """
+    Tool 결과를 last_tool_results에 기록 (공통 로직)
+
+    Args:
+        worker_name: Worker 이름
+        result: Worker 실행 결과
+    """
+    result_text = _safe_extract_result_text(result)
+    if result_text:
+        _state.last_tool_results.append({
+            "tool_name": f"execute_{worker_name}_task",
+            "worker_name": worker_name,
+            "result": result_text
+        })
+
+
+def _get_planner_cache() -> Optional[PromptCache]:
+    """
+    Planner 캐시 인스턴스 반환 (헬퍼)
+
+    Returns:
+        PromptCache 인스턴스 또는 None
+    """
+    global _planner_cache
+    if _planner_cache and _planner_cache.enabled:
+        return _planner_cache
+    return None
+
+
+def _cache_result(worker_name: str, task_description: str, result: Dict[str, Any]) -> None:
+    """
+    Worker 실행 결과를 캐시에 저장 (Planner만)
+
+    Args:
+        worker_name: Worker 이름
+        task_description: 작업 설명 (캐시 키)
+        result: Worker 실행 결과
+    """
+    cache = _get_planner_cache()
+    if cache:
+        cache.set(prompt=task_description, value=result)
+        logger.info(
+            f"[{worker_name}] Result cached",
+            task_preview=task_description[:100],
+            cache_size=len(cache)
+        )
+
+
+# ============================================================================
 # MCP Tool 함수들 (7개 Worker Tools)
 # ============================================================================
 
@@ -815,82 +1005,12 @@ async def _request_summary_from_worker(
     }
 )
 async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Planner Agent 실행 (재시도 로직 및 캐싱 포함)
-
-    동일한 task_description에 대한 중복 요청을 캐싱하여 API 호출 최소화.
-    캐시 히트 시 즉시 반환, 미스 시 Worker 실행 후 결과를 캐싱합니다.
-
-    Args:
-        args: {"task_description": "작업 설명"}
-
-    Returns:
-        Agent 실행 결과 (요약만 포함)
-    """
-    task_description = args["task_description"]
-
-    # 1. 캐시 조회 (캐시가 활성화되어 있고 초기화된 경우만)
-    if _planner_cache and _planner_cache.enabled:
-        cached_result = _planner_cache.get(prompt=task_description)
-
-        if cached_result is not None:
-            logger.info(
-                "[planner] Cache HIT - returning cached result",
-                task_preview=task_description[:100]
-            )
-
-            # 캐시된 결과 반환 (Tool 결과는 이미 저장되어 있으므로 재저장 불필요)
-            # 단, 캐시 히트 시에도 last_tool_results에 추가해야 Orchestrator가 인식함
-            result_text = _safe_extract_result_text(cached_result)
-            if result_text:
-                _state.last_tool_results.append({
-                    "tool_name": "execute_planner_task",
-                    "worker_name": "planner",
-                    "result": result_text
-                })
-
-            return cached_result
-
-        logger.debug(
-            "[planner] Cache MISS - executing worker",
-            task_preview=task_description[:100]
-        )
-
-    # 2. 캐시 미스 → Worker 실행
-    context = WorkerExecutionContext(
+    """Planner Agent 실행 (재시도 로직 및 캐싱 포함)"""
+    return await WorkerToolFactory.execute_worker_task(
         worker_name="planner",
-        task_description=task_description,
-        use_retry=True,
-        timeout=_WORKER_TIMEOUTS["planner"],
-        session_id=_state.current_session_id,
-        metrics_collector=_state.metrics_collector,
-        worker_agent=_state.worker_agents.get("planner"),
-        worker_output_callback=_state.worker_output_callback
+        task_description=args["task_description"],
+        **WorkerToolFactory.TOOL_CONFIG["planner"]
     )
-    result = await _state.worker_executor.execute(context)
-
-    # 3. Artifact Storage 활성화 (전체 출력 저장 및 요약 추출)
-    result = await _save_and_summarize_output("planner", result, _state.current_session_id)
-
-    # 4. 캐시 저장 (캐시가 활성화된 경우만)
-    if _planner_cache and _planner_cache.enabled:
-        _planner_cache.set(prompt=task_description, value=result)
-        logger.info(
-            "[planner] Result cached",
-            task_preview=task_description[:100],
-            cache_size=len(_planner_cache)
-        )
-
-    # 5. Tool 결과 저장 (Orchestrator가 히스토리에 추가하기 위해) - 안전한 추출
-    result_text = _safe_extract_result_text(result)
-    if result_text:
-        _state.last_tool_results.append({
-            "tool_name": "execute_planner_task",
-            "worker_name": "planner",
-            "result": result_text
-        })
-
-    return result
 
 
 @tool(
@@ -904,40 +1024,12 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 )
 async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Coder Agent 실행
-
-    Args:
-        args: {"task_description": "작업 설명"}
-
-    Returns:
-        Agent 실행 결과 (요약만 포함)
-    """
-    context = WorkerExecutionContext(
+    """Coder Agent 실행"""
+    return await WorkerToolFactory.execute_worker_task(
         worker_name="coder",
         task_description=args["task_description"],
-        use_retry=False,
-        timeout=_WORKER_TIMEOUTS["coder"],
-        session_id=_state.current_session_id,
-        metrics_collector=_state.metrics_collector,
-        worker_agent=_state.worker_agents.get("coder"),
-        worker_output_callback=_state.worker_output_callback
+        **WorkerToolFactory.TOOL_CONFIG["coder"]
     )
-    result = await _state.worker_executor.execute(context)
-
-    # Artifact Storage 활성화
-    result = await _save_and_summarize_output("coder", result, _state.current_session_id)
-
-    # Tool 결과 저장 - 안전한 추출
-    result_text = _safe_extract_result_text(result)
-    if result_text:
-        _state.last_tool_results.append({
-            "tool_name": "execute_coder_task",
-            "worker_name": "coder",
-            "result": result_text
-        })
-
-    return result
 
 
 @tool(
@@ -951,40 +1043,12 @@ async def execute_coder_task(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 )
 async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Tester Agent 실행
-
-    Args:
-        args: {"task_description": "작업 설명"}
-
-    Returns:
-        Agent 실행 결과 (요약만 포함)
-    """
-    context = WorkerExecutionContext(
+    """Tester Agent 실행"""
+    return await WorkerToolFactory.execute_worker_task(
         worker_name="tester",
         task_description=args["task_description"],
-        use_retry=False,
-        timeout=_WORKER_TIMEOUTS["tester"],
-        session_id=_state.current_session_id,
-        metrics_collector=_state.metrics_collector,
-        worker_agent=_state.worker_agents.get("tester"),
-        worker_output_callback=_state.worker_output_callback
+        **WorkerToolFactory.TOOL_CONFIG["tester"]
     )
-    result = await _state.worker_executor.execute(context)
-
-    # Artifact Storage 활성화
-    result = await _save_and_summarize_output("tester", result, _state.current_session_id)
-
-    # Tool 결과 저장 - 안전한 추출
-    result_text = _safe_extract_result_text(result)
-    if result_text:
-        _state.last_tool_results.append({
-            "tool_name": "execute_tester_task",
-            "worker_name": "tester",
-            "result": result_text
-        })
-
-    return result
 
 
 @tool(
@@ -998,52 +1062,12 @@ async def execute_tester_task(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 )
 async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Reviewer Agent에게 작업을 할당합니다. 코드 리뷰 및 품질 검증을 담당합니다.
-
-    Review cycle은 무한 루프 방지를 위해 최대 횟수가 제한됩니다.
-    (기본값: 3회, system_config.json의 'workflow_limits.max_review_iterations'로 조정 가능)
-
-    Args:
-        args: {"task_description": "리뷰 요청 내용"}
-
-    Returns:
-        Dict[str, Any]: Agent 실행 결과
-            - content: [{"type": "text", "text": "리뷰 결과"}]
-
-    Raises:
-        Exception: Review cycle이 최대치를 초과한 경우
-
-    Note:
-        - Review cycle은 Reviewer → Coder → Reviewer 패턴을 감지하여 증가합니다.
-        - 최대 횟수 초과 시 자동으로 실행이 중단되며, 수동 검토가 필요합니다.
-        - 새 작업 시작 시(Planner 또는 Coder 호출) Review cycle이 자동 초기화됩니다.
-    """
-    context = WorkerExecutionContext(
+    """Reviewer Agent 실행 (Review cycle 자동 관리)"""
+    return await WorkerToolFactory.execute_worker_task(
         worker_name="reviewer",
         task_description=args["task_description"],
-        use_retry=False,
-        timeout=_WORKER_TIMEOUTS["reviewer"],
-        session_id=_state.current_session_id,
-        metrics_collector=_state.metrics_collector,
-        worker_agent=_state.worker_agents.get("reviewer"),
-        worker_output_callback=_state.worker_output_callback
+        **WorkerToolFactory.TOOL_CONFIG["reviewer"]
     )
-    result = await _state.worker_executor.execute(context)
-
-    # Artifact Storage 활성화
-    result = await _save_and_summarize_output("reviewer", result, _state.current_session_id)
-
-    # Tool 결과 저장 - 안전한 추출
-    result_text = _safe_extract_result_text(result)
-    if result_text:
-        _state.last_tool_results.append({
-            "tool_name": "execute_reviewer_task",
-            "worker_name": "reviewer",
-            "result": result_text
-        })
-
-    return result
 
 
 @tool(
@@ -1057,40 +1081,12 @@ async def execute_reviewer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 )
 async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Committer Agent 실행 (보안 검증 포함)
-
-    Args:
-        args: {"task_description": "작업 설명"}
-
-    Returns:
-        Agent 실행 결과 (요약만 포함)
-    """
-    context = WorkerExecutionContext(
+    """Committer Agent 실행 (보안 검증 포함)"""
+    return await WorkerToolFactory.execute_worker_task(
         worker_name="committer",
         task_description=args["task_description"],
-        use_retry=False,
-        timeout=_WORKER_TIMEOUTS["committer"],
-        session_id=_state.current_session_id,
-        metrics_collector=_state.metrics_collector,
-        worker_agent=_state.worker_agents.get("committer"),
-        worker_output_callback=_state.worker_output_callback
+        **WorkerToolFactory.TOOL_CONFIG["committer"]
     )
-    result = await _state.worker_executor.execute(context)  # 보안 검증은 내부에서 처리됨
-
-    # Artifact Storage 활성화
-    result = await _save_and_summarize_output("committer", result, _state.current_session_id)
-
-    # Tool 결과 저장 - 안전한 추출
-    result_text = _safe_extract_result_text(result)
-    if result_text:
-        _state.last_tool_results.append({
-            "tool_name": "execute_committer_task",
-            "worker_name": "committer",
-            "result": result_text
-        })
-
-    return result
 
 
 @tool(
@@ -1104,40 +1100,12 @@ async def execute_committer_task(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 )
 async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Ideator Agent 실행 (재시도 로직 포함)
-
-    Args:
-        args: {"task_description": "작업 설명"}
-
-    Returns:
-        Agent 실행 결과 (요약만 포함)
-    """
-    context = WorkerExecutionContext(
+    """Ideator Agent 실행 (재시도 로직 포함)"""
+    return await WorkerToolFactory.execute_worker_task(
         worker_name="ideator",
         task_description=args["task_description"],
-        use_retry=True,
-        timeout=_WORKER_TIMEOUTS["ideator"],
-        session_id=_state.current_session_id,
-        metrics_collector=_state.metrics_collector,
-        worker_agent=_state.worker_agents.get("ideator"),
-        worker_output_callback=_state.worker_output_callback
+        **WorkerToolFactory.TOOL_CONFIG["ideator"]
     )
-    result = await _state.worker_executor.execute(context)
-
-    # Artifact Storage 활성화
-    result = await _save_and_summarize_output("ideator", result, _state.current_session_id)
-
-    # Tool 결과 저장 - 안전한 추출
-    result_text = _safe_extract_result_text(result)
-    if result_text:
-        _state.last_tool_results.append({
-            "tool_name": "execute_ideator_task",
-            "worker_name": "ideator",
-            "result": result_text
-        })
-
-    return result
 
 
 @tool(
@@ -1151,40 +1119,12 @@ async def execute_ideator_task(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 )
 async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Product Manager Agent 실행 (재시도 로직 포함)
-
-    Args:
-        args: {"task_description": "작업 설명"}
-
-    Returns:
-        Agent 실행 결과 (요약만 포함)
-    """
-    context = WorkerExecutionContext(
+    """Product Manager Agent 실행 (재시도 로직 포함)"""
+    return await WorkerToolFactory.execute_worker_task(
         worker_name="product_manager",
         task_description=args["task_description"],
-        use_retry=True,
-        timeout=_WORKER_TIMEOUTS["product_manager"],
-        session_id=_state.current_session_id,
-        metrics_collector=_state.metrics_collector,
-        worker_agent=_state.worker_agents.get("product_manager"),
-        worker_output_callback=_state.worker_output_callback
+        **WorkerToolFactory.TOOL_CONFIG["product_manager"]
     )
-    result = await _state.worker_executor.execute(context)
-
-    # Artifact Storage 활성화
-    result = await _save_and_summarize_output("product_manager", result, _state.current_session_id)
-
-    # Tool 결과 저장 - 안전한 추출
-    result_text = _safe_extract_result_text(result)
-    if result_text:
-        _state.last_tool_results.append({
-            "tool_name": "execute_product_manager_task",
-            "worker_name": "product_manager",
-            "result": result_text
-        })
-
-    return result
 
 
 @tool(
@@ -1198,40 +1138,12 @@ async def execute_product_manager_task(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 )
 async def execute_documenter_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Documenter Agent 실행
-
-    Args:
-        args: {"task_description": "작업 설명"}
-
-    Returns:
-        Agent 실행 결과 (요약만 포함)
-    """
-    context = WorkerExecutionContext(
+    """Documenter Agent 실행"""
+    return await WorkerToolFactory.execute_worker_task(
         worker_name="documenter",
         task_description=args["task_description"],
-        use_retry=False,
-        timeout=_WORKER_TIMEOUTS["documenter"],
-        session_id=_state.current_session_id,
-        metrics_collector=_state.metrics_collector,
-        worker_agent=_state.worker_agents.get("documenter"),
-        worker_output_callback=_state.worker_output_callback
+        **WorkerToolFactory.TOOL_CONFIG["documenter"]
     )
-    result = await _state.worker_executor.execute(context)
-
-    # Artifact Storage 활성화
-    result = _save_and_summarize_output("documenter", result, _state.current_session_id)
-
-    # Tool 결과 저장 - 안전한 추출
-    result_text = _safe_extract_result_text(result)
-    if result_text:
-        _state.last_tool_results.append({
-            "tool_name": "execute_documenter_task",
-            "worker_name": "documenter",
-            "result": result_text
-        })
-
-    return result
 
 
 # ============================================================================
