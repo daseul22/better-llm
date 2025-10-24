@@ -20,6 +20,7 @@ from src.presentation.tui.managers.log_manager import LogManager
 from src.presentation.tui.managers.session_switcher import SessionSwitcher
 from src.presentation.tui.managers.image_handler import ImageHandler
 from src.presentation.tui.managers.log_filter_manager import LogFilterManager
+from src.presentation.tui.managers.session_loader import SessionLoader
 
 __all__ = [
     # Level 1
@@ -37,4 +38,5 @@ __all__ = [
     "SessionSwitcher",
     "ImageHandler",
     "LogFilterManager",
+    "SessionLoader",
 ]

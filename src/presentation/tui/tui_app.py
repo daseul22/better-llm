@@ -86,6 +86,7 @@ from .managers import (
     SessionSwitcher,
     ImageHandler,
     LogFilterManager,
+    SessionLoader,
 )
 from .managers.session_manager import SessionData
 from .commands import SlashCommandHandler
@@ -251,7 +252,7 @@ class OrchestratorTUI(App):
         self.metrics_ui_manager = MetricsUIManager()
         self.workflow_ui_manager = WorkflowUIManager()
 
-        # Level 2 매니저 초기화 (8개)
+        # Level 2 매니저 초기화 (9개)
         self.ui_composer = UIComposer(self)
         self.log_manager = LogManager(self)
         self.initialization_manager = InitializationManager(self)
@@ -260,6 +261,7 @@ class OrchestratorTUI(App):
         self.session_switcher = SessionSwitcher(self)
         self.image_handler = ImageHandler(self)
         self.log_filter_manager = LogFilterManager(self)
+        self.session_loader = SessionLoader(self)
 
         # 슬래시 커맨드 핸들러 초기화
         self.slash_command_handler = SlashCommandHandler(
@@ -689,95 +691,8 @@ class OrchestratorTUI(App):
             logger.error(f"검색 수행 실패: {e}")
 
     async def load_session(self, session_id: str) -> None:
-        """
-        이전 세션 불러오기 (Phase 3.1)
-
-        Args:
-            session_id: 불러올 세션 ID
-        """
-        try:
-            output_log = self.query_one("#output-log", RichLog)
-            status_info = self.query_one("#status-info", Static)
-
-            self.write_log("")
-            self.write_log(Panel(
-                f"[bold cyan]🔄 세션 불러오는 중...[/bold cyan]\n\n"
-                f"Session ID: {session_id}",
-                border_style="cyan"
-            ))
-            self.write_log("")
-
-            # 세션 파일 찾기 (새 경로 시스템 사용)
-            sessions_dir = get_data_dir("sessions")
-            session_files = list(sessions_dir.glob(f"session_{session_id}_*.json"))
-
-            if not session_files:
-                # 피드백 시스템 사용
-                error_panel = TUIFeedbackWidget.create_panel(
-                    "세션을 찾을 수 없습니다",
-                    FeedbackType.ERROR,
-                    details=f"Session ID: {session_id}"
-                )
-                self.write_log("")
-                self.write_log(error_panel)
-                self.write_log("")
-                return
-
-            # 가장 최근 파일 선택
-            session_file = max(session_files, key=lambda p: p.stat().st_mtime)
-
-            # 세션 데이터 로드
-            import json
-            with open(session_file, "r", encoding="utf-8") as f:
-                session_data = json.load(f)
-
-            # Phase 1 - Step 1.2: 중앙화된 팩토리 메서드 사용
-            initial_messages = session_data.get("history", [])
-            loaded_session = self.session_manager.create_session_data(
-                session_id=session_id,
-                user_request="Loaded session",
-                initial_messages=initial_messages
-            )
-
-            # 현재 세션 교체
-            active_index = self.session_manager.get_active_session_index()
-            self.session_manager.update_session_at_index(active_index, loaded_session)
-
-            # Phase 3.3: 세션 캐시 무효화 (세션 데이터 변경 시)
-            self.invalidate_session_cache()
-
-            # 세션 ID 업데이트
-            update_session_id(session_id)
-            set_metrics_collector(self.metrics_collector, self.session_id)
-
-            # Manager Agent 토큰 사용량 초기화
-            if self.manager:
-                self.manager.reset_token_usage()
-
-            # UI 업데이트
-            self._update_status_bar()  # 터미널 크기 및 레이아웃 모드 포함
-
-            self.write_log(Panel(
-                f"[bold green]✅ 세션 불러오기 완료[/bold green]\n\n"
-                f"Session ID: {session_id}\n"
-                f"메시지 수: {len(session_data.get('history', []))}",
-                border_style="green"
-            ))
-            self.write_log("")
-
-            status_info.update("Ready")
-
-        except Exception as e:
-            # 피드백 시스템 사용
-            error_panel = TUIFeedbackWidget.create_panel(
-                "세션 불러오기 실패",
-                FeedbackType.ERROR,
-                details=str(e)
-            )
-            self.write_log("")
-            self.write_log(error_panel)
-            self.write_log("")
-            logger.error(f"세션 불러오기 실패: {e}")
+        """이전 세션 불러오기 (SessionLoader로 위임)"""
+        await self.session_loader.load_session(session_id)
 
     def write_log(
         self, content: Union[str, Panel, Text], widget_id: str = "output-log"
