@@ -17,6 +17,7 @@ from src.presentation.tui.managers.initialization_manager import InitializationM
 from src.presentation.tui.managers.update_manager import UpdateManager
 from src.presentation.tui.managers.callback_handlers import CallbackHandlers
 from src.presentation.tui.managers.log_manager import LogManager
+from src.presentation.tui.managers.session_switcher import SessionSwitcher
 
 __all__ = [
     # Level 1
@@ -31,4 +32,5 @@ __all__ = [
     "UpdateManager",
     "CallbackHandlers",
     "LogManager",
+    "SessionSwitcher",
 ]
