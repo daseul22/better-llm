@@ -2,6 +2,7 @@
  * 노드 패널 컴포넌트
  *
  * Agent 목록을 표시하고, 드래그 앤 드롭으로 캔버스에 추가합니다.
+ * Manager 노드도 추가할 수 있습니다.
  */
 
 import React, { useEffect, useState } from 'react'
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Agent, getAgents } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus } from 'lucide-react'
+import { Plus, Target } from 'lucide-react'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -56,6 +57,25 @@ export const NodePanel: React.FC = () => {
     addNode(newNode)
   }
 
+  // Manager 노드를 캔버스에 추가
+  const handleAddManager = () => {
+    // 노드 위치 계산
+    const x = 100 + (nodes.length % 3) * 300
+    const y = 100 + Math.floor(nodes.length / 3) * 150
+
+    const newNode: WorkflowNode = {
+      id: `manager-${Date.now()}`,
+      type: 'manager',
+      position: { x, y },
+      data: {
+        task_description: '작업 설명을 입력하세요',
+        available_workers: [],
+      },
+    }
+
+    addNode(newNode)
+  }
+
   if (loading) {
     return (
       <Card className="h-full">
@@ -85,26 +105,50 @@ export const NodePanel: React.FC = () => {
   return (
     <Card className="h-full overflow-hidden flex flex-col">
       <CardHeader>
-        <CardTitle className="text-lg">Worker 노드</CardTitle>
+        <CardTitle className="text-lg">노드 추가</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto">
-        <div className="space-y-2">
-          {agents.map((agent) => (
+        <div className="space-y-4">
+          {/* Manager 노드 추가 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-purple-700">Manager 노드</h3>
             <Button
-              key={agent.name}
               variant="outline"
-              className="w-full justify-start text-left"
-              onClick={() => handleAddAgent(agent)}
+              className="w-full justify-start text-left border-purple-300 hover:bg-purple-50"
+              onClick={handleAddManager}
             >
-              <Plus className="mr-2 h-4 w-4" />
+              <Target className="mr-2 h-4 w-4 text-purple-600" />
               <div className="flex flex-col items-start">
-                <span className="font-medium">{agent.name}</span>
+                <span className="font-medium text-purple-700">Manager</span>
                 <span className="text-xs text-muted-foreground">
-                  {agent.role}
+                  워커를 조율하는 오케스트레이터
                 </span>
               </div>
             </Button>
-          ))}
+          </div>
+
+          {/* Worker 노드 추가 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2">Worker 노드</h3>
+            <div className="space-y-2">
+              {agents.map((agent) => (
+                <Button
+                  key={agent.name}
+                  variant="outline"
+                  className="w-full justify-start text-left"
+                  onClick={() => handleAddAgent(agent)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">{agent.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {agent.role}
+                    </span>
+                  </div>
+                </Button>
+              ))}
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>

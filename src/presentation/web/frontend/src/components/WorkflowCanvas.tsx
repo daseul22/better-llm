@@ -21,12 +21,14 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 
 import { WorkerNode } from './WorkerNode'
+import { ManagerNode } from './ManagerNode'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode, WorkflowEdge } from '@/lib/api'
 
 // 커스텀 노드 타입 등록
 const nodeTypes: NodeTypes = {
   worker: WorkerNode,
+  manager: ManagerNode,
 }
 
 export const WorkflowCanvas: React.FC = () => {

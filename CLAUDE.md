@@ -261,6 +261,78 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
     return {"content": [{"type": "text", "text": summary}]}
 ```
 
+### Web UI 워크플로우 (Manager 노드)
+
+**Manager 노드**는 Web UI에서 사용할 수 있는 오케스트레이터 노드로, 등록된 워커들을 병렬로 실행하여 복잡한 작업을 처리합니다.
+
+#### Manager 노드 vs TUI Manager Agent
+
+| 구분 | TUI Manager Agent | Web UI Manager 노드 |
+|------|-------------------|---------------------|
+| **실행 방식** | Worker Tools를 순차적으로 호출 | 등록된 워커를 병렬로 실행 |
+| **워커 선택** | 대화 히스토리 기반 자동 결정 | 사용자가 미리 등록 (체크박스) |
+| **사용 시나리오** | 대화형 작업 (TUI) | 워크플로우 자동화 (Web UI) |
+| **독립 사용** | 가능 (직접 사용자 요청 처리) | 불가 (최소 1개 워커 필수) |
+
+#### Manager 노드 사용 방법
+
+1. **노드 추가**: 왼쪽 패널에서 "Manager" 버튼 클릭
+2. **워커 등록**: Manager 노드 선택 → 오른쪽 "노드 설정" 탭 → 워커 체크박스 선택
+3. **작업 설명**: 작업 설명 입력 (등록된 모든 워커에게 동일하게 전달됨)
+4. **실행**: 워크플로우 실행 시 Manager가 등록된 워커들을 병렬로 호출
+
+#### Manager 노드 실행 흐름
+
+```
+사용자 입력 (initial_input)
+  ↓
+[Manager 노드] task_description + available_workers
+  ↓
+병렬 실행 ━━━┳━━━ [Worker 1: planner] → 결과 1
+             ┣━━━ [Worker 2: coder] → 결과 2
+             ┗━━━ [Worker 3: reviewer] → 결과 3
+  ↓
+통합 결과 (Markdown 형식)
+  ↓
+다음 노드로 전달 또는 최종 출력
+```
+
+#### 구현 세부사항
+
+**백엔드 (`workflow_executor.py`)**:
+```python
+async def _execute_manager_node(self, node, ...):
+    # 1. 등록된 워커들 병렬 실행
+    worker_tasks = []
+    for worker_name in available_workers:
+        worker = WorkerAgent(config=worker_config)
+        worker_tasks.append((worker_name, worker.execute_task(task_description)))
+
+    # 2. 결과 수집 및 통합
+    worker_results = {}
+    for worker_name, worker_stream in worker_tasks:
+        chunks = []
+        async for chunk in worker_stream:
+            chunks.append(chunk)
+        worker_results[worker_name] = "".join(chunks)
+
+    # 3. Markdown 형식으로 통합
+    integrated_output = "\n\n".join(
+        f"## {worker_name.upper()} 결과\n\n{output}"
+        for worker_name, output in worker_results.items()
+    )
+```
+
+**프론트엔드 (`ManagerNode.tsx`)**:
+- 보라색 테마로 Worker 노드와 시각적 구분
+- 등록된 워커 목록 표시 (뱃지 형태)
+- 작업 설명 미리보기
+
+**노드 설정 패널 (`NodeConfigPanel.tsx`)**:
+- 작업 설명 텍스트 영역
+- 워커 체크박스 선택 (최소 1개 필수)
+- 선택된 워커 개수 표시
+
 ---
 
 ## 설정 파일
@@ -492,6 +564,13 @@ export CLAUDE_CLI_PATH='/path/to/claude'
 ## 최근 주요 개선사항 (요약)
 
 자세한 내용은 `CHANGELOG.md` 참조.
+
+### v4.2 (2025-10-27)
+- **Web UI Manager 노드**: 병렬 워커 실행을 위한 오케스트레이터 노드 추가
+  - 등록된 워커들을 병렬로 실행 (TUI는 순차 실행)
+  - 체크박스로 사용 가능한 워커 선택 (최소 1개 필수)
+  - 결과를 Markdown 형식으로 통합하여 다음 노드에 전달
+  - 보라색 테마로 Worker 노드와 시각적 구분
 
 ### v4.1 (2025-10-27)
 - **Context Compression**: 컨텍스트 윈도우 자동 압축 기능 추가

@@ -6,17 +6,18 @@ WorkflowEdge: 노드 간 연결 (데이터 흐름)
 Workflow: 전체 워크플로우 정의
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 
 
-class WorkflowNodeData(BaseModel):
+class WorkerNodeData(BaseModel):
     """
-    워크플로우 노드의 데이터 (Worker Agent 설정)
+    Worker 노드의 데이터 (개별 Worker Agent)
 
     Attributes:
         agent_name: Worker Agent 이름 (planner, coder, reviewer 등)
         task_template: 작업 설명 템플릿 ({{input}} 등의 변수 지원)
+        allowed_tools: 사용 가능한 도구 목록 (옵션, 미지정 시 기본 설정 사용)
         config: 추가 설정 (옵션)
     """
     agent_name: str = Field(..., description="Worker Agent 이름")
@@ -24,10 +25,46 @@ class WorkflowNodeData(BaseModel):
         ...,
         description="작업 설명 템플릿 ({{input}}, {{node_id}} 등 변수 지원)"
     )
+    allowed_tools: Optional[List[str]] = Field(
+        default=None,
+        description="사용 가능한 도구 목록 (옵션, 미지정 시 agent_config.json의 기본값 사용)"
+    )
     config: Optional[Dict[str, Any]] = Field(
         default=None,
         description="추가 설정 (옵션)"
     )
+
+
+class ManagerNodeData(BaseModel):
+    """
+    Manager 노드의 데이터 (오케스트레이터)
+
+    Manager 노드는 등록된 Worker들을 조율하여 작업을 수행합니다.
+    - TUI의 Manager Agent와 동일하게 동작
+    - 등록된 워커만 호출 가능
+    - 병렬 워커 호출 지원
+
+    Attributes:
+        task_description: 초기 작업 설명 (Manager에게 전달)
+        available_workers: 사용 가능한 워커 이름 목록 (등록된 워커만 호출 가능)
+        config: 추가 설정 (옵션)
+    """
+    task_description: str = Field(
+        ...,
+        description="Manager에게 전달할 초기 작업 설명"
+    )
+    available_workers: List[str] = Field(
+        ...,
+        description="사용 가능한 워커 이름 목록 (예: ['planner', 'coder', 'reviewer'])"
+    )
+    config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="추가 설정 (옵션)"
+    )
+
+
+# Union 타입으로 Worker/Manager 구분
+WorkflowNodeData = Union[WorkerNodeData, ManagerNodeData]
 
 
 class WorkflowNode(BaseModel):
@@ -36,18 +73,18 @@ class WorkflowNode(BaseModel):
 
     Attributes:
         id: 노드 고유 ID
-        type: 노드 타입 (worker, input, output)
+        type: 노드 타입 (worker, manager)
         position: 캔버스 상의 위치 {x, y}
-        data: 노드 데이터 (agent_name, task_template 등)
+        data: 노드 데이터 (WorkerNodeData 또는 ManagerNodeData)
     """
     id: str = Field(..., description="노드 고유 ID")
-    type: str = Field(default="worker", description="노드 타입")
+    type: str = Field(default="worker", description="노드 타입 (worker, manager)")
     position: Dict[str, float] = Field(
         ...,
         description="캔버스 상의 위치",
         example={"x": 100, "y": 100}
     )
-    data: WorkflowNodeData = Field(..., description="노드 데이터")
+    data: Union[WorkerNodeData, ManagerNodeData] = Field(..., description="노드 데이터")
 
 
 class WorkflowEdge(BaseModel):

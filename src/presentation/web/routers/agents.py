@@ -94,7 +94,7 @@ async def list_agents(
         config_loader: ConfigLoader 의존성 주입 (Depends)
 
     Returns:
-        AgentListResponse: Agent 목록 (name, role, description, system_prompt)
+        AgentListResponse: Agent 목록 (name, role, description, system_prompt, allowed_tools)
 
     Example:
         GET /api/agents
@@ -104,7 +104,8 @@ async def list_agents(
                     "name": "planner",
                     "role": "계획 수립",
                     "description": "요구사항 분석 및 작업 계획 수립",
-                    "system_prompt": "시스템 프롬프트 내용..."
+                    "system_prompt": "시스템 프롬프트 내용...",
+                    "allowed_tools": ["read", "glob"]
                 },
                 ...
             ]
@@ -118,11 +119,17 @@ async def list_agents(
             # 시스템 프롬프트 로드
             system_prompt = _load_agent_system_prompt(config)
 
+            # allowed_tools 안전하게 처리
+            allowed_tools = []
+            if hasattr(config, 'allowed_tools') and config.allowed_tools:
+                allowed_tools = list(config.allowed_tools)
+
             agents.append(AgentInfo(
                 name=config.name,
                 role=config.role,
                 description=f"{config.role} 전문가",
                 system_prompt=system_prompt,
+                allowed_tools=allowed_tools,
             ))
 
         logger.info(f"✅ Agent 목록 조회: {len(agents)}개 (시스템 프롬프트 포함)")
@@ -131,6 +138,74 @@ async def list_agents(
     except Exception as e:
         logger.error(f"❌ Agent 목록 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=f"Agent 목록 조회 실패: {str(e)}")
+
+
+@router.get("/tools")
+async def get_available_tools():
+    """
+    사용 가능한 도구 목록 반환
+
+    Worker 노드에서 선택 가능한 모든 도구 목록을 반환합니다.
+
+    Returns:
+        Dict: 도구 목록 (name, description, category, readonly)
+
+    Example:
+        GET /api/tools
+        Response: {
+            "tools": [
+                {
+                    "name": "read",
+                    "description": "파일 읽기",
+                    "category": "파일",
+                    "readonly": true
+                },
+                ...
+            ]
+        }
+    """
+    tools = [
+        {
+            "name": "read",
+            "description": "파일 읽기",
+            "category": "파일",
+            "readonly": True
+        },
+        {
+            "name": "write",
+            "description": "파일 쓰기",
+            "category": "파일",
+            "readonly": False
+        },
+        {
+            "name": "edit",
+            "description": "파일 편집",
+            "category": "파일",
+            "readonly": False
+        },
+        {
+            "name": "glob",
+            "description": "파일 검색 (패턴)",
+            "category": "검색",
+            "readonly": True
+        },
+        {
+            "name": "grep",
+            "description": "코드 검색 (내용)",
+            "category": "검색",
+            "readonly": True
+        },
+        {
+            "name": "bash",
+            "description": "쉘 명령 실행",
+            "category": "실행",
+            "readonly": False
+        }
+    ]
+
+    logger.debug(f"사용 가능한 도구 목록 반환: {len(tools)}개")
+
+    return {"tools": tools}
 
 
 async def _execute_worker_stream(

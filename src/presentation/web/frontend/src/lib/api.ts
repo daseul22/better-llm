@@ -14,6 +14,7 @@ export interface Agent {
   role: string
   description: string
   system_prompt: string  // 시스템 프롬프트 원본
+  allowed_tools: string[]  // 기본 도구 목록
 }
 
 /**
@@ -401,4 +402,28 @@ export async function browseDirectory(
   }
 
   return await response.json()
+}
+
+// ==================== Tool API ====================
+
+/**
+ * Tool (도구) 정보
+ */
+export interface Tool {
+  name: string
+  description: string
+  category: string
+  readonly: boolean
+}
+
+/**
+ * 사용 가능한 도구 목록 조회
+ */
+export async function getTools(): Promise<Tool[]> {
+  const response = await fetch(`${API_BASE}/tools`)
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+  const data = await response.json()
+  return data.tools
 }

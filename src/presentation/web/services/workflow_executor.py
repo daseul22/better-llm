@@ -7,16 +7,20 @@
 import asyncio
 from typing import Dict, Any, AsyncIterator, Set, List
 from collections import deque
+from dataclasses import replace
 
-from src.domain.models import AgentConfig
-from src.infrastructure.config import JsonConfigLoader
+from src.domain.models import AgentConfig, Message
+from src.infrastructure.config import JsonConfigLoader, get_project_root
 from src.infrastructure.claude.worker_client import WorkerAgent
+from src.infrastructure.claude.manager_client import ManagerAgent
 from src.infrastructure.logging import get_logger
 from src.presentation.web.schemas.workflow import (
     Workflow,
     WorkflowNode,
     WorkflowEdge,
     WorkflowNodeExecutionEvent,
+    WorkerNodeData,
+    ManagerNodeData,
 )
 
 logger = get_logger(__name__)
@@ -171,6 +175,139 @@ class WorkflowExecutor:
 
         return result
 
+    async def _execute_manager_node(
+        self,
+        node: WorkflowNode,
+        node_outputs: Dict[str, str],
+        initial_input: str,
+        session_id: str,
+    ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
+        """
+        Manager 노드 실행 (병렬 워커 호출)
+
+        Manager 노드는 등록된 워커들을 병렬로 실행하여 결과를 통합합니다.
+
+        Args:
+            node: Manager 노드
+            node_outputs: 이전 노드 출력들
+            initial_input: 초기 입력
+            session_id: 세션 ID
+
+        Yields:
+            WorkflowNodeExecutionEvent: 노드 실행 이벤트
+        """
+        node_id = node.id
+        node_data: ManagerNodeData = node.data  # type: ignore
+        task_description = node_data.task_description
+        available_workers = node_data.available_workers
+
+        logger.info(
+            f"[{session_id}] Manager 노드 실행: {node_id} "
+            f"(워커: {available_workers})"
+        )
+
+        # 노드 시작 이벤트
+        start_event = WorkflowNodeExecutionEvent(
+            event_type="node_start",
+            node_id=node_id,
+            data={
+                "node_type": "manager",
+                "available_workers": available_workers
+            },
+        )
+        yield start_event
+
+        try:
+            # 등록된 워커들 병렬 실행
+            worker_tasks = []
+            for worker_name in available_workers:
+                # Worker 설정 조회
+                try:
+                    worker_config = self._get_agent_config(worker_name)
+                except ValueError as e:
+                    logger.warning(
+                        f"[{session_id}] 워커 '{worker_name}' 설정을 찾을 수 없습니다: {e}"
+                    )
+                    continue
+
+                # Worker Agent 생성
+                worker = WorkerAgent(config=worker_config)
+                worker_tasks.append((worker_name, worker.execute_task(task_description)))
+
+            # 병렬 실행 및 결과 수집
+            worker_results: Dict[str, str] = {}
+
+            for worker_name, worker_stream in worker_tasks:
+                # 워커 시작 로그
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_output",
+                    node_id=node_id,
+                    data={"chunk": f"\n\n--- {worker_name.upper()} 실행 시작 ---\n\n"},
+                )
+
+                chunks = []
+                async for chunk in worker_stream:
+                    chunks.append(chunk)
+                    # 스트리밍 출력
+                    yield WorkflowNodeExecutionEvent(
+                        event_type="node_output",
+                        node_id=node_id,
+                        data={"chunk": chunk},
+                    )
+
+                worker_output = "".join(chunks)
+                worker_results[worker_name] = worker_output
+
+                # 워커 완료 로그
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_output",
+                    node_id=node_id,
+                    data={"chunk": f"\n\n--- {worker_name.upper()} 완료 ---\n\n"},
+                )
+
+                logger.info(
+                    f"[{session_id}] Manager 노드의 워커 완료: {worker_name} "
+                    f"(출력 길이: {len(worker_output)})"
+                )
+
+            # 통합 결과 생성
+            integrated_output = "\n\n".join(
+                f"## {worker_name.upper()} 결과\n\n{output}"
+                for worker_name, output in worker_results.items()
+            )
+
+            # 노드 완료 이벤트 (output 포함)
+            complete_event = WorkflowNodeExecutionEvent(
+                event_type="node_complete",
+                node_id=node_id,
+                data={
+                    "node_type": "manager",
+                    "workers_executed": list(worker_results.keys()),
+                    "output_length": len(integrated_output),
+                    "output": integrated_output,  # 통합 결과 포함
+                },
+            )
+            yield complete_event
+
+            logger.info(
+                f"[{session_id}] Manager 노드 완료: {node_id} "
+                f"(출력 길이: {len(integrated_output)})"
+            )
+
+        except Exception as e:
+            error_msg = f"Manager 노드 실행 실패: {str(e)}"
+            logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+
+            # 노드 에러 이벤트
+            error_event = WorkflowNodeExecutionEvent(
+                event_type="node_error",
+                node_id=node_id,
+                data={"error": error_msg},
+            )
+            yield error_event
+
+            raise
+
     async def execute_workflow(
         self,
         workflow: Workflow,
@@ -215,93 +352,116 @@ class WorkflowExecutor:
         # 각 노드 순차 실행
         for node in sorted_nodes:
             node_id = node.id
-            agent_name = node.data.agent_name
-            task_template = node.data.task_template
 
-            # 노드 시작 이벤트
-            start_event = WorkflowNodeExecutionEvent(
-                event_type="node_start",
-                node_id=node_id,
-                data={"agent_name": agent_name},
-            )
-            logger.info(f"[{session_id}] 🟢 이벤트 생성: node_start (node: {node_id}, agent: {agent_name})")
-            yield start_event
+            # Manager 노드 vs Worker 노드 구분
+            if node.type == "manager":
+                # Manager 노드 실행
+                async for event in self._execute_manager_node(
+                    node, node_outputs, initial_input, session_id
+                ):
+                    if event.event_type == "node_complete":
+                        # 통합 결과 저장
+                        node_outputs[node_id] = event.data.get("output", "")
+                    yield event
 
-            try:
-                # Agent 설정 조회
-                agent_config = self._get_agent_config(agent_name)
+            else:
+                # Worker 노드 실행 (기존 로직)
+                node_data: WorkerNodeData = node.data  # type: ignore
+                agent_name = node_data.agent_name
+                task_template = node_data.task_template
 
-                # 작업 설명 렌더링
-                parent_nodes = self._get_parent_nodes(node_id, workflow.edges)
-                parent_outputs = {
-                    pid: node_outputs[pid] for pid in parent_nodes
-                    if pid in node_outputs
-                }
-
-                task_description = self._render_task_template(
-                    template=task_template,
+                # 노드 시작 이벤트
+                start_event = WorkflowNodeExecutionEvent(
+                    event_type="node_start",
                     node_id=node_id,
-                    node_outputs=parent_outputs,
-                    initial_input=initial_input,
+                    data={"agent_name": agent_name},
                 )
+                logger.info(f"[{session_id}] 🟢 이벤트 생성: node_start (node: {node_id}, agent: {agent_name})")
+                yield start_event
 
-                logger.info(
-                    f"[{session_id}] 노드 실행: {node_id} ({agent_name}) "
-                    f"- 작업 길이: {len(task_description)}"
-                )
+                try:
+                    # Agent 설정 조회
+                    agent_config = self._get_agent_config(agent_name)
 
-                # Worker Agent 실행
-                worker = WorkerAgent(config=agent_config)
-                node_output_chunks = []
+                    # allowed_tools 오버라이드 (노드에서 지정한 경우)
+                    if node_data.allowed_tools is not None:
+                        agent_config = replace(agent_config, allowed_tools=node_data.allowed_tools)
+                        logger.info(
+                            f"[{session_id}] 노드 {node_id}: allowed_tools 오버라이드 "
+                            f"({len(node_data.allowed_tools)}개 도구)"
+                        )
 
-                async for chunk in worker.execute_task(task_description):
-                    node_output_chunks.append(chunk)
+                    # 작업 설명 렌더링
+                    parent_nodes = self._get_parent_nodes(node_id, workflow.edges)
+                    parent_outputs = {
+                        pid: node_outputs[pid] for pid in parent_nodes
+                        if pid in node_outputs
+                    }
 
-                    # 노드 출력 이벤트 (스트리밍)
-                    output_event = WorkflowNodeExecutionEvent(
-                        event_type="node_output",
+                    task_description = self._render_task_template(
+                        template=task_template,
                         node_id=node_id,
-                        data={"chunk": chunk},
+                        node_outputs=parent_outputs,
+                        initial_input=initial_input,
                     )
-                    logger.debug(f"[{session_id}] 📝 이벤트 생성: node_output (node: {node_id}, chunk: {len(chunk)}자)")
-                    yield output_event
 
-                # 노드 출력 저장
-                node_output = "".join(node_output_chunks)
-                node_outputs[node_id] = node_output
+                    logger.info(
+                        f"[{session_id}] 노드 실행: {node_id} ({agent_name}) "
+                        f"- 작업 길이: {len(task_description)}"
+                    )
 
-                # 노드 완료 이벤트
-                complete_event = WorkflowNodeExecutionEvent(
-                    event_type="node_complete",
-                    node_id=node_id,
-                    data={
-                        "agent_name": agent_name,
-                        "output_length": len(node_output),
-                    },
-                )
-                logger.info(f"[{session_id}] ✅ 이벤트 생성: node_complete (node: {node_id}, agent: {agent_name})")
-                yield complete_event
+                    # Worker Agent 실행
+                    worker = WorkerAgent(config=agent_config)
+                    node_output_chunks = []
 
-                logger.info(
-                    f"[{session_id}] 노드 완료: {node_id} ({agent_name}) "
-                    f"- 출력 길이: {len(node_output)}"
-                )
+                    async for chunk in worker.execute_task(task_description):
+                        node_output_chunks.append(chunk)
 
-            except Exception as e:
-                error_msg = f"노드 실행 실패: {str(e)}"
-                logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+                        # 노드 출력 이벤트 (스트리밍)
+                        output_event = WorkflowNodeExecutionEvent(
+                            event_type="node_output",
+                            node_id=node_id,
+                            data={"chunk": chunk},
+                        )
+                        logger.debug(f"[{session_id}] 📝 이벤트 생성: node_output (node: {node_id}, chunk: {len(chunk)}자)")
+                        yield output_event
 
-                # 노드 에러 이벤트
-                error_event = WorkflowNodeExecutionEvent(
-                    event_type="node_error",
-                    node_id=node_id,
-                    data={"error": error_msg},
-                )
-                logger.error(f"[{session_id}] 🔴 이벤트 생성: node_error (node: {node_id})")
-                yield error_event
+                    # 노드 출력 저장
+                    node_output = "".join(node_output_chunks)
+                    node_outputs[node_id] = node_output
 
-                # 워크플로우 중단
-                raise
+                    # 노드 완료 이벤트
+                    complete_event = WorkflowNodeExecutionEvent(
+                        event_type="node_complete",
+                        node_id=node_id,
+                        data={
+                            "agent_name": agent_name,
+                            "output_length": len(node_output),
+                        },
+                    )
+                    logger.info(f"[{session_id}] ✅ 이벤트 생성: node_complete (node: {node_id}, agent: {agent_name})")
+                    yield complete_event
+
+                    logger.info(
+                        f"[{session_id}] 노드 완료: {node_id} ({agent_name}) "
+                        f"- 출력 길이: {len(node_output)}"
+                    )
+
+                except Exception as e:
+                    error_msg = f"노드 실행 실패: {str(e)}"
+                    logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+
+                    # 노드 에러 이벤트
+                    error_event = WorkflowNodeExecutionEvent(
+                        event_type="node_error",
+                        node_id=node_id,
+                        data={"error": error_msg},
+                    )
+                    logger.error(f"[{session_id}] 🔴 이벤트 생성: node_error (node: {node_id})")
+                    yield error_event
+
+                    # 워크플로우 중단
+                    raise
 
         logger.info(f"[{session_id}] 워크플로우 실행 완료: {workflow.name}")
 

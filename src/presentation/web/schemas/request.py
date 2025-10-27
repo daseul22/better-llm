@@ -4,7 +4,7 @@
 이 모듈은 FastAPI 엔드포인트에서 사용하는 Pydantic 모델을 정의합니다.
 """
 
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -56,6 +56,7 @@ class AgentInfo(BaseModel):
     role: str = Field(..., description="Agent 역할")
     description: str = Field(..., description="Agent 설명")
     system_prompt: str = Field(..., description="시스템 프롬프트 원본")
+    allowed_tools: List[str] = Field(default_factory=list, description="사용 가능한 도구 목록")
 
 
 class AgentListResponse(BaseModel):
