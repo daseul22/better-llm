@@ -161,6 +161,19 @@ setup_environment() {
     echo "  ${CYAN}CLAUDE_CODE_OAUTH_TOKEN${NC} - Claude Code OAuth 토큰"
     echo ""
 
+    # .env 파일에서 토큰 로드 시도
+    if [ -f ".env" ] && [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+        print_info ".env 파일에서 OAuth 토큰 확인 중..."
+
+        # .env 파일에서 CLAUDE_CODE_OAUTH_TOKEN 추출
+        TOKEN_FROM_ENV=$(grep -E "^CLAUDE_CODE_OAUTH_TOKEN=" .env | cut -d '=' -f2- | tr -d '"' | tr -d "'")
+
+        if [ -n "$TOKEN_FROM_ENV" ]; then
+            export CLAUDE_CODE_OAUTH_TOKEN="$TOKEN_FROM_ENV"
+            print_success ".env 파일에서 OAuth 토큰 로드됨"
+        fi
+    fi
+
     if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
         print_warning "CLAUDE_CODE_OAUTH_TOKEN이 설정되지 않았습니다."
         echo ""
@@ -200,7 +213,54 @@ setup_environment() {
     fi
 }
 
-# 6. 설치 검증
+# 6. 웹 프론트엔드 설치 및 빌드
+install_web_frontend() {
+    echo ""
+    print_info "웹 프론트엔드 설정 중..."
+
+    # Node.js 및 npm 확인
+    if ! command -v npm &> /dev/null; then
+        print_warning "npm이 설치되지 않았습니다. 웹 UI를 사용하려면 Node.js를 설치하세요."
+        echo ""
+        echo "  Node.js 설치: https://nodejs.org/"
+        echo ""
+        return
+    fi
+
+    NODE_VERSION=$(node --version 2>/dev/null || echo "unknown")
+    print_success "Node.js $NODE_VERSION 확인됨"
+
+    # frontend 디렉토리로 이동
+    FRONTEND_DIR="src/presentation/web/frontend"
+    if [ ! -d "$FRONTEND_DIR" ]; then
+        print_warning "웹 프론트엔드 디렉토리를 찾을 수 없습니다: $FRONTEND_DIR"
+        return
+    fi
+
+    cd "$FRONTEND_DIR" || return
+
+    # npm install
+    print_info "웹 의존성 설치 중... (시간이 다소 걸릴 수 있습니다)"
+    if npm install --silent 2>&1 | grep -q "audited"; then
+        print_success "웹 의존성 설치 완료"
+    else
+        print_warning "웹 의존성 설치 중 경고가 발생했습니다 (정상 동작 가능)"
+    fi
+
+    # npm run build
+    print_info "웹 프론트엔드 빌드 중..."
+    if npm run build > /dev/null 2>&1; then
+        print_success "웹 프론트엔드 빌드 완료"
+    else
+        print_error "웹 빌드 실패"
+        cd - > /dev/null
+        return 1
+    fi
+
+    cd - > /dev/null
+}
+
+# 7. 설치 검증
 verify_installation() {
     echo ""
     print_info "설치 검증 중..."
@@ -237,6 +297,10 @@ print_completion() {
     echo "  ${CYAN}# TUI 모드 (권장)${NC}"
     echo "  better-llm"
     echo ""
+    echo "  ${CYAN}# Web UI 모드 (워크플로우 에디터)${NC}"
+    echo "  better-llm-web"
+    echo "  # → http://localhost:5173 접속"
+    echo ""
     echo "  ${CYAN}# CLI 모드${NC}"
     echo "  better-llm-cli \"작업 설명\""
     echo ""
@@ -263,6 +327,7 @@ main() {
     install_pipx
     choose_install_mode
     install_better_llm
+    install_web_frontend
     setup_environment
     verify_installation
     print_completion
