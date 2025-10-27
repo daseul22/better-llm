@@ -70,8 +70,9 @@ export const WorkflowCanvas: React.FC = () => {
     setLocalEdges(edgesWithMarkers as any)
   }, [storeEdges, setLocalEdges])
 
-  // 실행 상태 표시 (노드 데이터 업데이트)
+  // 실행 상태 표시 (노드 데이터 및 엣지 스타일 업데이트)
   React.useEffect(() => {
+    // 노드 상태 업데이트
     setLocalNodes((nds) =>
       nds.map((node) => {
         const isExecuting = execution.currentNodeId === node.id
@@ -91,7 +92,30 @@ export const WorkflowCanvas: React.FC = () => {
         }
       })
     )
-  }, [execution.currentNodeId, execution.nodeOutputs, execution.logs, setLocalNodes])
+
+    // 엣지 스타일 업데이트 (현재 실행 중인 노드로 연결된 엣지 강조)
+    setLocalEdges((eds) =>
+      eds.map((edge) => {
+        const isActiveEdge =
+          execution.currentNodeId &&
+          (edge.source === execution.currentNodeId || edge.target === execution.currentNodeId)
+
+        return {
+          ...edge,
+          animated: isActiveEdge || edge.animated,
+          style: {
+            ...edge.style,
+            stroke: isActiveEdge ? '#facc15' : '#3b82f6', // 실행 중: 노란색, 기본: 파란색
+            strokeWidth: isActiveEdge ? 3 : 2,
+          },
+          markerEnd: {
+            ...(edge.markerEnd as any),
+            color: isActiveEdge ? '#facc15' : '#3b82f6',
+          },
+        }
+      })
+    )
+  }, [execution.currentNodeId, execution.nodeOutputs, execution.logs, setLocalNodes, setLocalEdges])
 
   // 노드 변경 핸들러 (삭제 포함)
   const handleNodesChange: OnNodesChange = useCallback(

@@ -11,6 +11,7 @@ import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 
 interface WorkerNodeData {
   agent_name: string
@@ -25,8 +26,23 @@ interface WorkerNodeData {
 export const WorkerNode = memo(({ data, selected }: NodeProps<WorkerNodeData>) => {
   const { agent_name, isExecuting, isCompleted, hasError } = data
 
+  // Agent별 색상 매핑
+  const agentColors: Record<string, { border: string; bg: string; text: string }> = {
+    planner: { border: 'border-orange-400', bg: 'bg-orange-50', text: 'text-orange-700' },
+    coder: { border: 'border-green-400', bg: 'bg-green-50', text: 'text-green-700' },
+    reviewer: { border: 'border-red-400', bg: 'bg-red-50', text: 'text-red-700' },
+    tester: { border: 'border-indigo-400', bg: 'bg-indigo-50', text: 'text-indigo-700' },
+    committer: { border: 'border-cyan-400', bg: 'bg-cyan-50', text: 'text-cyan-700' },
+    ideator: { border: 'border-pink-400', bg: 'bg-pink-50', text: 'text-pink-700' },
+    product_manager: { border: 'border-violet-400', bg: 'bg-violet-50', text: 'text-violet-700' },
+  }
+
+  // 기본 색상 (agent_name이 매칭되지 않을 때)
+  const defaultColors = { border: 'border-gray-400', bg: 'bg-gray-50', text: 'text-gray-700' }
+  const colors = agentColors[agent_name] || defaultColors
+
   // 상태별 스타일
-  let statusClass = 'border-gray-300'
+  let statusClass = `${colors.border} ${colors.bg}`
   let statusText = ''
   let statusColor = ''
 
@@ -45,7 +61,7 @@ export const WorkerNode = memo(({ data, selected }: NodeProps<WorkerNodeData>) =
   }
 
   return (
-    <div className="min-w-[250px]">
+    <div className={cn('min-w-[250px]', !isExecuting && !isCompleted && 'node-appear')}>
       {/* 입력 핸들 (위쪽) */}
       <Handle
         type="target"
@@ -57,12 +73,18 @@ export const WorkerNode = memo(({ data, selected }: NodeProps<WorkerNodeData>) =
         className={cn(
           'border-2 transition-all',
           statusClass,
-          selected && 'ring-2 ring-blue-500'
+          selected && 'ring-2 ring-blue-500',
+          isExecuting && 'pulse-border'
         )}
       >
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center justify-between">
-            <span>{agent_name || '워커 선택'}</span>
+            <span className="flex items-center gap-2">
+              {isExecuting && <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />}
+              {isCompleted && !hasError && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+              {hasError && <XCircle className="h-4 w-4 text-red-600" />}
+              {agent_name || '워커 선택'}
+            </span>
             {statusText && (
               <span className={cn('text-xs font-normal', statusColor)}>
                 {statusText}
@@ -70,11 +92,18 @@ export const WorkerNode = memo(({ data, selected }: NodeProps<WorkerNodeData>) =
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="pb-4 space-y-2">
           <div className="text-xs text-muted-foreground">
             {data.task_template?.substring(0, 60) || '작업 템플릿을 입력하세요...'}
             {(data.task_template?.length || 0) > 60 && '...'}
           </div>
+
+          {/* 진행 바 */}
+          {isExecuting && (
+            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+              <div className="h-full bg-yellow-500 progress-bar rounded-full" />
+            </div>
+          )}
         </CardContent>
       </Card>
 

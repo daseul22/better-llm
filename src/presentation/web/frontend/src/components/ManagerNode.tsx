@@ -12,6 +12,7 @@ import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { Loader2, CheckCircle2, XCircle, Target } from 'lucide-react'
 
 interface ManagerNodeData {
   task_description: string
@@ -46,7 +47,7 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
   }
 
   return (
-    <div className="min-w-[280px]">
+    <div className={cn('min-w-[280px]', !isExecuting && !isCompleted && 'node-appear')}>
       {/* 입력 핸들 (위쪽) */}
       <Handle
         type="target"
@@ -58,13 +59,17 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
         className={cn(
           'border-2 transition-all',
           statusClass,
-          selected && 'ring-2 ring-purple-500'
+          selected && 'ring-2 ring-purple-500',
+          isExecuting && 'pulse-border'
         )}
       >
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center justify-between">
             <span className="flex items-center gap-2">
-              <span className="text-purple-600">🎯</span>
+              {isExecuting && <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />}
+              {isCompleted && !hasError && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+              {hasError && <XCircle className="h-4 w-4 text-red-600" />}
+              {!isExecuting && !isCompleted && !hasError && <Target className="h-4 w-4 text-purple-600" />}
               Manager
             </span>
             {statusText && (
@@ -80,6 +85,13 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
             {task_description?.substring(0, 60) || '작업 설명을 입력하세요...'}
             {(task_description?.length || 0) > 60 && '...'}
           </div>
+
+          {/* 진행 바 */}
+          {isExecuting && (
+            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+              <div className="h-full bg-purple-500 progress-bar rounded-full" />
+            </div>
+          )}
 
           {/* 등록된 워커 표시 */}
           {available_workers && available_workers.length > 0 && (

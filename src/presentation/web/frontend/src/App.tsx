@@ -16,8 +16,9 @@ import {
   saveProjectWorkflow,
   loadProjectWorkflow,
 } from './lib/api'
-import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose } from 'lucide-react'
+import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, Moon, Sun } from 'lucide-react'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
+import { ToastContainer, ToastType } from './components/Toast'
 
 const STORAGE_KEY_PROJECT_PATH = 'better-llm-last-project-path'
 
@@ -36,6 +37,28 @@ function App() {
 
   // 저장 상태 표시
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+
+  // 토스트 알림 상태
+  const [toasts, setToasts] = useState<Array<{
+    id: string
+    type: ToastType
+    message: string
+    duration?: number
+  }>>([])
+
+  // 다크 모드 상태
+  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  // 토스트 추가 함수
+  const addToast = (type: ToastType, message: string, duration = 3000) => {
+    const id = `toast-${Date.now()}`
+    setToasts((prev) => [...prev, { id, type, message, duration }])
+  }
+
+  // 토스트 제거 함수
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
 
   // 앱 시작 시 프로젝트 자동 로드
   useEffect(() => {
@@ -81,6 +104,50 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [showProjectDialog])
 
+  // 전역 키보드 단축키 핸들링
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey
+
+      // Cmd/Ctrl + S: 수동 저장
+      if (cmdOrCtrl && e.key === 's') {
+        e.preventDefault()
+        if (currentProjectPath && nodes.length > 0) {
+          const workflow = getCurrentWorkflow()
+          saveProjectWorkflow(workflow)
+            .then(() => {
+              addToast('success', '워크플로우가 수동 저장되었습니다')
+            })
+            .catch((err) => {
+              addToast('error', `저장 실패: ${err}`)
+            })
+        } else {
+          addToast('warning', '저장할 프로젝트 또는 노드가 없습니다')
+        }
+      }
+
+      // Del/Backspace: 선택된 노드 삭제
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !showProjectDialog) {
+        const selectedNodeId = useWorkflowStore.getState().selectedNodeId
+        if (selectedNodeId) {
+          const deleteNode = useWorkflowStore.getState().deleteNode
+          deleteNode(selectedNodeId)
+          addToast('info', '노드가 삭제되었습니다')
+        }
+      }
+
+      // Esc: 선택 해제
+      if (e.key === 'Escape' && !showProjectDialog) {
+        const setSelectedNodeId = useWorkflowStore.getState().setSelectedNodeId
+        setSelectedNodeId(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [currentProjectPath, nodes, showProjectDialog, getCurrentWorkflow, addToast])
+
   // 노드/엣지 변경 시 자동 저장 (debounce)
   useEffect(() => {
     if (!currentProjectPath || nodes.length === 0) return
@@ -100,12 +167,14 @@ function App() {
         .then(() => {
           console.log('✅ 자동 저장 완료')
           setSaveStatus('saved')
+          addToast('success', '워크플로우가 자동 저장되었습니다')
           // 2초 후 상태 초기화
           setTimeout(() => setSaveStatus('idle'), 2000)
         })
         .catch((err) => {
           console.error('❌ 자동 저장 실패:', err)
           setSaveStatus('idle')
+          addToast('error', `자동 저장 실패: ${err}`)
         })
     }, 2000) // 2초 debounce
 
@@ -123,32 +192,44 @@ function App() {
       if (result.has_existing_config) {
         const data = await loadProjectWorkflow()
         loadWorkflow(data.workflow)
-        alert(`프로젝트 로드 완료: ${data.workflow.name}`)
+        addToast('success', `프로젝트 로드 완료: ${data.workflow.name}`)
       } else {
-        alert('새 프로젝트가 선택되었습니다. 워크플로우를 구성하세요.')
+        addToast('info', '새 프로젝트가 선택되었습니다. 워크플로우를 구성하세요.')
       }
 
       setShowProjectDialog(false)
       setProjectPathInput('')
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
-      alert(`프로젝트 선택 실패: ${errorMsg}`)
+      addToast('error', `프로젝트 선택 실패: ${errorMsg}`)
     }
   }
 
   // 텍스트 입력으로 프로젝트 선택
   const handleSelectProjectManual = async () => {
     if (!projectPathInput.trim()) {
-      alert('프로젝트 경로를 입력하세요')
+      addToast('warning', '프로젝트 경로를 입력하세요')
       return
     }
 
     await handleSelectProjectPath(projectPathInput.trim())
   }
 
+  // 다크 모드 토글
+  const toggleDarkMode = () => {
+    setIsDarkMode(!isDarkMode)
+    if (!isDarkMode) {
+      document.documentElement.classList.add('dark')
+      addToast('info', '다크 모드 활성화')
+    } else {
+      document.documentElement.classList.remove('dark')
+      addToast('info', '라이트 모드 활성화')
+    }
+  }
+
   return (
     <ReactFlowProvider>
-      <div className="h-screen flex flex-col bg-background">
+      <div className="h-screen flex flex-col bg-background transition-colors duration-300">
         {/* 헤더 */}
         <header className="border-b bg-white px-6 py-4">
           <div className="flex items-center justify-between">
@@ -190,6 +271,14 @@ function App() {
             </div>
 
             <div className="flex gap-2">
+              <Button
+                onClick={toggleDarkMode}
+                variant="outline"
+                size="icon"
+                title={isDarkMode ? '라이트 모드로 전환' : '다크 모드로 전환'}
+              >
+                {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
               <Button onClick={() => setShowProjectDialog(true)} variant="outline">
                 <Folder className="mr-2 h-4 w-4" />
                 프로젝트 선택
@@ -202,7 +291,7 @@ function App() {
         <div className="flex-1 flex overflow-hidden">
           {/* 왼쪽: 노드 패널 */}
           {leftSidebarOpen && (
-            <aside className="w-64 border-r bg-white p-4 overflow-y-auto">
+            <aside className="w-64 border-r bg-white p-4 overflow-y-auto transition-transform duration-300 ease-out">
               <NodePanel />
             </aside>
           )}
@@ -247,7 +336,7 @@ function App() {
 
           {/* 오른쪽: 노드 설정 패널 */}
           {rightSidebarOpen && (
-            <aside className="w-96 border-l bg-white flex flex-col overflow-hidden">
+            <aside className="w-96 border-l bg-white flex flex-col overflow-hidden transition-transform duration-300 ease-out">
               {/* 패널 내용 */}
               <div className="flex-1 overflow-hidden p-4">
                 <NodeConfigPanel />
@@ -255,6 +344,9 @@ function App() {
             </aside>
           )}
         </div>
+
+        {/* 토스트 알림 */}
+        <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
 
         {/* 프로젝트 선택 다이얼로그 */}
         {showProjectDialog && (
