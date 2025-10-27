@@ -72,3 +72,4 @@ workspace/*coverage.xml
 **/static-react/*
 !**/static-react/.gitkeep
 
+.better-llm
