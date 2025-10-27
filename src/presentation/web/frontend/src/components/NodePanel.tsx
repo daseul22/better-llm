@@ -11,14 +11,36 @@ import { Button } from '@/components/ui/button'
 import { Agent, getAgents } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus, Target, Download } from 'lucide-react'
+import { Plus, Target, Download, Search, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'manager', 'workers']))
 
   const { addNode, nodes } = useWorkflowStore()
+
+  // 섹션 토글 함수
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(section)) {
+        next.delete(section)
+      } else {
+        next.add(section)
+      }
+      return next
+    })
+  }
+
+  // 검색 필터
+  const filteredAgents = agents.filter((agent) =>
+    agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    agent.role.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   // Agent 목록 로드
   useEffect(() => {
@@ -121,70 +143,149 @@ export const NodePanel: React.FC = () => {
   }
 
   return (
-    <Card className="h-full overflow-hidden flex flex-col">
-      <CardHeader>
-        <CardTitle className="text-lg">노드 추가</CardTitle>
+    <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          노드 추가
+        </CardTitle>
+        {/* 검색 바 */}
+        <div className="relative mt-3">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="노드 검색..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
       </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto">
-        <div className="space-y-4">
-          {/* Input 노드 추가 */}
-          <div>
-            <h3 className="text-sm font-semibold mb-2 text-blue-700">Input 노드</h3>
-            <Button
-              variant="outline"
-              className="w-full justify-start text-left border-blue-300 hover:bg-blue-50"
-              onClick={handleAddInput}
-            >
-              <Download className="mr-2 h-4 w-4 text-blue-600" />
-              <div className="flex flex-col items-start">
-                <span className="font-medium text-blue-700">Input</span>
-                <span className="text-xs text-muted-foreground">
-                  워크플로우 시작점 (독립 실행 가능)
-                </span>
-              </div>
-            </Button>
-          </div>
-
-          {/* Manager 노드 추가 */}
-          <div>
-            <h3 className="text-sm font-semibold mb-2 text-purple-700">Manager 노드</h3>
-            <Button
-              variant="outline"
-              className="w-full justify-start text-left border-purple-300 hover:bg-purple-50"
-              onClick={handleAddManager}
-            >
-              <Target className="mr-2 h-4 w-4 text-purple-600" />
-              <div className="flex flex-col items-start">
-                <span className="font-medium text-purple-700">Manager</span>
-                <span className="text-xs text-muted-foreground">
-                  워커를 조율하는 오케스트레이터
-                </span>
-              </div>
-            </Button>
-          </div>
-
-          {/* Worker 노드 추가 */}
-          <div>
-            <h3 className="text-sm font-semibold mb-2">Worker 노드</h3>
-            <div className="space-y-2">
-              {agents.map((agent) => (
-                <Button
-                  key={agent.name}
-                  variant="outline"
-                  className="w-full justify-start text-left"
-                  onClick={() => handleAddAgent(agent)}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col items-start">
-                    <span className="font-medium">{agent.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {agent.role}
-                    </span>
-                  </div>
-                </Button>
-              ))}
+      <CardContent className="flex-1 overflow-y-auto space-y-3">
+        {/* Input 노드 섹션 */}
+        <div className="border rounded-lg overflow-hidden bg-blue-50/50">
+          <button
+            onClick={() => toggleSection('input')}
+            className="w-full flex items-center justify-between p-3 hover:bg-blue-100/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Download className="h-4 w-4 text-blue-600" />
+              <span className="font-semibold text-sm text-blue-700">Input 노드</span>
+              <span className="text-xs px-2 py-0.5 bg-blue-200 text-blue-700 rounded-full">1</span>
             </div>
-          </div>
+            {expandedSections.has('input') ? (
+              <ChevronUp className="h-4 w-4 text-blue-600" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-blue-600" />
+            )}
+          </button>
+          {expandedSections.has('input') && (
+            <div className="p-3 pt-0 space-y-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left border-blue-300 hover:bg-blue-50 bg-white"
+                onClick={handleAddInput}
+              >
+                <Plus className="mr-2 h-4 w-4 text-blue-600" />
+                <div className="flex flex-col items-start">
+                  <span className="font-medium text-blue-700">Input</span>
+                  <span className="text-xs text-muted-foreground">
+                    워크플로우 시작점
+                  </span>
+                </div>
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Manager 노드 섹션 */}
+        <div className="border rounded-lg overflow-hidden bg-purple-50/50">
+          <button
+            onClick={() => toggleSection('manager')}
+            className="w-full flex items-center justify-between p-3 hover:bg-purple-100/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-purple-600" />
+              <span className="font-semibold text-sm text-purple-700">Manager 노드</span>
+              <span className="text-xs px-2 py-0.5 bg-purple-200 text-purple-700 rounded-full">1</span>
+            </div>
+            {expandedSections.has('manager') ? (
+              <ChevronUp className="h-4 w-4 text-purple-600" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-purple-600" />
+            )}
+          </button>
+          {expandedSections.has('manager') && (
+            <div className="p-3 pt-0 space-y-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left border-purple-300 hover:bg-purple-50 bg-white"
+                onClick={handleAddManager}
+              >
+                <Plus className="mr-2 h-4 w-4 text-purple-600" />
+                <div className="flex flex-col items-start">
+                  <span className="font-medium text-purple-700">Manager</span>
+                  <span className="text-xs text-muted-foreground">
+                    워커 오케스트레이터
+                  </span>
+                </div>
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Worker 노드 섹션 */}
+        <div className="border rounded-lg overflow-hidden bg-gray-50/50">
+          <button
+            onClick={() => toggleSection('workers')}
+            className="w-full flex items-center justify-between p-3 hover:bg-gray-100 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Plus className="h-4 w-4 text-gray-600" />
+              <span className="font-semibold text-sm text-gray-700">Worker 노드</span>
+              <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full">
+                {filteredAgents.length}
+              </span>
+            </div>
+            {expandedSections.has('workers') ? (
+              <ChevronUp className="h-4 w-4 text-gray-600" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-gray-600" />
+            )}
+          </button>
+          {expandedSections.has('workers') && (
+            <div className="p-3 pt-0 space-y-2">
+              {filteredAgents.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  검색 결과가 없습니다
+                </div>
+              ) : (
+                filteredAgents.map((agent) => (
+                  <Button
+                    key={agent.name}
+                    variant="outline"
+                    className="w-full justify-start text-left hover:bg-gray-50 bg-white"
+                    onClick={() => handleAddAgent(agent)}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col items-start flex-1">
+                      <span className="font-medium">{agent.name}</span>
+                      <span className="text-xs text-muted-foreground line-clamp-1">
+                        {agent.role}
+                      </span>
+                    </div>
+                  </Button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 드래그 힌트 */}
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-xs text-blue-700">
+            <strong>💡 팁:</strong> 버튼을 클릭하여 캔버스에 노드를 추가하세요
+          </p>
         </div>
       </CardContent>
     </Card>

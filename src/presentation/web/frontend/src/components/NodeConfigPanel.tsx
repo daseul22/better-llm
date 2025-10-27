@@ -10,9 +10,10 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { getAgents, Agent, getTools, Tool } from '@/lib/api'
-import { Save } from 'lucide-react'
+import { Save, Settings, ListChecks, Terminal } from 'lucide-react'
 import { parseClaudeMessage } from '@/lib/messageParser'
 
 export const NodeConfigPanel: React.FC = () => {
@@ -50,6 +51,21 @@ export const NodeConfigPanel: React.FC = () => {
   const logs = useWorkflowStore((state) => state.execution.logs)
   const logEndRef = useRef<HTMLDivElement>(null)
   const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set())
+
+  // 섹션 접기/펼치기 상태
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(section)) {
+        next.delete(section)
+      } else {
+        next.add(section)
+      }
+      return next
+    })
+  }
 
   // 로그 자동 스크롤
   useEffect(() => {
@@ -331,9 +347,14 @@ export const NodeConfigPanel: React.FC = () => {
 
   if (!selectedNode) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-sm text-muted-foreground text-center">
-          노드를 선택하면 상세 설정을 편집할 수 있습니다.
+      <div className="h-full flex items-center justify-center p-6">
+        <div className="text-center space-y-3">
+          <Settings className="h-12 w-12 text-muted-foreground mx-auto opacity-50" />
+          <div className="text-sm text-muted-foreground">
+            노드를 선택하면
+            <br />
+            상세 설정을 편집할 수 있습니다
+          </div>
         </div>
       </div>
     )
@@ -342,9 +363,12 @@ export const NodeConfigPanel: React.FC = () => {
   // Input 노드 설정 UI
   if (selectedNode.type === 'input') {
     return (
-      <Card className="h-full overflow-hidden flex flex-col">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Input 노드 설정</CardTitle>
+      <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
+        <CardHeader className="pb-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Terminal className="h-5 w-5 text-emerald-600" />
+            Input 노드 설정
+          </CardTitle>
           <div className="text-sm text-muted-foreground">
             워크플로우 시작점
           </div>
@@ -520,9 +544,12 @@ export const NodeConfigPanel: React.FC = () => {
   // Manager 노드 설정 UI
   if (selectedNode.type === 'manager') {
     return (
-      <Card className="h-full overflow-hidden flex flex-col">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Manager 노드 설정</CardTitle>
+      <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
+        <CardHeader className="pb-3 bg-gradient-to-r from-purple-50 to-pink-50 border-b">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Settings className="h-5 w-5 text-purple-600" />
+            Manager 노드 설정
+          </CardTitle>
           <div className="text-sm text-muted-foreground">
             워커를 조율하는 오케스트레이터
           </div>
@@ -633,11 +660,14 @@ export const NodeConfigPanel: React.FC = () => {
 
   // Worker 노드 설정 UI
   return (
-    <Card className="h-full overflow-hidden flex flex-col">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg">Worker 노드 설정</CardTitle>
-        <div className="text-sm text-muted-foreground">
-          {selectedNode.data.agent_name}
+    <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
+      <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <ListChecks className="h-5 w-5 text-blue-600" />
+          Worker 노드 설정
+        </CardTitle>
+        <div className="text-sm text-muted-foreground flex items-center gap-2">
+          <span className="font-medium">{selectedNode.data.agent_name}</span>
         </div>
       </CardHeader>
 
