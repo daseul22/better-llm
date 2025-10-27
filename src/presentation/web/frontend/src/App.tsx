@@ -4,39 +4,39 @@
  * 메인 레이아웃 및 컴포넌트 조합
  */
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { ReactFlowProvider } from 'reactflow'
 import { WorkflowCanvas } from './components/WorkflowCanvas'
 import { NodePanel } from './components/NodePanel'
 import { ExecutionPanel } from './components/ExecutionPanel'
+import { NodeConfigPanel } from './components/NodeConfigPanel'
 import { Button } from './components/ui/button'
 import { useWorkflowStore } from './stores/workflowStore'
 import {
-  saveWorkflow,
-  getWorkflows,
-  getWorkflow,
-  deleteWorkflow,
   selectProject,
-  getCurrentProject,
   saveProjectWorkflow,
   loadProjectWorkflow,
 } from './lib/api'
-import { Save, FolderOpen, Trash2, Folder } from 'lucide-react'
+import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose } from 'lucide-react'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
 
 const STORAGE_KEY_PROJECT_PATH = 'better-llm-last-project-path'
 
 function App() {
-  const { getWorkflow: getCurrentWorkflow, loadWorkflow, workflowName, setWorkflowName, nodes, edges } = useWorkflowStore()
-  const [savedWorkflows, setSavedWorkflows] = useState<any[]>([])
-  const [showLoadDialog, setShowLoadDialog] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
+  const { getWorkflow: getCurrentWorkflow, loadWorkflow, workflowName, setWorkflowName, nodes, edges, rightPanelMode, setRightPanelMode } = useWorkflowStore()
 
   // 프로젝트 관련 상태
   const [currentProjectPath, setCurrentProjectPath] = useState<string | null>(null)
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [projectPathInput, setProjectPathInput] = useState('')
   const [useBrowser, setUseBrowser] = useState(true) // 브라우저 vs 텍스트 입력
+
+  // 사이드바 토글 상태
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
+
+  // 저장 상태 표시
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   // 앱 시작 시 프로젝트 자동 로드
   useEffect(() => {
@@ -67,15 +67,47 @@ function App() {
     loadLastProject()
   }, [loadWorkflow])
 
+  // ESC 키 핸들링: 프로젝트 선택 다이얼로그
+  useEffect(() => {
+    if (!showProjectDialog) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowProjectDialog(false)
+        setProjectPathInput('')
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showProjectDialog])
+
   // 노드/엣지 변경 시 자동 저장 (debounce)
   useEffect(() => {
     if (!currentProjectPath || nodes.length === 0) return
 
+    // 저장 대기 상태
+    setSaveStatus('saving')
+
     const timer = setTimeout(() => {
       const workflow = getCurrentWorkflow()
+      console.log('💾 워크플로우 자동 저장 중...', {
+        nodes: workflow.nodes.length,
+        edges: workflow.edges.length,
+        name: workflow.name,
+      })
+
       saveProjectWorkflow(workflow)
-        .then(() => console.log('✅ 자동 저장 완료'))
-        .catch((err) => console.warn('자동 저장 실패:', err))
+        .then(() => {
+          console.log('✅ 자동 저장 완료')
+          setSaveStatus('saved')
+          // 2초 후 상태 초기화
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        })
+        .catch((err) => {
+          console.error('❌ 자동 저장 실패:', err)
+          setSaveStatus('idle')
+        })
     }, 2000) // 2초 debounce
 
     return () => clearTimeout(timer)
@@ -115,68 +147,6 @@ function App() {
     await handleSelectProjectPath(projectPathInput.trim())
   }
 
-  // 워크플로우 저장 (기존 방식 - ~/.better-llm/workflows/)
-  const handleSave = async () => {
-    try {
-      setIsSaving(true)
-      const workflow = getCurrentWorkflow()
-
-      // 프로젝트가 선택되어 있으면 프로젝트에 저장
-      if (currentProjectPath) {
-        await saveProjectWorkflow(workflow)
-        alert('프로젝트에 워크플로우가 저장되었습니다!')
-      } else {
-        // 프로젝트 미선택 시 기존 방식
-        const workflowId = await saveWorkflow(workflow)
-        alert(`워크플로우가 저장되었습니다! (ID: ${workflowId})`)
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      alert(`저장 실패: ${errorMsg}`)
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  // 워크플로우 목록 불러오기
-  const handleLoadList = async () => {
-    try {
-      const workflows = await getWorkflows()
-      setSavedWorkflows(workflows)
-      setShowLoadDialog(true)
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      alert(`목록 불러오기 실패: ${errorMsg}`)
-    }
-  }
-
-  // 워크플로우 불러오기
-  const handleLoad = async (workflowId: string) => {
-    try {
-      const workflow = await getWorkflow(workflowId)
-      loadWorkflow(workflow)
-      setShowLoadDialog(false)
-      alert(`워크플로우를 불러왔습니다: ${workflow.name}`)
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      alert(`불러오기 실패: ${errorMsg}`)
-    }
-  }
-
-  // 워크플로우 삭제
-  const handleDelete = async (workflowId: string) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return
-
-    try {
-      await deleteWorkflow(workflowId)
-      setSavedWorkflows((prev) => prev.filter((w) => w.id !== workflowId))
-      alert('워크플로우가 삭제되었습니다')
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      alert(`삭제 실패: ${errorMsg}`)
-    }
-  }
-
   return (
     <ReactFlowProvider>
       <div className="h-screen flex flex-col bg-background">
@@ -190,7 +160,7 @@ function App() {
                 value={workflowName}
                 onChange={(e) => setWorkflowName(e.target.value)}
                 className="text-lg font-medium border-b border-transparent hover:border-gray-300 focus:border-primary outline-none px-2"
-                placeholder="워크플로우 이름"
+                placeholder="프로젝트 이름"
               />
               {currentProjectPath && (
                 <div className="text-sm text-muted-foreground flex items-center gap-2">
@@ -200,20 +170,30 @@ function App() {
                   </span>
                 </div>
               )}
+
+              {/* 저장 상태 표시 */}
+              {currentProjectPath && (
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  {saveStatus === 'saving' && (
+                    <>
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+                      <span>저장 중...</span>
+                    </>
+                  )}
+                  {saveStatus === 'saved' && (
+                    <>
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                      <span>저장됨</span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2">
               <Button onClick={() => setShowProjectDialog(true)} variant="outline">
                 <Folder className="mr-2 h-4 w-4" />
                 프로젝트 선택
-              </Button>
-              <Button onClick={handleSave} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? '저장 중...' : '저장'}
-              </Button>
-              <Button onClick={handleLoadList} variant="outline">
-                <FolderOpen className="mr-2 h-4 w-4" />
-                불러오기
               </Button>
             </div>
           </div>
@@ -222,72 +202,84 @@ function App() {
         {/* 메인 레이아웃 */}
         <div className="flex-1 flex overflow-hidden">
           {/* 왼쪽: 노드 패널 */}
-          <aside className="w-64 border-r bg-white p-4 overflow-y-auto">
-            <NodePanel />
-          </aside>
+          {leftSidebarOpen && (
+            <aside className="w-64 border-r bg-white p-4 overflow-y-auto">
+              <NodePanel />
+            </aside>
+          )}
 
           {/* 중앙: 캔버스 */}
           <main className="flex-1 relative">
             <WorkflowCanvas />
+
+            {/* 사이드바 토글 버튼 */}
+            <div className="absolute top-4 left-4 flex gap-2 z-10">
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-white shadow-md"
+                onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+                title={leftSidebarOpen ? "왼쪽 패널 닫기" : "왼쪽 패널 열기"}
+              >
+                {leftSidebarOpen ? (
+                  <PanelLeftClose className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+
+            <div className="absolute top-4 right-4 flex gap-2 z-10">
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-white shadow-md"
+                onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+                title={rightSidebarOpen ? "오른쪽 패널 닫기" : "오른쪽 패널 열기"}
+              >
+                {rightSidebarOpen ? (
+                  <PanelRightClose className="h-4 w-4" />
+                ) : (
+                  <ChevronLeft className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
           </main>
 
-          {/* 오른쪽: 실행 패널 */}
-          <aside className="w-96 border-l bg-white p-4 overflow-y-auto">
-            <ExecutionPanel />
-          </aside>
-        </div>
-
-        {/* 불러오기 다이얼로그 (간단 구현) */}
-        {showLoadDialog && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
-              <h2 className="text-xl font-bold mb-4">워크플로우 불러오기</h2>
-
-              {savedWorkflows.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  저장된 워크플로우가 없습니다.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {savedWorkflows.map((workflow) => (
-                    <div
-                      key={workflow.id}
-                      className="border rounded-lg p-3 flex items-center justify-between hover:bg-gray-50"
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium">{workflow.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          노드: {workflow.node_count}, 엣지: {workflow.edge_count}
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => handleLoad(workflow.id)}
-                        >
-                          불러오기
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDelete(workflow.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="mt-4 flex justify-end">
-                <Button variant="outline" onClick={() => setShowLoadDialog(false)}>
-                  닫기
+          {/* 오른쪽: 실행 제어 / 노드 설정 패널 (전환) */}
+          {rightSidebarOpen && (
+            <aside className="w-96 border-l bg-white flex flex-col overflow-hidden">
+              {/* 패널 전환 탭 */}
+              <div className="border-b bg-gray-50 px-4 py-2 flex gap-2">
+                <Button
+                  size="sm"
+                  variant={rightPanelMode === 'execution' ? 'default' : 'outline'}
+                  onClick={() => setRightPanelMode('execution')}
+                  className="flex-1"
+                >
+                  실행 제어
+                </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelMode === 'node-config' ? 'default' : 'outline'}
+                  onClick={() => setRightPanelMode('node-config')}
+                  className="flex-1"
+                >
+                  노드 설정
                 </Button>
               </div>
-            </div>
-          </div>
-        )}
+
+              {/* 패널 내용 */}
+              <div className="flex-1 overflow-hidden p-4">
+                {rightPanelMode === 'execution' ? (
+                  <ExecutionPanel />
+                ) : (
+                  <NodeConfigPanel />
+                )}
+              </div>
+            </aside>
+          )}
+        </div>
 
         {/* 프로젝트 선택 다이얼로그 */}
         {showProjectDialog && (

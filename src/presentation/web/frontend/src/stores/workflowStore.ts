@@ -26,6 +26,12 @@ interface WorkflowStore {
   workflowName: string
   workflowDescription: string
 
+  // 선택된 노드
+  selectedNodeId: string | null
+
+  // 오른쪽 패널 모드
+  rightPanelMode: 'execution' | 'node-config'
+
   // 실행 상태
   execution: WorkflowExecutionState
 
@@ -37,6 +43,13 @@ interface WorkflowStore {
   deleteNode: (nodeId: string) => void
   addEdge: (edge: WorkflowEdge) => void
   deleteEdge: (edgeId: string) => void
+
+  // 노드 선택
+  setSelectedNodeId: (nodeId: string | null) => void
+  getSelectedNode: () => WorkflowNode | null
+
+  // 오른쪽 패널 모드
+  setRightPanelMode: (mode: 'execution' | 'node-config') => void
 
   // 워크플로우 메타데이터
   setWorkflowName: (name: string) => void
@@ -67,8 +80,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   // 초기 상태
   nodes: [],
   edges: [],
-  workflowName: '새 워크플로우',
+  workflowName: '새 프로젝트',
   workflowDescription: '',
+  selectedNodeId: null,
+  rightPanelMode: 'execution',
   execution: initialExecutionState,
 
   // 노드/엣지 조작
@@ -93,6 +108,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       edges: state.edges.filter(
         (edge) => edge.source !== nodeId && edge.target !== nodeId
       ),
+      // 삭제된 노드가 선택되어 있었다면 선택 해제
+      selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
+      // 삭제된 노드가 선택되어 있었다면 실행 패널로 전환
+      rightPanelMode: state.selectedNodeId === nodeId ? 'execution' : state.rightPanelMode,
     })),
 
   addEdge: (edge) =>
@@ -102,6 +121,18 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set((state) => ({
       edges: state.edges.filter((edge) => edge.id !== edgeId),
     })),
+
+  // 노드 선택
+  setSelectedNodeId: (nodeId) => set({ selectedNodeId: nodeId }),
+
+  getSelectedNode: () => {
+    const state = get()
+    if (!state.selectedNodeId) return null
+    return state.nodes.find((node) => node.id === state.selectedNodeId) || null
+  },
+
+  // 오른쪽 패널 모드
+  setRightPanelMode: (mode) => set({ rightPanelMode: mode }),
 
   // 워크플로우 메타데이터
   setWorkflowName: (name) => set({ workflowName: name }),
@@ -130,7 +161,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set({
       nodes: [],
       edges: [],
-      workflowName: '새 워크플로우',
+      workflowName: '새 프로젝트',
       workflowDescription: '',
       execution: initialExecutionState,
     }),

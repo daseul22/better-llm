@@ -7,7 +7,7 @@
  * - 실행 상태 표시
  */
 
-import React, { memo } from 'react'
+import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'

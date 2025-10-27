@@ -28,6 +28,18 @@ export const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({
     loadHomeDirectory()
   }, [])
 
+  // ESC 키 핸들링
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onCancel])
+
   const loadHomeDirectory = async () => {
     try {
       setLoading(true)

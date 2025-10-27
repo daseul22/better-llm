@@ -22,8 +22,7 @@ export const ExecutionPanel: React.FC = () => {
   const addLog = useWorkflowStore((state) => state.addLog)
   const clearExecution = useWorkflowStore((state) => state.clearExecution)
 
-  // ✅ 로그 배열과 실행 상태를 개별적으로 구독
-  const isExecuting = useWorkflowStore((state) => state.execution.isExecuting)
+  // ✅ 로그 배열 구독
   const logs = useWorkflowStore((state) => state.execution.logs)
 
   const [initialInput, setInitialInput] = useState('웹 UI 추가')

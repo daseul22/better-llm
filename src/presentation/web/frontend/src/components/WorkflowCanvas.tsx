@@ -11,8 +11,6 @@ import ReactFlow, {
   MiniMap,
   addEdge,
   Connection,
-  Edge,
-  Node,
   useNodesState,
   useEdgesState,
   OnNodesChange,
@@ -24,6 +22,7 @@ import 'reactflow/dist/style.css'
 
 import { WorkerNode } from './WorkerNode'
 import { useWorkflowStore } from '@/stores/workflowStore'
+import { WorkflowNode, WorkflowEdge } from '@/lib/api'
 
 // 커스텀 노드 타입 등록
 const nodeTypes: NodeTypes = {
@@ -40,6 +39,8 @@ export const WorkflowCanvas: React.FC = () => {
     deleteNode,
     deleteEdge,
     execution,
+    setSelectedNodeId,
+    setRightPanelMode,
   } = useWorkflowStore()
 
   // React Flow의 노드/엣지 상태 (로컬)
@@ -92,7 +93,7 @@ export const WorkflowCanvas: React.FC = () => {
 
       // 위치 변경을 Zustand에 반영
       setLocalNodes((nds) => {
-        setNodes(nds)
+        setNodes(nds as WorkflowNode[])
         return nds
       })
     },
@@ -113,7 +114,7 @@ export const WorkflowCanvas: React.FC = () => {
 
       // Zustand에 반영
       setLocalEdges((eds) => {
-        setEdges(eds)
+        setEdges(eds as WorkflowEdge[])
         return eds
       })
     },
@@ -123,12 +124,12 @@ export const WorkflowCanvas: React.FC = () => {
   // 엣지 연결 핸들러
   const handleConnect: OnConnect = useCallback(
     (connection: Connection) => {
-      const newEdge: Edge = {
+      const newEdge: WorkflowEdge = {
         id: `edge-${connection.source}-${connection.target}`,
         source: connection.source!,
         target: connection.target!,
-        sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle,
+        sourceHandle: connection.sourceHandle ?? undefined,
+        targetHandle: connection.targetHandle ?? undefined,
       }
 
       setLocalEdges((eds) => addEdge(connection, eds))
@@ -136,6 +137,21 @@ export const WorkflowCanvas: React.FC = () => {
     },
     [setLocalEdges, addStoreEdge]
   )
+
+  // 노드 클릭 핸들러 (선택 + 패널 전환)
+  const handleNodeClick = useCallback(
+    (_event: React.MouseEvent, node: any) => {
+      setSelectedNodeId(node.id)
+      setRightPanelMode('node-config')
+    },
+    [setSelectedNodeId, setRightPanelMode]
+  )
+
+  // 캔버스 클릭 핸들러 (선택 해제 + 패널 전환)
+  const handlePaneClick = useCallback(() => {
+    setSelectedNodeId(null)
+    setRightPanelMode('execution')
+  }, [setSelectedNodeId, setRightPanelMode])
 
   return (
     <div className="w-full h-full">
@@ -145,6 +161,8 @@ export const WorkflowCanvas: React.FC = () => {
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
+        onNodeClick={handleNodeClick}
+        onPaneClick={handlePaneClick}
         nodeTypes={nodeTypes}
         fitView
         className="bg-gray-50"

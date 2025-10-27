@@ -71,3 +71,4 @@ workspace/*coverage.xml
 # Static React Build Output (빌드 결과물은 무시, .gitkeep만 유지)
 **/static-react/*
 !**/static-react/.gitkeep
+
