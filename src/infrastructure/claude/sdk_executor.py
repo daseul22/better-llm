@@ -12,6 +12,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
     UserMessage,
+    SystemMessage,
     TextBlock,
     ThinkingBlock,
     ToolUseBlock,
@@ -143,7 +144,27 @@ class SDKResponseHandler(ABC):
             logger.debug("ResultMessage (no text content)")
             return None
 
-        # [3단계] 폴백 처리 (하위 호환성)
+        # [3단계] SystemMessage 처리
+        # 시스템 메타데이터 메시지 (SDK 내부 상태 정보 등)
+        elif isinstance(response, SystemMessage):
+            # SystemMessage는 content를 가질 수 있음 (텍스트 또는 리스트)
+            if hasattr(response, 'content'):
+                # content가 문자열인 경우
+                if isinstance(response.content, str):
+                    logger.debug("Extracted text from SystemMessage (string content)")
+                    return response.content
+
+                # content가 리스트인 경우 (blocks)
+                elif isinstance(response.content, list):
+                    for i, content_block in enumerate(response.content):
+                        if isinstance(content_block, TextBlock):
+                            logger.debug(f"Extracted text from SystemMessage TextBlock #{i}")
+                            return content_block.text
+
+            logger.debug("SystemMessage has no extractable text content")
+            return None
+
+        # [4단계] 폴백 처리 (하위 호환성)
         # 알 수 없는 응답 타입이거나 SDK 버전 변경 시 대비
         logger.debug(f"Unknown response type: {type(response).__name__}, trying fallback")
 
@@ -294,7 +315,26 @@ class ManagerResponseHandler(SDKResponseHandler):
             return
 
         # ====================================================================
-        # [3단계] 폴백 처리 (알 수 없는 응답 타입)
+        # [3단계] SystemMessage 처리 (시스템 메타데이터)
+        # ====================================================================
+        if isinstance(response, SystemMessage):
+            logger.debug("[Manager] Processing SystemMessage")
+
+            # SystemMessage는 usage 정보가 없을 수 있으므로 확인 후 처리
+            if hasattr(response, 'usage') and response.usage and self.usage_callback:
+                usage_dict = self.extract_usage_info(response.usage, context="Manager")
+                if usage_dict:
+                    logger.info(f"[Manager] Token usage (SystemMessage): {usage_dict}")
+                    self.usage_callback(usage_dict)
+
+            # 텍스트 추출 및 yield
+            text = self.extract_text_from_response(response)
+            if text:
+                yield text
+            return
+
+        # ====================================================================
+        # [4단계] 폴백 처리 (알 수 없는 응답 타입)
         # ====================================================================
         logger.warning(f"[Manager] Unknown response type: {type(response).__name__}")
 
@@ -377,7 +417,26 @@ class WorkerResponseHandler(SDKResponseHandler):
             return
 
         # ====================================================================
-        # [3단계] 폴백 처리 (알 수 없는 응답 타입)
+        # [3단계] SystemMessage 처리 (시스템 메타데이터)
+        # ====================================================================
+        if isinstance(response, SystemMessage):
+            logger.debug("[Worker] Processing SystemMessage")
+
+            # SystemMessage는 usage 정보가 없을 수 있으므로 확인 후 처리
+            if hasattr(response, 'usage') and response.usage and self.usage_callback:
+                usage_dict = self.extract_usage_info(response.usage, context="Worker")
+                if usage_dict:
+                    logger.info(f"[Worker] Token usage (SystemMessage): {usage_dict}")
+                    self.usage_callback(usage_dict)
+
+            # 텍스트 추출 및 yield
+            text = self.extract_text_from_response(response)
+            if text:
+                yield text
+            return
+
+        # ====================================================================
+        # [4단계] 폴백 처리 (알 수 없는 응답 타입)
         # ====================================================================
         logger.warning(f"[Worker] Unknown response type: {type(response).__name__}")
 

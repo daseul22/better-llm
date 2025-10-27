@@ -16,14 +16,17 @@ dependencies = [
     "anthropic>=0.18.0",
     "claude-agent-sdk>=0.1.0",
     "click>=8.0.0",
+    "fastapi>=0.115.0",
     "jinja2>=3.1.0",
     "pillow>=10.0.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
     "rapidfuzz>=3.0.0",
     "rich>=13.7.0",
+    "sse-starlette>=2.0.0",
     "structlog>=23.1.0",
     "textual>=0.47.0",
+    "uvicorn[standard]>=0.30.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +40,7 @@ dev = [
 [project.scripts]
 better-llm = "src.presentation.tui.tui_app:main"
 better-llm-cli = "src.presentation.cli.orchestrator:main"
+better-llm-web = "src.presentation.web.app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
