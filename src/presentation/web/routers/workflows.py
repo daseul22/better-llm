@@ -126,16 +126,24 @@ async def execute_workflow(
                 # 이벤트를 JSON으로 직렬화
                 event_data = event.model_dump()
 
-                logger.debug(
-                    f"[{session_id}] SSE Event #{event_count}: "
+                logger.info(
+                    f"[{session_id}] 📤 SSE Event #{event_count}: "
                     f"{event.event_type} (node: {event.node_id})"
                 )
+                logger.debug(f"[{session_id}] Event data: {event_data}")
+
+                # JSON 문자열 생성
+                json_str = json.dumps(event_data, ensure_ascii=False)
+                logger.debug(f"[{session_id}] JSON 직렬화 완료: {json_str[:100]}...")
 
                 # SSE 형식으로 전송
-                yield {"data": json.dumps(event_data, ensure_ascii=False)}
+                sse_message = {"data": json_str}
+                logger.debug(f"[{session_id}] SSE 메시지 전송: {sse_message}")
+                yield sse_message
 
             # 완료 시그널
-            logger.info(f"[{session_id}] SSE 스트림 완료 (총 {event_count}개 이벤트)")
+            logger.info(f"[{session_id}] ✅ SSE 스트림 완료 (총 {event_count}개 이벤트)")
+            logger.info(f"[{session_id}] 📤 [DONE] 시그널 전송")
             yield {"data": "[DONE]"}
 
         except Exception as e:

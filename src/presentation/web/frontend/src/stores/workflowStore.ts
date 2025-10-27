@@ -143,7 +143,14 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         isExecuting: true,
         currentNodeId: null,
         nodeOutputs: {},
-        logs: [],
+        logs: [
+          {
+            nodeId: '',
+            type: 'start',
+            message: '🚀 워크플로우 실행 시작...',
+            timestamp: Date.now(),
+          }
+        ],
       },
     })),
 
@@ -175,21 +182,32 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       },
     })),
 
-  addLog: (nodeId, type, message) =>
-    set((state) => ({
-      execution: {
-        ...state.execution,
-        logs: [
-          ...state.execution.logs,
-          {
-            nodeId,
-            type,
-            message,
-            timestamp: Date.now(),
-          },
-        ],
-      },
-    })),
+  addLog: (nodeId, type, message) => {
+    console.log('[workflowStore] addLog 호출:', { nodeId, type, message })
+
+    set((state) => {
+      const newLog = {
+        nodeId,
+        type,
+        message,
+        timestamp: Date.now(),
+      }
+      const newLogs = [...state.execution.logs, newLog]
+
+      console.log('[workflowStore] logs 업데이트:', {
+        이전: state.execution.logs.length,
+        이후: newLogs.length,
+        마지막_로그: newLog
+      })
+
+      return {
+        execution: {
+          ...state.execution,
+          logs: newLogs,
+        },
+      }
+    })
+  },
 
   clearExecution: () =>
     set((state) => ({

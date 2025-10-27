@@ -1,6 +1,7 @@
 """FastAPI 앱 - Better-LLM 워크플로우 캔버스"""
 import os
 from pathlib import Path
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +15,33 @@ load_dotenv()
 
 logger = get_logger(__name__)
 
-app = FastAPI(title="Better-LLM", version="4.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI Lifespan Context Manager (권장 방식)
+
+    startup 및 shutdown 이벤트를 처리합니다.
+    """
+    # Startup
+    logger.info(f"🚀 Better-LLM 시작 (React: {(Path(__file__).parent / 'static-react').exists()})")
+
+    # 환경변수 확인
+    if not os.getenv("CLAUDE_CODE_OAUTH_TOKEN"):
+        logger.warning("⚠️  CLAUDE_CODE_OAUTH_TOKEN 환경변수가 설정되지 않았습니다")
+        logger.warning("   Worker Agent 실행 시 오류가 발생할 수 있습니다")
+    else:
+        logger.info("✓ CLAUDE_CODE_OAUTH_TOKEN 확인됨")
+
+    yield  # 애플리케이션 실행 중
+
+    # Shutdown
+    logger.info("🛑 Better-LLM 종료 중...")
+    # 필요한 경우 리소스 정리 작업 추가 (DB 연결 종료, 캐시 정리 등)
+    logger.info("✅ Better-LLM 종료 완료")
+
+
+app = FastAPI(title="Better-LLM", version="4.0.0", lifespan=lifespan)
 
 origins = os.getenv("WEB_ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -35,16 +62,6 @@ else:
     async def root():
         return {"error": "React 빌드 필요", "solution": "cd src/presentation/web/frontend && npm run build"}
 
-@app.on_event("startup")
-async def startup():
-    logger.info(f"🚀 Better-LLM 시작 (React: {REACT_BUILD_DIR.exists()})")
-
-    # 환경변수 확인
-    if not os.getenv("CLAUDE_CODE_OAUTH_TOKEN"):
-        logger.warning("⚠️  CLAUDE_CODE_OAUTH_TOKEN 환경변수가 설정되지 않았습니다")
-        logger.warning("   Worker Agent 실행 시 오류가 발생할 수 있습니다")
-    else:
-        logger.info("✓ CLAUDE_CODE_OAUTH_TOKEN 확인됨")
 
 def main():
     import uvicorn

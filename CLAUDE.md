@@ -88,12 +88,17 @@ export LOG_DIR=/custom/path                  # 기본값: ~/.better-llm/{project
 # TUI (권장)
 better-llm
 
+# Web UI - NEW! (드래그 앤 드롭 워크플로우 에디터)
+better-llm-web
+# 접속: http://localhost:5173
+
 # CLI
 better-llm-cli "작업 설명"
 
 # 개발 중인 경우 (가상환경)
 python -m src.presentation.tui.tui_app
 python -m src.presentation.cli.orchestrator "작업"
+python -m src.presentation.web.app  # 웹 서버
 ```
 
 ---
@@ -103,31 +108,43 @@ python -m src.presentation.cli.orchestrator "작업"
 ### 개발 명령어
 
 ```bash
+# 개발 의존성 설치 (처음 한 번만)
+pipx inject better-llm pytest pytest-asyncio black ruff
+
 # 구문 검사 (코드 변경 후 필수)
-python3 -m py_compile src/**/*.py
+find src -name "*.py" -type f | xargs python3 -m py_compile
 
 # 특정 파일만 검사
 python3 -m py_compile src/infrastructure/claude/manager_client.py
 
-# 린트 (선택)
+# 린트
 ruff check src/
 
-# 포맷 (선택)
+# 포맷
 black src/
 ```
 
 ### 테스트
 
 ```bash
-# 통합 테스트
-python test_integration.py
+# 전체 테스트 실행
+pytest
 
-# Worker Tools 단독 테스트
-python test_worker_tools.py
+# 특정 디렉토리 테스트
+pytest tests/unit/ -v               # 단위 테스트
+pytest tests/integration/ -v        # 통합 테스트
+pytest tests/e2e/ -v                # E2E 테스트
 
-# 특정 모듈 테스트
-pytest tests/unit/test_math_utils.py -v
-pytest tests/unit/test_math_utils.py::TestMultiply -v
+# 특정 파일/테스트 실행
+pytest tests/unit/test_session_models.py -v
+pytest tests/unit/test_session_models.py::TestSessionModel -v
+
+# 커버리지와 함께 실행
+pytest --cov=src --cov-report=html
+
+# 빠른 검증 (루트 디렉토리의 테스트 스크립트)
+python test_context_compression.py   # 컨텍스트 압축 테스트
+python test_manager_recovery.py      # Manager 복구 테스트
 ```
 
 ### Git (Conventional Commits)
@@ -358,10 +375,17 @@ export LOG_LEVEL=DEBUG
 export WORKER_DEBUG_INFO=true
 ```
 
-### Worker Tools 단독 테스트
+### 통합 테스트 실행
 
 ```bash
-python test_worker_tools.py
+# Manager 복구 메커니즘 테스트
+python test_manager_recovery.py
+
+# 컨텍스트 압축 기능 테스트
+python test_context_compression.py
+
+# pytest 기반 통합 테스트
+pytest tests/integration/ -v
 ```
 
 ---
@@ -385,9 +409,10 @@ python test_worker_tools.py
 
 ### 프롬프트 수정 시 주의사항
 
-- **Manager 프롬프트**: `src/infrastructure/claude/manager_client.py:307-341` (중복 작업 방지 규칙)
+- **Manager 프롬프트**: `src/infrastructure/claude/manager_client.py`의 `SYSTEM_PROMPT` 속성 (중복 작업 방지 규칙 포함)
 - **Worker 프롬프트**: `prompts/{worker}.txt` (반드시 요약 섹션 포함)
 - **요약 형식**: `## 📋 [{Worker 이름} 요약 - Manager 전달용]`으로 시작
+- **프롬프트 변경 후**: 구문 검사 후 실제 실행으로 검증 필요
 
 ---
 
@@ -501,6 +526,8 @@ export CLAUDE_CLI_PATH='/path/to/claude'
 
 ## 향후 개선 계획
 
+자세한 내용은 `CHANGELOG.md`의 "Unreleased" 섹션 참조.
+
 ### 단기 (우선순위 1)
 - 병렬 실행 지원: 독립적인 Worker Tool 병렬 실행
 - Worker Tool 동적 로딩: 플러그인 아키텍처
@@ -514,6 +541,8 @@ export CLAUDE_CLI_PATH='/path/to/claude'
 ### 장기 (우선순위 3)
 - 자동 복구: 에러 패턴 분석 후 자동 복구 로직
 - 마이크로서비스 아키텍처: Worker Tool 분산 실행
+
+**참고**: 최신 개선사항 및 버그 수정 내역은 `CHANGELOG.md` 참조
 
 ---
 
@@ -573,7 +602,7 @@ except ClaudeSDKError:
     # 기타 SDK 에러 → 로그 확인 요청
 ```
 
-**구현 위치**: `sdk_executor.py:568-615` (Manager), `sdk_executor.py:736-789` (Worker)
+**구현 위치**: `sdk_executor.py` (ManagerSDKExecutor 및 WorkerSDKExecutor의 에러 처리 로직 참조)
 
 ### 4. 스트리밍 응답 처리 (Template Method Pattern) ✅
 
@@ -594,7 +623,7 @@ class ManagerResponseHandler(SDKResponseHandler):
         # 텍스트 추출 → yield
 ```
 
-**구현 위치**: `sdk_executor.py:75-416`
+**구현 위치**: `sdk_executor.py` (SDKResponseHandler 추상 클래스 및 구현체 참조)
 
 ### 5. 프롬프트 캐싱 활용 ✅
 
@@ -604,7 +633,7 @@ class ManagerResponseHandler(SDKResponseHandler):
 
 **주의**: 이는 Anthropic의 Prompt Caching Beta API가 아닌 애플리케이션 레벨 캐싱입니다.
 
-**구현 위치**: `cache/prompt_cache.py`, `mcp/worker_tools.py:119-124`
+**구현 위치**: `cache/prompt_cache.py`, `mcp/worker_tools.py` (execute_planner_task 함수 내 캐싱 로직)
 
 ### 6. Permission Mode 설정 ✅
 
@@ -620,7 +649,7 @@ class ManagerResponseHandler(SDKResponseHandler):
 export PERMISSION_MODE=acceptEdits
 ```
 
-**구현 위치**: `sdk_executor.py:51-74` (환경변수 오버라이드 로직 포함)
+**구현 위치**: `sdk_executor.py` (PermissionModeResolver 클래스 참조)
 
 ### 7. Context 관리 ✅
 
@@ -637,7 +666,7 @@ options = ClaudeAgentOptions(
 - 첫 번째 사용자 요청 + 최근 메시지 포함
 - 컨텍스트 윈도우 사용량 90% 초과 시 경고
 
-**구현 위치**: `manager_client.py:636-692`, `manager_client.py:996-1068`
+**구현 위치**: `manager_client.py` (ManagerAgent 클래스의 슬라이딩 윈도우 구현 참조)
 
 ---
 

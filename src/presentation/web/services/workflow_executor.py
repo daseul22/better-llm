@@ -219,11 +219,13 @@ class WorkflowExecutor:
             task_template = node.data.task_template
 
             # 노드 시작 이벤트
-            yield WorkflowNodeExecutionEvent(
+            start_event = WorkflowNodeExecutionEvent(
                 event_type="node_start",
                 node_id=node_id,
                 data={"agent_name": agent_name},
             )
+            logger.info(f"[{session_id}] 🟢 이벤트 생성: node_start (node: {node_id}, agent: {agent_name})")
+            yield start_event
 
             try:
                 # Agent 설정 조회
@@ -256,18 +258,20 @@ class WorkflowExecutor:
                     node_output_chunks.append(chunk)
 
                     # 노드 출력 이벤트 (스트리밍)
-                    yield WorkflowNodeExecutionEvent(
+                    output_event = WorkflowNodeExecutionEvent(
                         event_type="node_output",
                         node_id=node_id,
                         data={"chunk": chunk},
                     )
+                    logger.debug(f"[{session_id}] 📝 이벤트 생성: node_output (node: {node_id}, chunk: {len(chunk)}자)")
+                    yield output_event
 
                 # 노드 출력 저장
                 node_output = "".join(node_output_chunks)
                 node_outputs[node_id] = node_output
 
                 # 노드 완료 이벤트
-                yield WorkflowNodeExecutionEvent(
+                complete_event = WorkflowNodeExecutionEvent(
                     event_type="node_complete",
                     node_id=node_id,
                     data={
@@ -275,6 +279,8 @@ class WorkflowExecutor:
                         "output_length": len(node_output),
                     },
                 )
+                logger.info(f"[{session_id}] ✅ 이벤트 생성: node_complete (node: {node_id}, agent: {agent_name})")
+                yield complete_event
 
                 logger.info(
                     f"[{session_id}] 노드 완료: {node_id} ({agent_name}) "
@@ -286,11 +292,13 @@ class WorkflowExecutor:
                 logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
 
                 # 노드 에러 이벤트
-                yield WorkflowNodeExecutionEvent(
+                error_event = WorkflowNodeExecutionEvent(
                     event_type="node_error",
                     node_id=node_id,
                     data={"error": error_msg},
                 )
+                logger.error(f"[{session_id}] 🔴 이벤트 생성: node_error (node: {node_id})")
+                yield error_event
 
                 # 워크플로우 중단
                 raise
@@ -298,8 +306,10 @@ class WorkflowExecutor:
         logger.info(f"[{session_id}] 워크플로우 실행 완료: {workflow.name}")
 
         # 워크플로우 완료 이벤트
-        yield WorkflowNodeExecutionEvent(
+        workflow_complete_event = WorkflowNodeExecutionEvent(
             event_type="workflow_complete",
             node_id="",
             data={"message": "워크플로우 실행 완료"},
         )
+        logger.info(f"[{session_id}] 🎉 이벤트 생성: workflow_complete")
+        yield workflow_complete_event
