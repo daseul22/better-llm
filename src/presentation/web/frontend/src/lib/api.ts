@@ -13,6 +13,7 @@ export interface Agent {
   name: string
   role: string
   description: string
+  system_prompt: string  // 시스템 프롬프트 원본
 }
 
 /**

@@ -18,6 +18,7 @@ from src.infrastructure.claude.worker_client import WorkerAgent
 from src.infrastructure.logging import get_logger
 from src.presentation.web.schemas.request import (
     AgentExecuteRequest,
+    AgentInfo,
     AgentListResponse,
     ErrorResponse,
 )
@@ -38,6 +39,50 @@ def get_config_loader() -> JsonConfigLoader:
     return JsonConfigLoader(project_root)
 
 
+def _load_agent_system_prompt(config: AgentConfig) -> str:
+    """
+    에이전트의 시스템 프롬프트 로드 (WorkerAgent와 동일한 로직)
+
+    Args:
+        config: 에이전트 설정
+
+    Returns:
+        시스템 프롬프트 문자열
+    """
+    from pathlib import Path
+
+    prompt_text = config.system_prompt
+    logger.info(f"[{config.name}] 시스템 프롬프트 로드 시작: {prompt_text}")
+
+    # .txt 확장자가 있거나 경로처럼 보이면 파일에서 로드 시도
+    if prompt_text.endswith('.txt') or '/' in prompt_text:
+        try:
+            prompt_path = Path(prompt_text)
+            logger.info(f"[{config.name}] 프롬프트 파일 경로 (상대): {prompt_path}")
+
+            if not prompt_path.is_absolute():
+                # 프로젝트 루트 기준으로 경로 해석
+                project_root = get_project_root()
+                prompt_path = project_root / prompt_text
+                logger.info(f"[{config.name}] 프로젝트 루트: {project_root}")
+                logger.info(f"[{config.name}] 프롬프트 파일 경로 (절대): {prompt_path}")
+
+            if prompt_path.exists():
+                with open(prompt_path, 'r', encoding='utf-8') as f:
+                    loaded_prompt = f.read().strip()
+                    logger.info(f"[{config.name}] ✅ 시스템 프롬프트 로드 성공: {len(loaded_prompt)} 문자")
+                    return loaded_prompt
+            else:
+                logger.warning(f"[{config.name}] ⚠️  프롬프트 파일 없음: {prompt_path}, 기본값 사용")
+                return f"프롬프트 파일 없음: {prompt_path}"
+        except Exception as e:
+            logger.error(f"[{config.name}] ❌ 프롬프트 로드 실패: {e}, 기본값 사용", exc_info=True)
+            return f"프롬프트 로드 실패: {str(e)}"
+
+    logger.info(f"[{config.name}] 문자열 프롬프트 사용: {len(prompt_text)} 문자")
+    return prompt_text
+
+
 @router.get("/agents", response_model=AgentListResponse)
 async def list_agents(
     config_loader: JsonConfigLoader = Depends(get_config_loader)
@@ -49,7 +94,7 @@ async def list_agents(
         config_loader: ConfigLoader 의존성 주입 (Depends)
 
     Returns:
-        AgentListResponse: Agent 목록 (name, role, description)
+        AgentListResponse: Agent 목록 (name, role, description, system_prompt)
 
     Example:
         GET /api/agents
@@ -58,7 +103,8 @@ async def list_agents(
                 {
                     "name": "planner",
                     "role": "계획 수립",
-                    "description": "요구사항 분석 및 작업 계획 수립"
+                    "description": "요구사항 분석 및 작업 계획 수립",
+                    "system_prompt": "시스템 프롬프트 내용..."
                 },
                 ...
             ]
@@ -67,17 +113,19 @@ async def list_agents(
     try:
         agent_configs = config_loader.load_agent_configs()
 
-        agents = [
-            {
-                "name": config.name,
-                "role": config.role,
-                # description은 role을 사용 (JSON 설정에서 로드)
-                "description": f"{config.role} 전문가",
-            }
-            for config in agent_configs
-        ]
+        agents = []
+        for config in agent_configs:
+            # 시스템 프롬프트 로드
+            system_prompt = _load_agent_system_prompt(config)
 
-        logger.info(f"✅ Agent 목록 조회: {len(agents)}개")
+            agents.append(AgentInfo(
+                name=config.name,
+                role=config.role,
+                description=f"{config.role} 전문가",
+                system_prompt=system_prompt,
+            ))
+
+        logger.info(f"✅ Agent 목록 조회: {len(agents)}개 (시스템 프롬프트 포함)")
         return AgentListResponse(agents=agents)
 
     except Exception as e:

@@ -49,12 +49,21 @@ class AgentExecuteRequest(BaseModel):
         return v.strip()
 
 
+class AgentInfo(BaseModel):
+    """Agent 정보 스키마"""
+
+    name: str = Field(..., description="Agent 이름")
+    role: str = Field(..., description="Agent 역할")
+    description: str = Field(..., description="Agent 설명")
+    system_prompt: str = Field(..., description="시스템 프롬프트 원본")
+
+
 class AgentListResponse(BaseModel):
     """사용 가능한 Agent 목록 응답 스키마"""
 
-    agents: list[dict[str, str]] = Field(
+    agents: list[AgentInfo] = Field(
         ...,
-        description="Agent 목록 (name, role, description 포함)",
+        description="Agent 목록 (name, role, description, system_prompt 포함)",
     )
 
 

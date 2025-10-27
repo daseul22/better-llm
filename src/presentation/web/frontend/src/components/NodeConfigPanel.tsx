@@ -11,6 +11,7 @@ import React, { useEffect, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
+import { getAgents, Agent } from '@/lib/api'
 import { Save } from 'lucide-react'
 
 export const NodeConfigPanel: React.FC = () => {
@@ -27,15 +28,58 @@ export const NodeConfigPanel: React.FC = () => {
   const [hasChanges, setHasChanges] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
+  // Agent 목록 및 시스템 프롬프트
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [systemPrompt, setSystemPrompt] = useState('')
+
+  // Agent 목록 로드 (마운트 시 한 번만)
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        console.log('[NodeConfigPanel] Agent 목록 로드 시작...')
+        const agentList = await getAgents()
+        console.log('[NodeConfigPanel] Agent 목록 로드 완료:', agentList.length, '개')
+        console.log('[NodeConfigPanel] Agent 목록:', agentList.map(a => ({
+          name: a.name,
+          promptLength: a.system_prompt?.length || 0
+        })))
+        setAgents(agentList)
+      } catch (error) {
+        console.error('❌ Agent 목록 로드 실패:', error)
+        setSystemPrompt('❌ Agent 목록 로드 실패')
+      }
+    }
+    loadAgents()
+  }, [])
+
   // 선택된 노드가 변경되면 로컬 상태 초기화
   useEffect(() => {
     if (selectedNode) {
+      console.log('[NodeConfigPanel] 노드 선택:', selectedNode.data.agent_name)
+      console.log('[NodeConfigPanel] agents 배열 길이:', agents.length)
+
       setTaskTemplate(selectedNode.data.task_template || '')
       setOutputFormat(selectedNode.data.config?.output_format || 'plain_text')
       setCustomPrompt(selectedNode.data.config?.custom_prompt || '')
       setHasChanges(false)
+
+      // 시스템 프롬프트 가져오기
+      if (agents.length === 0) {
+        console.log('[NodeConfigPanel] agents 배열이 비어있음, 로딩 중...')
+        setSystemPrompt('시스템 프롬프트를 로드하는 중...')
+        return
+      }
+
+      const agent = agents.find((a) => a.name === selectedNode.data.agent_name)
+      console.log('[NodeConfigPanel] 매칭된 agent:', agent?.name, ', 프롬프트 길이:', agent?.system_prompt?.length || 0)
+
+      if (agent?.system_prompt) {
+        setSystemPrompt(agent.system_prompt)
+      } else {
+        setSystemPrompt(`❌ Agent '${selectedNode.data.agent_name}'의 시스템 프롬프트를 찾을 수 없습니다.`)
+      }
     }
-  }, [selectedNode])
+  }, [selectedNode, agents])
 
   // 변경사항 추적
   useEffect(() => {
@@ -113,6 +157,20 @@ export const NodeConfigPanel: React.FC = () => {
       </CardHeader>
 
       <CardContent className="flex-1 overflow-y-auto space-y-4">
+        {/* 시스템 프롬프트 (읽기 전용) */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">시스템 프롬프트 (읽기 전용)</label>
+          <textarea
+            className="w-full p-2 border rounded-md text-sm font-mono bg-gray-50"
+            rows={12}
+            value={systemPrompt}
+            readOnly
+          />
+          <p className="text-xs text-muted-foreground">
+            기본 워커의 시스템 프롬프트는 수정할 수 없습니다.
+          </p>
+        </div>
+
         {/* 작업 템플릿 */}
         <div className="space-y-2">
           <label className="text-sm font-medium">작업 템플릿</label>
