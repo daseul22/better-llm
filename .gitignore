@@ -63,8 +63,8 @@ htmlcov/
 workspace/*coverage.xml
 
 # Node.js
-node_modules/
+**/node_modules/
 
-# Static React Build Output
-static-react/*
-!static-react/.gitkeep
+# Static React Build Output (빌드 결과물은 무시, .gitkeep만 유지)
+**/static-react/*
+!**/static-react/.gitkeep
