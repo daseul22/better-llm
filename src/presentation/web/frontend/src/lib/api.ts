@@ -250,3 +250,154 @@ export async function deleteWorkflow(workflowId: string): Promise<void> {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`)
   }
 }
+
+// ==================== 프로젝트 API ====================
+
+/**
+ * 프로젝트 정보
+ */
+export interface ProjectInfo {
+  project_path: string | null
+  has_existing_config: boolean
+}
+
+/**
+ * 프로젝트 선택
+ */
+export async function selectProject(projectPath: string): Promise<{
+  project_path: string
+  message: string
+  has_existing_config: boolean
+}> {
+  const response = await fetch(`${API_BASE}/projects/select`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ project_path: projectPath }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 현재 프로젝트 정보 조회
+ */
+export async function getCurrentProject(): Promise<ProjectInfo> {
+  const response = await fetch(`${API_BASE}/projects/current`)
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 프로젝트에 워크플로우 저장
+ */
+export async function saveProjectWorkflow(
+  workflow: Workflow,
+  projectPath?: string
+): Promise<{ message: string; config_path: string }> {
+  const response = await fetch(`${API_BASE}/projects/workflow`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      project_path: projectPath,
+      workflow,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 프로젝트에서 워크플로우 로드
+ */
+export async function loadProjectWorkflow(
+  projectPath?: string
+): Promise<{
+  project_path: string
+  workflow: Workflow
+  last_modified: string | null
+}> {
+  const url = projectPath
+    ? `${API_BASE}/projects/workflow?project_path=${encodeURIComponent(projectPath)}`
+    : `${API_BASE}/projects/workflow`
+
+  const response = await fetch(url)
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+// ==================== 파일 시스템 API ====================
+
+/**
+ * 디렉토리 엔트리
+ */
+export interface DirectoryEntry {
+  name: string
+  path: string
+  is_directory: boolean
+  is_readable: boolean
+}
+
+/**
+ * 디렉토리 브라우징 응답
+ */
+export interface DirectoryBrowseResponse {
+  current_path: string
+  parent_path: string | null
+  entries: DirectoryEntry[]
+}
+
+/**
+ * 홈 디렉토리 조회
+ */
+export async function getHomeDirectory(): Promise<{ home_path: string }> {
+  const response = await fetch(`${API_BASE}/filesystem/home`)
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 디렉토리 브라우징
+ */
+export async function browseDirectory(
+  path?: string
+): Promise<DirectoryBrowseResponse> {
+  const url = path
+    ? `${API_BASE}/filesystem/browse?path=${encodeURIComponent(path)}`
+    : `${API_BASE}/filesystem/browse`
+
+  const response = await fetch(url)
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
