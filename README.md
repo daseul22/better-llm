@@ -98,11 +98,33 @@ echo "CLAUDE_CODE_OAUTH_TOKEN=your-oauth-token-here" > .env
 better-llm
 ```
 
+**특징**: 대화형 터미널 UI, 실시간 로그 표시, 세션 관리
+
+#### Web UI (Workflow Canvas) - NEW! 🎨
+
+```bash
+# 하나의 명령어로 모든 것 실행 (백엔드 + 프론트엔드)
+better-llm-web
+```
+
+**특징**:
+- 🎯 드래그 앤 드롭으로 Worker Agent 배치
+- 🔗 노드 간 연결로 데이터 흐름 정의
+- ⚡ 실시간 실행 상태 표시
+- 💾 워크플로우 저장/불러오기
+- 🔄 자동 프론트엔드 의존성 설치
+
+**접속**: http://localhost:5173 (자동 리다이렉트)
+
+**레거시 UI**: http://127.0.0.1:8000/legacy (단일 Worker 실행)
+
 #### CLI (Command Line Interface)
 
 ```bash
 better-llm-cli "FastAPI로 /users CRUD 엔드포인트 구현해줘"
 ```
+
+**특징**: 스크립트 자동화, 단일 명령 실행
 
 ---
 
@@ -112,7 +134,10 @@ better-llm-cli "FastAPI로 /users CRUD 엔드포인트 구현해줘"
 
 ### 빠른 링크
 
-- [**🚀 고급 기능 (Advanced Features)**](ADVANCED_FEATURES.md) - **NEW!** LLM 기반 요약, Performance Metrics, Context Metadata
+- [**🎨 Workflow Canvas 가이드**](docs/workflow-canvas-guide.md) - **NEW!** 웹 UI 워크플로우 에디터
+- [**🌐 웹 사용 가이드**](docs/web-usage.md) - **NEW!** better-llm-web 사용법 (워크플로우 캔버스 + 레거시 UI)
+- [**⚡ 빠른 시작 (웹)**](docs/quickstart-web.md) - **NEW!** 5분 안에 시작하기
+- [**🚀 고급 기능 (Advanced Features)**](ADVANCED_FEATURES.md) - LLM 기반 요약, Performance Metrics, Context Metadata
 - [**설치 가이드**](docs/guides/installation.md) - 상세한 설치 방법
 - [**사용법**](docs/guides/usage.md) - TUI/CLI 사용법, 고급 기능
 - [**사용 사례**](docs/guides/use_cases.md) - 실전 시나리오별 활용법

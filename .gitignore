@@ -61,3 +61,10 @@ htmlcov/
 *.bak
 
 workspace/*coverage.xml
+
+# Node.js
+node_modules/
+
+# Static React Build Output
+static-react/*
+!static-react/.gitkeep
