@@ -43,6 +43,7 @@ class SDKExecutionConfig:
         max_turns: 최대 대화 턴 수 (None이면 무제한)
         continue_conversation: 이전 세션 재개 여부
         setting_sources: 설정 파일 로드 소스 리스트 (예: ["user", "project", "local"])
+        system_prompt: 시스템 프롬프트 (선택, Manager/Worker에서 제공)
     """
     model: str = "claude-sonnet-4-5-20250929"
     max_tokens: int = 8000
@@ -53,6 +54,7 @@ class SDKExecutionConfig:
     max_turns: Optional[int] = None
     continue_conversation: bool = False
     setting_sources: Optional[List[str]] = None
+    system_prompt: Optional[str] = None  # 명시적 시스템 프롬프트 (SDK Best Practice)
 
     def __post_init__(self):
         """기본값 초기화 (List는 mutable이므로 __post_init__에서 처리)."""
@@ -546,6 +548,11 @@ class ManagerSDKExecutor:
             if self.config.setting_sources:
                 options_dict["setting_sources"] = self.config.setting_sources
 
+            # System Prompt 명시적 설정 (SDK Best Practice)
+            # ClaudeAgentOptions에서 system_prompt를 직접 지원하지 않으므로
+            # 프롬프트에 포함하여 전달 (현재 방식 유지)
+            # 참고: system_prompt는 query() 호출 시 프롬프트에 포함됨
+
             # Hooks 추가 (비어있지 않으면)
             if self.hooks:
                 options_dict["hooks"] = self.hooks
@@ -744,6 +751,11 @@ class WorkerSDKExecutor:
                 options_dict["continue_conversation"] = self.config.continue_conversation
             if self.config.setting_sources:
                 options_dict["setting_sources"] = self.config.setting_sources
+
+            # System Prompt 명시적 설정 (SDK Best Practice)
+            # ClaudeAgentOptions에서 system_prompt를 직접 지원하지 않으므로
+            # 프롬프트에 포함하여 전달 (현재 방식 유지)
+            # 참고: system_prompt는 WorkerAgent._load_system_prompt()에서 이미 포함됨
 
             async for response in query(
                 prompt=prompt,
