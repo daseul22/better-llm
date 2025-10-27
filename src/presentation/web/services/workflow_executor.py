@@ -353,8 +353,40 @@ class WorkflowExecutor:
         for node in sorted_nodes:
             node_id = node.id
 
+            # Input 노드 처리 (프론트엔드 전용 노드 - 스킵)
+            if node.type == "input":
+                # Input 노드의 initial_input을 노드 출력으로 저장
+                # (다음 노드가 {{node_<id>}} 형태로 참조 가능)
+                input_value = node.data.get("initial_input", initial_input)
+                node_outputs[node_id] = input_value
+
+                # 시작 이벤트
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_start",
+                    node_id=node_id,
+                    data={"agent_name": "Input"},
+                )
+
+                # 완료 이벤트
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_complete",
+                    node_id=node_id,
+                    data={
+                        "node_type": "input",
+                        "agent_name": "Input",
+                        "output_length": len(input_value),
+                        "output": input_value,
+                    }
+                )
+
+                logger.info(
+                    f"[{session_id}] Input 노드 완료: {node_id} "
+                    f"(출력 길이: {len(input_value)})"
+                )
+                continue  # 다음 노드로
+
             # Manager 노드 vs Worker 노드 구분
-            if node.type == "manager":
+            elif node.type == "manager":
                 # Manager 노드 실행
                 async for event in self._execute_manager_node(
                     node, node_outputs, initial_input, session_id

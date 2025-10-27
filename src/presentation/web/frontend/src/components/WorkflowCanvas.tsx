@@ -22,6 +22,7 @@ import 'reactflow/dist/style.css'
 
 import { WorkerNode } from './WorkerNode'
 import { ManagerNode } from './ManagerNode'
+import { InputNode } from './InputNode'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode, WorkflowEdge } from '@/lib/api'
 
@@ -29,6 +30,7 @@ import { WorkflowNode, WorkflowEdge } from '@/lib/api'
 const nodeTypes: NodeTypes = {
   worker: WorkerNode,
   manager: ManagerNode,
+  input: InputNode,
 }
 
 export const WorkflowCanvas: React.FC = () => {
@@ -42,7 +44,6 @@ export const WorkflowCanvas: React.FC = () => {
     deleteEdge,
     execution,
     setSelectedNodeId,
-    setRightPanelMode,
   } = useWorkflowStore()
 
   // React Flow의 노드/엣지 상태 (로컬)
@@ -55,7 +56,18 @@ export const WorkflowCanvas: React.FC = () => {
   }, [storeNodes, setLocalNodes])
 
   React.useEffect(() => {
-    setLocalEdges(storeEdges)
+    // Zustand에서 로드된 엣지에도 화살표 및 스타일 적용
+    const edgesWithMarkers = storeEdges.map((edge) => ({
+      ...edge,
+      type: 'default',
+      animated: true,
+      style: { stroke: '#3b82f6', strokeWidth: 2 },
+      markerEnd: {
+        type: 'arrowclosed' as const,
+        color: '#3b82f6',
+      },
+    }))
+    setLocalEdges(edgesWithMarkers as any)
   }, [storeEdges, setLocalEdges])
 
   // 실행 상태 표시 (노드 데이터 업데이트)
@@ -134,26 +146,37 @@ export const WorkflowCanvas: React.FC = () => {
         targetHandle: connection.targetHandle ?? undefined,
       }
 
-      setLocalEdges((eds) => addEdge(connection, eds))
+      // React Flow 엣지에 화살표 추가
+      const reactFlowEdge = {
+        ...connection,
+        id: newEdge.id,
+        type: 'default',
+        animated: true,  // 애니메이션 효과
+        style: { stroke: '#3b82f6', strokeWidth: 2 },  // 파란색, 두께 2
+        markerEnd: {
+          type: 'arrowclosed' as const,
+          color: '#3b82f6',
+        },
+      }
+
+      setLocalEdges((eds) => addEdge(reactFlowEdge, eds))
       addStoreEdge(newEdge)
     },
     [setLocalEdges, addStoreEdge]
   )
 
-  // 노드 클릭 핸들러 (선택 + 패널 전환)
+  // 노드 클릭 핸들러 (선택)
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: any) => {
       setSelectedNodeId(node.id)
-      setRightPanelMode('node-config')
     },
-    [setSelectedNodeId, setRightPanelMode]
+    [setSelectedNodeId]
   )
 
-  // 캔버스 클릭 핸들러 (선택 해제 + 패널 전환)
+  // 캔버스 클릭 핸들러 (선택 해제)
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null)
-    setRightPanelMode('execution')
-  }, [setSelectedNodeId, setRightPanelMode])
+  }, [setSelectedNodeId])
 
   return (
     <div className="w-full h-full">

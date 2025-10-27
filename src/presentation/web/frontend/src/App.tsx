@@ -8,7 +8,6 @@ import { useState, useEffect } from 'react'
 import { ReactFlowProvider } from 'reactflow'
 import { WorkflowCanvas } from './components/WorkflowCanvas'
 import { NodePanel } from './components/NodePanel'
-import { ExecutionPanel } from './components/ExecutionPanel'
 import { NodeConfigPanel } from './components/NodeConfigPanel'
 import { Button } from './components/ui/button'
 import { useWorkflowStore } from './stores/workflowStore'
@@ -23,7 +22,7 @@ import { DirectoryBrowser } from './components/DirectoryBrowser'
 const STORAGE_KEY_PROJECT_PATH = 'better-llm-last-project-path'
 
 function App() {
-  const { getWorkflow: getCurrentWorkflow, loadWorkflow, workflowName, setWorkflowName, nodes, edges, rightPanelMode, setRightPanelMode } = useWorkflowStore()
+  const { getWorkflow: getCurrentWorkflow, loadWorkflow, workflowName, setWorkflowName, nodes, edges } = useWorkflowStore()
 
   // 프로젝트 관련 상태
   const [currentProjectPath, setCurrentProjectPath] = useState<string | null>(null)
@@ -246,36 +245,12 @@ function App() {
             </div>
           </main>
 
-          {/* 오른쪽: 실행 제어 / 노드 설정 패널 (전환) */}
+          {/* 오른쪽: 노드 설정 패널 */}
           {rightSidebarOpen && (
             <aside className="w-96 border-l bg-white flex flex-col overflow-hidden">
-              {/* 패널 전환 탭 */}
-              <div className="border-b bg-gray-50 px-4 py-2 flex gap-2">
-                <Button
-                  size="sm"
-                  variant={rightPanelMode === 'execution' ? 'default' : 'outline'}
-                  onClick={() => setRightPanelMode('execution')}
-                  className="flex-1"
-                >
-                  실행 제어
-                </Button>
-                <Button
-                  size="sm"
-                  variant={rightPanelMode === 'node-config' ? 'default' : 'outline'}
-                  onClick={() => setRightPanelMode('node-config')}
-                  className="flex-1"
-                >
-                  노드 설정
-                </Button>
-              </div>
-
               {/* 패널 내용 */}
               <div className="flex-1 overflow-hidden p-4">
-                {rightPanelMode === 'execution' ? (
-                  <ExecutionPanel />
-                ) : (
-                  <NodeConfigPanel />
-                )}
+                <NodeConfigPanel />
               </div>
             </aside>
           )}

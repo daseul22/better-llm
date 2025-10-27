@@ -63,8 +63,24 @@ class ManagerNodeData(BaseModel):
     )
 
 
-# Union 타입으로 Worker/Manager 구분
-WorkflowNodeData = Union[WorkerNodeData, ManagerNodeData]
+class InputNodeData(BaseModel):
+    """
+    Input 노드의 데이터 (워크플로우 시작점)
+
+    Input 노드는 워크플로우의 시작점으로, 초기 입력을 저장하고
+    연결된 노드로 전달합니다.
+
+    Attributes:
+        initial_input: 초기 입력 텍스트
+    """
+    initial_input: str = Field(
+        ...,
+        description="워크플로우 초기 입력 텍스트"
+    )
+
+
+# Union 타입으로 Worker/Manager/Input 구분
+WorkflowNodeData = Union[WorkerNodeData, ManagerNodeData, InputNodeData]
 
 
 class WorkflowNode(BaseModel):
@@ -73,18 +89,21 @@ class WorkflowNode(BaseModel):
 
     Attributes:
         id: 노드 고유 ID
-        type: 노드 타입 (worker, manager)
+        type: 노드 타입 (worker, manager, input)
         position: 캔버스 상의 위치 {x, y}
-        data: 노드 데이터 (WorkerNodeData 또는 ManagerNodeData)
+        data: 노드 데이터 (WorkerNodeData, ManagerNodeData, InputNodeData)
     """
     id: str = Field(..., description="노드 고유 ID")
-    type: str = Field(default="worker", description="노드 타입 (worker, manager)")
+    type: str = Field(default="worker", description="노드 타입 (worker, manager, input)")
     position: Dict[str, float] = Field(
         ...,
         description="캔버스 상의 위치",
         example={"x": 100, "y": 100}
     )
-    data: Union[WorkerNodeData, ManagerNodeData] = Field(..., description="노드 데이터")
+    data: Union[WorkerNodeData, ManagerNodeData, InputNodeData, Dict[str, Any]] = Field(
+        ...,
+        description="노드 데이터 (타입에 따라 다름)"
+    )
 
 
 class WorkflowEdge(BaseModel):

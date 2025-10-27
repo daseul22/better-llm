@@ -7,12 +7,13 @@
  * - 추가 설정 (config)
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { getAgents, Agent, getTools, Tool } from '@/lib/api'
 import { Save } from 'lucide-react'
+import { parseClaudeMessage } from '@/lib/messageParser'
 
 export const NodeConfigPanel: React.FC = () => {
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId)
@@ -36,11 +37,37 @@ export const NodeConfigPanel: React.FC = () => {
   const [managerTaskDescription, setManagerTaskDescription] = useState('')
   const [managerAvailableWorkers, setManagerAvailableWorkers] = useState<string[]>([])
 
+  // Input 노드 전용 로컬 상태
+  const [inputInitialInput, setInputInitialInput] = useState('')
+
   // Tool 관련 상태
   const [tools, setTools] = useState<Tool[]>([])
   const [allowedTools, setAllowedTools] = useState<string[]>([])
   const [useDefaultTools, setUseDefaultTools] = useState(true) // 기본 도구 사용 여부
   const [canModifyTools, setCanModifyTools] = useState(true) // 도구 수정 가능 여부
+
+  // 실행 로그 관련
+  const logs = useWorkflowStore((state) => state.execution.logs)
+  const logEndRef = useRef<HTMLDivElement>(null)
+  const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set())
+
+  // 로그 자동 스크롤
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs])
+
+  // 로그 펼침/접기 토글
+  const toggleLogExpand = (index: number) => {
+    setExpandedLogs((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }
 
   // Agent 목록 로드 (마운트 시 한 번만)
   useEffect(() => {
@@ -80,6 +107,14 @@ export const NodeConfigPanel: React.FC = () => {
   // 선택된 노드가 변경되면 로컬 상태 초기화
   useEffect(() => {
     if (selectedNode) {
+      // Input 노드인 경우
+      if (selectedNode.type === 'input') {
+        console.log('[NodeConfigPanel] Input 노드 선택:', selectedNode.id)
+        setInputInitialInput(selectedNode.data.initial_input || '')
+        setHasChanges(false)
+        return
+      }
+
       // Manager 노드인 경우
       if (selectedNode.type === 'manager') {
         console.log('[NodeConfigPanel] Manager 노드 선택:', selectedNode.id)
@@ -142,6 +177,13 @@ export const NodeConfigPanel: React.FC = () => {
   useEffect(() => {
     if (!selectedNode) return
 
+    // Input 노드인 경우
+    if (selectedNode.type === 'input') {
+      const changed = inputInitialInput !== (selectedNode.data.initial_input || '')
+      setHasChanges(changed)
+      return
+    }
+
     // Manager 노드인 경우
     if (selectedNode.type === 'manager') {
       const changed =
@@ -163,13 +205,30 @@ export const NodeConfigPanel: React.FC = () => {
       toolsChanged
 
     setHasChanges(changed)
-  }, [taskTemplate, outputFormat, customPrompt, allowedTools, useDefaultTools, managerTaskDescription, managerAvailableWorkers, selectedNode])
+  }, [taskTemplate, outputFormat, customPrompt, allowedTools, useDefaultTools, managerTaskDescription, managerAvailableWorkers, inputInitialInput, selectedNode])
 
   // 저장
   const handleSave = () => {
     if (!selectedNodeId || !selectedNode) return
 
     try {
+      // Input 노드인 경우
+      if (selectedNode.type === 'input') {
+        updateNode(selectedNodeId, {
+          initial_input: inputInitialInput,
+        })
+
+        console.log('💾 Input 노드 설정 저장:', {
+          nodeId: selectedNodeId,
+          initialInput: inputInitialInput.substring(0, 50),
+        })
+
+        setHasChanges(false)
+        setSaveMessage('✅ 저장됨 (자동 저장 대기 중...)')
+        setTimeout(() => setSaveMessage(null), 3000)
+        return
+      }
+
       // Manager 노드인 경우
       if (selectedNode.type === 'manager') {
         updateNode(selectedNodeId, {
@@ -219,6 +278,13 @@ export const NodeConfigPanel: React.FC = () => {
   // 초기화
   const handleReset = () => {
     if (!selectedNode) return
+
+    // Input 노드인 경우
+    if (selectedNode.type === 'input') {
+      setInputInitialInput(selectedNode.data.initial_input || '')
+      setHasChanges(false)
+      return
+    }
 
     // Manager 노드인 경우
     if (selectedNode.type === 'manager') {
@@ -270,6 +336,184 @@ export const NodeConfigPanel: React.FC = () => {
           노드를 선택하면 상세 설정을 편집할 수 있습니다.
         </div>
       </div>
+    )
+  }
+
+  // Input 노드 설정 UI
+  if (selectedNode.type === 'input') {
+    return (
+      <Card className="h-full overflow-hidden flex flex-col">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">Input 노드 설정</CardTitle>
+          <div className="text-sm text-muted-foreground">
+            워크플로우 시작점
+          </div>
+        </CardHeader>
+
+        <CardContent className="flex-1 overflow-y-auto space-y-4">
+          {/* 초기 입력 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">초기 입력</label>
+            <textarea
+              className="w-full p-2 border rounded-md text-sm"
+              rows={8}
+              value={inputInitialInput}
+              onChange={(e) => setInputInitialInput(e.target.value)}
+              placeholder="워크플로우 초기 입력을 입력하세요..."
+            />
+            <p className="text-xs text-muted-foreground">
+              이 입력이 연결된 첫 번째 노드로 전달됩니다.
+            </p>
+          </div>
+
+          {/* 노드 정보 */}
+          <div className="border-t pt-4 space-y-2">
+            <div className="text-xs text-muted-foreground">
+              <div className="font-medium mb-1">노드 정보</div>
+              <div>ID: {selectedNode.id}</div>
+              <div>타입: Input (시작점)</div>
+              <div>
+                위치: ({Math.round(selectedNode.position.x)},{' '}
+                {Math.round(selectedNode.position.y)})
+              </div>
+            </div>
+          </div>
+
+          {/* 사용법 안내 */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="text-sm text-blue-900">
+              <strong>💡 사용법:</strong>
+              <ul className="list-disc list-inside mt-1 space-y-1 text-xs">
+                <li>노드 내부의 "실행" 버튼으로 독립적으로 실행 가능</li>
+                <li>여러 Input 노드를 만들어 여러 플로우 실행 가능</li>
+                <li>연결된 노드가 없으면 실행되지 않습니다</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* 실행 로그 섹션 */}
+          <div className="border-t pt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">실행 로그 ({logs.length})</label>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const clearExecution = useWorkflowStore.getState().clearExecution
+                  clearExecution()
+                }}
+                disabled={logs.length === 0}
+              >
+                초기화
+              </Button>
+            </div>
+            <div className="overflow-y-auto bg-gray-50 border rounded-md p-3 space-y-1 max-h-64">
+              {logs.length === 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  실행 로그가 표시됩니다...
+                </div>
+              ) : (
+                <>
+                  {logs.map((log, index) => {
+                    // output 타입만 파싱 시도
+                    const parsed = log.type === 'output'
+                      ? parseClaudeMessage(log.message)
+                      : { type: 'raw' as const, content: log.message, isCollapsible: false }
+
+                    const isExpanded = expandedLogs.has(index)
+
+                    let colorClass = 'text-gray-700'
+                    let fontWeight = ''
+
+                    // 로그 타입별 색상 및 스타일
+                    if (log.type === 'error') {
+                      colorClass = 'text-red-600'
+                      fontWeight = 'font-semibold'
+                    } else if (log.type === 'complete') {
+                      colorClass = 'text-green-600'
+                      fontWeight = 'font-semibold'
+                    } else if (log.type === 'start') {
+                      colorClass = 'text-blue-600'
+                      fontWeight = 'font-semibold'
+                    } else if (log.type === 'output') {
+                      colorClass = 'text-gray-600'
+                      fontWeight = 'font-normal'
+                    }
+
+                    // 접을 수 있는 로그 (UserMessage, ToolResult)
+                    if (parsed.isCollapsible) {
+                      const lines = parsed.content.split('\n')
+                      const firstLine = lines[0] || parsed.content.substring(0, 80)
+                      const hasMore = lines.length > 1 || parsed.content.length > 80
+
+                      return (
+                        <div key={index} className="border-l-2 border-gray-300 pl-2 my-1">
+                          <div
+                            className={`text-xs ${colorClass} font-mono cursor-pointer hover:bg-gray-100 rounded px-1`}
+                            onClick={() => toggleLogExpand(index)}
+                          >
+                            <span className="select-none">{isExpanded ? '▼' : '▶'}</span> {firstLine}
+                            {hasMore && !isExpanded && ' ...'}
+                          </div>
+                          {isExpanded && (
+                            <div className="text-xs text-gray-600 font-mono whitespace-pre-wrap mt-1 pl-3 max-h-24 overflow-y-auto bg-gray-50 rounded p-2 border border-gray-200">
+                              {parsed.content}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    // 일반 로그
+                    return (
+                      <div key={index} className={`text-xs ${colorClass} ${fontWeight} font-mono whitespace-pre-wrap`}>
+                        {log.nodeId && log.type !== 'output' && `[${log.nodeId}] `}
+                        {parsed.content}
+                      </div>
+                    )
+                  })}
+                  {/* 자동 스크롤 앵커 */}
+                  <div ref={logEndRef} />
+                </>
+              )}
+            </div>
+          </div>
+        </CardContent>
+
+        {/* 저장/초기화 버튼 */}
+        <div className="border-t p-4 space-y-2">
+          {/* 저장 메시지 */}
+          {saveMessage && (
+            <div className="text-xs text-center py-1 px-2 rounded bg-gray-100">
+              {saveMessage}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={handleSave}
+              disabled={!hasChanges}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              저장
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleReset}
+              disabled={!hasChanges}
+            >
+              초기화
+            </Button>
+          </div>
+
+          {hasChanges && (
+            <div className="text-xs text-yellow-600 text-center">
+              변경사항이 있습니다. 저장 버튼을 클릭하세요.
+            </div>
+          )}
+        </div>
+      </Card>
     )
   }
 

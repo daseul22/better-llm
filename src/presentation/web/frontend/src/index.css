@@ -74,3 +74,26 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* React Flow 커스텀 노드 스타일 오버라이드 */
+.react-flow__node-input,
+.react-flow__node-worker,
+.react-flow__node-manager {
+  /* 기본 패딩 제거 */
+  padding: 0 !important;
+  /* 기본 배경 제거 */
+  background: transparent !important;
+  /* 기본 테두리 제거 */
+  border: none !important;
+  /* 기본 그림자 제거 */
+  box-shadow: none !important;
+  /* 기본 border-radius 제거 */
+  border-radius: 0 !important;
+}
+
+/* React Flow 노드가 선택되었을 때 기본 스타일 제거 */
+.react-flow__node.selected .react-flow__node-input,
+.react-flow__node.selected .react-flow__node-worker,
+.react-flow__node.selected .react-flow__node-manager {
+  box-shadow: none !important;
+}

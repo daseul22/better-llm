@@ -18,17 +18,34 @@ export interface Agent {
 }
 
 /**
+ * 워크플로우 노드 데이터 (타입별로 다름)
+ */
+export type WorkflowNodeData =
+  | {
+      // Worker 노드
+      agent_name: string
+      task_template: string
+      allowed_tools?: string[]
+      config?: Record<string, any>
+    }
+  | {
+      // Manager 노드
+      task_description: string
+      available_workers: string[]
+    }
+  | {
+      // Input 노드
+      initial_input: string
+    }
+
+/**
  * 워크플로우 노드
  */
 export interface WorkflowNode {
   id: string
   type: string
   position: { x: number; y: number }
-  data: {
-    agent_name: string
-    task_template: string
-    config?: Record<string, any>
-  }
+  data: WorkflowNodeData & Record<string, any> // 유연한 타입
 }
 
 /**

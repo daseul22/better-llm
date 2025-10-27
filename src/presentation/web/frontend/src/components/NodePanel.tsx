@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Agent, getAgents } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus, Target } from 'lucide-react'
+import { Plus, Target, Download } from 'lucide-react'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -76,6 +76,24 @@ export const NodePanel: React.FC = () => {
     addNode(newNode)
   }
 
+  // Input 노드를 캔버스에 추가
+  const handleAddInput = () => {
+    // 노드 위치 계산
+    const x = 100 + (nodes.length % 3) * 300
+    const y = 100 + Math.floor(nodes.length / 3) * 150
+
+    const newNode: WorkflowNode = {
+      id: `input-${Date.now()}`,
+      type: 'input',
+      position: { x, y },
+      data: {
+        initial_input: '초기 입력을 입력하세요',
+      },
+    }
+
+    addNode(newNode)
+  }
+
   if (loading) {
     return (
       <Card className="h-full">
@@ -109,6 +127,24 @@ export const NodePanel: React.FC = () => {
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto">
         <div className="space-y-4">
+          {/* Input 노드 추가 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-blue-700">Input 노드</h3>
+            <Button
+              variant="outline"
+              className="w-full justify-start text-left border-blue-300 hover:bg-blue-50"
+              onClick={handleAddInput}
+            >
+              <Download className="mr-2 h-4 w-4 text-blue-600" />
+              <div className="flex flex-col items-start">
+                <span className="font-medium text-blue-700">Input</span>
+                <span className="text-xs text-muted-foreground">
+                  워크플로우 시작점 (독립 실행 가능)
+                </span>
+              </div>
+            </Button>
+          </div>
+
           {/* Manager 노드 추가 */}
           <div>
             <h3 className="text-sm font-semibold mb-2 text-purple-700">Manager 노드</h3>
