@@ -8,7 +8,7 @@
       "max_context_tokens": 200000,
       "max_output_tokens": 8000,
       "context_warning_threshold": 0.7,
-      "context_critical_threshold": 0.9
+      "context_critical_threshold": 0.95
     }
   },
   "resilience": {
@@ -118,5 +118,12 @@
     "enable_validation": true,
     "enable_monitoring": true,
     "description": "Hooks 시스템 - PreToolUse: Worker 입력 검증, PostToolUse: Worker 실행 모니터링"
+  },
+  "context_compression": {
+    "enabled": true,
+    "auto_compress_threshold": 0.85,
+    "target_reduction_ratio": 0.3,
+    "compressed_dir": "compressed",
+    "description": "컨텍스트 압축 - auto_compress_threshold: 압축 시작 임계값 (85%), target_reduction_ratio: 목표 압축 비율 (30%), compressed_dir: 압축 파일 저장 디렉토리"
   }
 }

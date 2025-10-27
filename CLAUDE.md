@@ -30,7 +30,16 @@ Worker Agent (각 전문 분야) ← Tool 내부에서 실행
 - Manager에게는 **요약만** 전달 → 컨텍스트 90% 절감
 - 상세 정보 필요 시: Worker가 read 도구로 artifact 파일 읽기
 
-#### 3. Clean Architecture (4계층)
+#### 3. Context Compression (자동 압축)
+- **자동 트리거**: 컨텍스트 윈도우 85% 초과 시 자동 압축 수행
+- **압축 전략**:
+  1. 오래된 메시지를 파일로 저장 (`~/.better-llm/{project}/compressed/`)
+  2. 메시지를 메타데이터(파일 참조)로 대체 (약 200자)
+  3. 첫 번째 사용자 메시지는 항상 보존 (컨텍스트 유지)
+- **효과**: 약 30% 컨텍스트 절감 (설정 가능)
+- **필요 시 복원**: Worker가 read 도구로 압축된 파일 읽기
+
+#### 4. Clean Architecture (4계층)
 ```
 Presentation (CLI, TUI)
     ↓
@@ -205,12 +214,14 @@ prompts/                       # Worker Agent 시스템 프롬프트
 ### Manager Agent 동작 원리
 
 1. 사용자 입력 검증 (`validate_user_input`)
-2. 슬라이딩 윈도우로 프롬프트 히스토리 빌드 (최대 20 메시지)
-3. ClaudeSDKClient로 스트리밍 실행
-4. Manager가 Worker Tool 호출 결정 (대화 히스토리 기반)
-5. Worker Tool 실행 (재시도 로직: 지수 백오프, 최대 3회)
-6. **Artifact Storage**: 전체 출력 파일 저장 + 요약만 Manager에게 반환
-7. Manager가 다음 단계 결정 또는 최종 응답 생성
+2. **컨텍스트 압축 체크**: 85% 초과 시 자동 압축 수행 (선택적)
+3. **컨텍스트 윈도우 체크**: 70% 초과 시 경고, 95% 초과 시 차단
+4. 슬라이딩 윈도우로 프롬프트 히스토리 빌드 (최대 20 메시지)
+5. ClaudeSDKClient로 스트리밍 실행
+6. Manager가 Worker Tool 호출 결정 (대화 히스토리 기반)
+7. Worker Tool 실행 (재시도 로직: 지수 백오프, 최대 3회)
+8. **Artifact Storage**: 전체 출력 파일 저장 + 요약만 Manager에게 반환
+9. Manager가 다음 단계 결정 또는 최종 응답 생성
 
 ### Worker Tools 패턴
 
@@ -282,6 +293,12 @@ async def execute_planner_task(args: Dict[str, Any]) -> Dict[str, Any]:
   },
   "context_metadata": {
     "enabled": true               // Worker 메타데이터 추적
+  },
+  "context_compression": {
+    "enabled": true,              // 자동 압축 활성화
+    "auto_compress_threshold": 0.85,  // 압축 시작 임계값 (85%)
+    "target_reduction_ratio": 0.3,    // 목표 압축 비율 (30%)
+    "compressed_dir": "compressed"    // 압축 파일 저장 디렉토리
   }
 }
 ```
@@ -315,6 +332,16 @@ ls -la ~/.better-llm/{project-name}/artifacts/
 
 # 특정 Worker 출력 보기
 cat ~/.better-llm/{project-name}/artifacts/planner_20250121_143025.txt
+```
+
+### 압축된 메시지 확인 (Context Compression)
+
+```bash
+# 압축 디렉토리 확인
+ls -la ~/.better-llm/{project-name}/compressed/
+
+# 압축된 메시지 보기 (JSON 형식)
+cat ~/.better-llm/{project-name}/compressed/agent_planner_20250127_001.txt
 ```
 
 ### TUI에서 Worker 출력 실시간 모니터링
@@ -438,6 +465,14 @@ export CLAUDE_CLI_PATH='/path/to/claude'
 ## 최근 주요 개선사항 (요약)
 
 자세한 내용은 `CHANGELOG.md` 참조.
+
+### v4.1 (2025-10-27)
+- **Context Compression**: 컨텍스트 윈도우 자동 압축 기능 추가
+  - 85% 초과 시 자동 압축 수행 (약 30% 컨텍스트 절감)
+  - 오래된 메시지를 파일로 저장하고 메타데이터 참조로 대체
+  - 첫 번째 사용자 메시지는 항상 보존 (컨텍스트 유지)
+  - 필요 시 Worker가 read 도구로 원본 복원 가능
+- **Critical Threshold 상향**: 90% → 95% (압축으로 여유 확보)
 
 ### v4.0 (2025-10-23)
 - **5차 버그 수정 8개**: Manager/Worker Agent, CLI, SDK 안정성 강화 (메모리 누수 방지, 에러 처리 강화)

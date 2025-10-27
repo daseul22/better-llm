@@ -13,6 +13,7 @@ from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import ClaudeAgentOptions
 
 from src.domain.models import Message
+from src.domain.services.context_compressor import ContextCompressor
 from ..config import get_claude_cli_path
 from ..logging import get_logger, log_exception_silently
 from .sdk_executor import (
@@ -479,6 +480,10 @@ Manager: "Coder가 여러 번 실패했습니다. 사용자가 직접 수정해�
         self.metadata_formatter = None
         self.context_metadata_enabled = self._load_context_metadata_config()
 
+        # Context compressor 초기화
+        self.context_compressor = None
+        self.compression_config = self._load_compression_config()
+
         # Initialize metadata formatter if enabled
         if self.context_metadata_enabled:
             from ..mcp.context_metadata_formatter import ContextMetadataFormatter
@@ -605,7 +610,7 @@ Manager: "Coder가 여러 번 실패했습니다. 사용자가 직접 수정해�
                 "max_context_tokens": 200000,
                 "max_output_tokens": 8000,
                 "context_warning_threshold": 0.7,
-                "context_critical_threshold": 0.9
+                "context_critical_threshold": 0.95
             }
 
     def _load_context_metadata_config(self) -> bool:
@@ -632,6 +637,60 @@ Manager: "Coder가 여러 번 실패했습니다. 사용자가 직접 수정해�
                 default_value=False
             )
             return False
+
+    def _load_compression_config(self) -> dict:
+        """
+        system_config.json에서 context_compression 설정 로드
+
+        Returns:
+            dict: 압축 설정
+        """
+        try:
+            from ..config import load_system_config
+            config = load_system_config()
+            compression_config = config.get("context_compression", {})
+
+            # 기본값 설정
+            return {
+                "enabled": compression_config.get("enabled", True),
+                "auto_compress_threshold": compression_config.get("auto_compress_threshold", 0.85),
+                "target_reduction_ratio": compression_config.get("target_reduction_ratio", 0.3),
+                "compressed_dir": compression_config.get("compressed_dir", "compressed")
+            }
+        except Exception as e:
+            self.logger.warning(f"압축 설정 로드 실패, 기본값 사용: {e}")
+            return {
+                "enabled": True,
+                "auto_compress_threshold": 0.85,
+                "target_reduction_ratio": 0.3,
+                "compressed_dir": "compressed"
+            }
+
+    def _get_or_create_compressor(self) -> ContextCompressor:
+        """
+        Context Compressor 인스턴스 가져오기 (lazy initialization)
+
+        Returns:
+            ContextCompressor 인스턴스
+        """
+        if self.context_compressor is None:
+            from ..storage import get_project_storage_path
+
+            # 압축 디렉토리 경로 생성
+            compressed_dir = get_project_storage_path() / self.compression_config["compressed_dir"]
+
+            self.context_compressor = ContextCompressor(
+                compressed_dir=compressed_dir,
+                compression_threshold=self.compression_config["auto_compress_threshold"]
+            )
+
+            self.logger.info(
+                "Context compressor initialized",
+                compressed_dir=str(compressed_dir),
+                threshold=f"{self.compression_config['auto_compress_threshold']*100:.0f}%"
+            )
+
+        return self.context_compressor
 
     def _build_prompt_from_history(self, history: List[Message]) -> str:
         """
@@ -805,6 +864,69 @@ Manager: "Coder가 여러 번 실패했습니다. 사용자가 직접 수정해�
             f"total: {self.total_input_tokens + self.total_output_tokens}"
         )
 
+    async def _auto_compress_if_needed(self, history: List[Message]) -> List[Message]:
+        """
+        필요 시 자동으로 컨텍스트 압축 수행
+
+        Args:
+            history: 원본 대화 히스토리
+
+        Returns:
+            압축된 대화 히스토리 (압축 불필요 시 원본 반환)
+        """
+        # 토큰 수 계산
+        token_count_result = self.count_prompt_tokens(history)
+        current_tokens = token_count_result["input_tokens"]
+
+        # 최대 입력 토큰 수 계산
+        max_context = self.token_config["max_context_tokens"]
+        reserved_for_output = self.token_config["max_output_tokens"]
+        max_input = max_context - reserved_for_output
+
+        # Compressor 가져오기
+        compressor = self._get_or_create_compressor()
+
+        # 압축 필요 여부 판단
+        if not compressor.should_compress(current_tokens, max_input):
+            return history
+
+        # 압축 효과 추정
+        compression_benefit = compressor.estimate_compression_benefit(
+            history,
+            target_reduction_ratio=self.compression_config["target_reduction_ratio"]
+        )
+
+        self.logger.info(
+            "Starting automatic context compression",
+            current_tokens=current_tokens,
+            max_input=max_input,
+            usage_percent=f"{(current_tokens/max_input)*100:.1f}%",
+            estimated_reduction=f"{compression_benefit['reduction_ratio']*100:.1f}%",
+            messages_to_compress=compression_benefit["messages_to_compress"]
+        )
+
+        # 압축 수행
+        compressed_history, compressed_count = compressor.compress_messages(
+            history,
+            target_reduction_ratio=self.compression_config["target_reduction_ratio"]
+        )
+
+        # 압축 후 토큰 수 재계산
+        after_token_count = self.count_prompt_tokens(compressed_history)
+        after_tokens = after_token_count["input_tokens"]
+
+        actual_reduction = (current_tokens - after_tokens) / current_tokens if current_tokens > 0 else 0.0
+
+        self.logger.info(
+            "Context compression completed",
+            before_tokens=current_tokens,
+            after_tokens=after_tokens,
+            actual_reduction=f"{actual_reduction*100:.1f}%",
+            compressed_messages=compressed_count
+        )
+
+        return compressed_history
+
     async def analyze_and_plan_stream(self, history: List[Message]):
         """
         사용자 요청을 분석하고 작업 수행 (스트리밍)
@@ -818,12 +940,20 @@ Manager: "Coder가 여러 번 실패했습니다. 사용자가 직접 수정해�
         Raises:
             Exception: SDK 호출 실패 시
         """
+        # ✅ 컨텍스트 압축 체크 (설정에서 활성화된 경우만)
+        if self.compression_config["enabled"] and self.token_config["enable_token_precheck"]:
+            try:
+                history = await self._auto_compress_if_needed(history)
+            except Exception as e:
+                # 압축 실패는 경고만 하고 진행
+                self.logger.warning(f"자동 압축 실패: {e}")
+
         # ✅ 컨텍스트 윈도우 사전 체크 (설정에서 활성화된 경우만)
         if self.token_config["enable_token_precheck"]:
             try:
                 context_check = self.check_context_window_limit(history)
 
-                # Critical 경고 (90% 초과) 시 실행 차단
+                # Critical 경고 (95% 초과) 시 실행 차단
                 if context_check["critical"]:
                     yield context_check["message"]
                     return
