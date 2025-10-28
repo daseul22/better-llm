@@ -31,7 +31,7 @@ print_error() {
 print_header() {
     echo ""
     echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}        Better-LLM 설치 (pipx)            ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}      Better-LLM Web UI 설치              ${CYAN}║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -265,11 +265,11 @@ verify_installation() {
     echo ""
     print_info "설치 검증 중..."
 
-    # better-llm 명령어 확인
-    if command -v better-llm &> /dev/null; then
-        print_success "better-llm 명령어 사용 가능"
+    # better-llm-web 명령어 확인
+    if command -v better-llm-web &> /dev/null; then
+        print_success "better-llm-web 명령어 사용 가능"
     else
-        print_error "better-llm 명령어를 찾을 수 없습니다."
+        print_error "better-llm-web 명령어를 찾을 수 없습니다."
         echo ""
         echo "셸을 재시작하고 다시 시도하세요:"
         echo "  exec \$SHELL"
@@ -277,11 +277,12 @@ verify_installation() {
         exit 1
     fi
 
-    # better-llm-cli 명령어 확인
-    if command -v better-llm-cli &> /dev/null; then
-        print_success "better-llm-cli 명령어 사용 가능"
+    # Web UI 빌드 확인
+    FRONTEND_DIST="src/presentation/web/frontend/dist"
+    if [ -d "$FRONTEND_DIST" ]; then
+        print_success "Web UI 빌드 파일 확인됨"
     else
-        print_warning "better-llm-cli 명령어를 찾을 수 없습니다."
+        print_warning "Web UI 빌드 파일을 찾을 수 없습니다. 수동 빌드가 필요할 수 있습니다."
     fi
 }
 
@@ -294,18 +295,15 @@ print_completion() {
     echo ""
     print_info "사용 방법:"
     echo ""
-    echo -e "  ${CYAN}# TUI 모드 (권장)${NC}"
-    echo "  better-llm"
-    echo ""
-    echo -e "  ${CYAN}# Web UI 모드 (워크플로우 에디터)${NC}"
+    echo -e "  ${CYAN}# Web UI 시작 (드래그 앤 드롭 워크플로우 에디터)${NC}"
     echo "  better-llm-web"
-    echo "  # → http://localhost:5173 접속"
     echo ""
-    echo -e "  ${CYAN}# CLI 모드${NC}"
-    echo "  better-llm-cli \"작업 설명\""
+    echo -e "  ${CYAN}# 웹 브라우저에서 접속${NC}"
+    echo "  http://localhost:5173"
     echo ""
-    echo -e "  ${CYAN}# 도움말${NC}"
-    echo "  better-llm --help"
+    echo -e "  ${CYAN}# 개발 모드 (소스 변경 시)${NC}"
+    echo "  cd src/presentation/web/frontend"
+    echo "  npm run dev"
     echo ""
 
     if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
@@ -315,7 +313,7 @@ print_completion() {
         echo ""
     fi
 
-    echo -e "  ${CYAN}상세 문서:${NC} README.md 또는 docs/index.md"
+    echo -e "  ${CYAN}상세 문서:${NC} CLAUDE.md 또는 README.md"
     echo ""
 }
 
