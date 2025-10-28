@@ -71,7 +71,9 @@ def get_workflow_executor(
     Returns:
         WorkflowExecutor: 워크플로우 실행 엔진
     """
-    return WorkflowExecutor(config_loader)
+    # projects 라우터에서 현재 프로젝트 경로 가져오기
+    from src.presentation.web.routers.projects import _current_project_path
+    return WorkflowExecutor(config_loader, _current_project_path)
 
 
 def get_background_manager(

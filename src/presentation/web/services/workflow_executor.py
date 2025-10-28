@@ -15,6 +15,7 @@ from src.domain.models import AgentConfig, Message
 from src.infrastructure.config import JsonConfigLoader, get_project_root
 from src.infrastructure.claude.worker_client import WorkerAgent
 from src.infrastructure.claude.manager_client import ManagerAgent
+from src.infrastructure.storage.custom_worker_repository import CustomWorkerRepository
 from src.infrastructure.logging import get_logger, add_session_file_handlers, remove_session_file_handlers
 from src.presentation.web.schemas.workflow import (
     Workflow,
@@ -45,15 +46,28 @@ class WorkflowExecutor:
         agent_configs: Agent 설정 목록 (캐시)
     """
 
-    def __init__(self, config_loader: JsonConfigLoader):
+    def __init__(self, config_loader: JsonConfigLoader, project_path: Optional[str] = None):
         """
         WorkflowExecutor 초기화
 
         Args:
             config_loader: Agent 설정 로더
+            project_path: 프로젝트 경로 (커스텀 워커 로드용, 옵션)
         """
         self.config_loader = config_loader
+        self.project_path = project_path
         self.agent_configs = config_loader.load_agent_configs()
+
+        # 커스텀 워커 로드 (프로젝트 경로가 주어진 경우)
+        if project_path:
+            try:
+                custom_repo = CustomWorkerRepository(Path(project_path))
+                custom_workers = custom_repo.load_custom_workers()
+                self.agent_configs.extend(custom_workers)
+                logger.info(f"커스텀 워커 로드 완료: {len(custom_workers)}개")
+            except Exception as e:
+                logger.warning(f"커스텀 워커 로드 실패: {e}")
+
         self.agent_config_map = {
             config.name: config for config in self.agent_configs
         }
@@ -202,6 +216,84 @@ class WorkflowExecutor:
             List[str]: 부모 노드 ID 목록
         """
         return [edge.source for edge in edges if edge.target == node_id]
+
+    def _get_child_nodes(
+        self, node_id: str, edges: List[WorkflowEdge]
+    ) -> List[str]:
+        """
+        노드의 자식 노드 ID 목록 조회
+
+        Args:
+            node_id: 노드 ID
+            edges: 엣지 목록
+
+        Returns:
+            List[str]: 자식 노드 ID 목록
+        """
+        return [edge.target for edge in edges if edge.source == node_id]
+
+    def _check_parallel_execution(self, node: WorkflowNode) -> bool:
+        """
+        노드의 parallel_execution 플래그 확인
+
+        Args:
+            node: 워크플로우 노드
+
+        Returns:
+            bool: 병렬 실행 여부
+        """
+        if isinstance(node.data, dict):
+            return node.data.get("parallel_execution", False)
+        else:
+            return getattr(node.data, "parallel_execution", False)
+
+    def _compute_execution_groups(
+        self, nodes: List[WorkflowNode], edges: List[WorkflowEdge]
+    ) -> List[List[WorkflowNode]]:
+        """
+        병렬 실행 그룹 계산
+
+        parallel_execution=True인 노드의 자식 노드들을 병렬 그룹으로 묶습니다.
+
+        Args:
+            nodes: 위상 정렬된 노드 목록
+            edges: 엣지 목록
+
+        Returns:
+            List[List[WorkflowNode]]: 실행 그룹 목록 (각 그룹은 병렬 실행)
+        """
+        node_map = {node.id: node for node in nodes}
+        processed = set()
+        execution_groups = []
+
+        for node in nodes:
+            if node.id in processed:
+                continue
+
+            # parallel_execution 플래그 확인
+            if self._check_parallel_execution(node):
+                # 자식 노드들을 병렬 그룹으로 묶음
+                child_ids = self._get_child_nodes(node.id, edges)
+                parallel_group = []
+
+                for child_id in child_ids:
+                    if child_id in node_map and child_id not in processed:
+                        parallel_group.append(node_map[child_id])
+                        processed.add(child_id)
+
+                # 현재 노드는 단독 실행
+                execution_groups.append([node])
+                processed.add(node.id)
+
+                # 자식 노드들은 병렬 실행
+                if parallel_group:
+                    execution_groups.append(parallel_group)
+            else:
+                # 단독 실행
+                execution_groups.append([node])
+                processed.add(node.id)
+
+        return execution_groups
 
     def _render_task_template(
         self,

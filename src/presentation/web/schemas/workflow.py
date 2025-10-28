@@ -19,6 +19,7 @@ class WorkerNodeData(BaseModel):
         task_template: 작업 설명 템플릿 ({{input}} 등의 변수 지원)
         allowed_tools: 사용 가능한 도구 목록 (옵션, 미지정 시 기본 설정 사용)
         thinking: Thinking 모드 활성화 여부 (ultrathink 프롬프트 추가, 옵션)
+        parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
         config: 추가 설정 (옵션)
     """
     agent_name: str = Field(..., description="Worker Agent 이름")
@@ -33,6 +34,10 @@ class WorkerNodeData(BaseModel):
     thinking: Optional[bool] = Field(
         default=None,
         description="Thinking 모드 활성화 여부 (ultrathink 프롬프트 추가, 옵션)"
+    )
+    parallel_execution: Optional[bool] = Field(
+        default=False,
+        description="자식 노드를 병렬로 실행할지 여부 (기본: false)"
     )
     config: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -52,6 +57,7 @@ class ManagerNodeData(BaseModel):
     Attributes:
         task_description: 초기 작업 설명 (Manager에게 전달)
         available_workers: 사용 가능한 워커 이름 목록 (등록된 워커만 호출 가능)
+        parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
         config: 추가 설정 (옵션)
     """
     task_description: str = Field(
@@ -61,6 +67,10 @@ class ManagerNodeData(BaseModel):
     available_workers: List[str] = Field(
         ...,
         description="사용 가능한 워커 이름 목록 (예: ['planner', 'coder', 'reviewer'])"
+    )
+    parallel_execution: Optional[bool] = Field(
+        default=False,
+        description="자식 노드를 병렬로 실행할지 여부 (기본: false)"
     )
     config: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -77,10 +87,15 @@ class InputNodeData(BaseModel):
 
     Attributes:
         initial_input: 초기 입력 텍스트
+        parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
     """
     initial_input: str = Field(
         ...,
         description="워크플로우 초기 입력 텍스트"
+    )
+    parallel_execution: Optional[bool] = Field(
+        default=False,
+        description="자식 노드를 병렬로 실행할지 여부 (기본: false)"
     )
 
 
@@ -95,6 +110,7 @@ class ConditionNodeData(BaseModel):
         condition_value: 조건 값 (예: 'success', '\\d{3}', '100', 'len(output) > 0')
         true_branch_id: True 경로 노드 ID
         false_branch_id: False 경로 노드 ID (옵션)
+        parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
     """
     condition_type: str = Field(
         ...,
@@ -112,6 +128,10 @@ class ConditionNodeData(BaseModel):
         default=None,
         description="False 경로 노드 ID (동적으로 엣지로 관리될 수 있음)"
     )
+    parallel_execution: Optional[bool] = Field(
+        default=False,
+        description="자식 노드를 병렬로 실행할지 여부 (기본: false)"
+    )
 
 
 class LoopNodeData(BaseModel):
@@ -124,6 +144,7 @@ class LoopNodeData(BaseModel):
         max_iterations: 최대 반복 횟수 (무한 루프 방지)
         loop_condition: 반복 조건 (예: 'output contains "완료"')
         loop_condition_type: 조건 타입 ('contains', 'regex', 'custom')
+        parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
     """
     max_iterations: int = Field(
         default=5,
@@ -137,6 +158,10 @@ class LoopNodeData(BaseModel):
         default="contains",
         description="조건 타입 (contains, regex, custom)"
     )
+    parallel_execution: Optional[bool] = Field(
+        default=False,
+        description="자식 노드를 병렬로 실행할지 여부 (기본: false)"
+    )
 
 
 class MergeNodeData(BaseModel):
@@ -149,6 +174,7 @@ class MergeNodeData(BaseModel):
         merge_strategy: 병합 전략 ('concatenate', 'first', 'last', 'custom')
         separator: 결합 시 사용할 구분자 (concatenate 전략 시)
         custom_template: 커스텀 병합 템플릿 (옵션)
+        parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
     """
     merge_strategy: str = Field(
         default="concatenate",
@@ -161,6 +187,10 @@ class MergeNodeData(BaseModel):
     custom_template: Optional[str] = Field(
         default=None,
         description="커스텀 병합 템플릿 ({{branch_1}}, {{branch_2}} 등)"
+    )
+    parallel_execution: Optional[bool] = Field(
+        default=False,
+        description="자식 노드를 병렬로 실행할지 여부 (기본: false)"
     )
 
 
