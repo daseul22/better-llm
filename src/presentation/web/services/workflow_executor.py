@@ -412,6 +412,7 @@ class WorkflowExecutor:
         nodes: List[WorkflowNode],
         initial_input: str,
         session_id: str,
+        project_path: Optional[str] = None,
     ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
         """
         반복 노드 실행
@@ -423,6 +424,7 @@ class WorkflowExecutor:
             nodes: 노드 목록
             initial_input: 초기 입력
             session_id: 세션 ID
+            project_path: 프로젝트 디렉토리 경로 (CLAUDE.md 로드용)
 
         Yields:
             WorkflowNodeExecutionEvent: 노드 실행 이벤트
@@ -501,7 +503,7 @@ class WorkflowExecutor:
 
                 # Worker Agent 실행
                 agent_config = self._get_agent_config(agent_name)
-                worker = WorkerAgent(config=agent_config)
+                worker = WorkerAgent(config=agent_config, project_dir=project_path)
                 body_output_chunks = []
 
                 async for chunk in worker.execute_task(task_description):
@@ -659,6 +661,7 @@ class WorkflowExecutor:
         node_outputs: Dict[str, str],
         initial_input: str,
         session_id: str,
+        project_path: Optional[str] = None,
     ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
         """
         Manager 노드 실행 (병렬 워커 호출)
@@ -670,6 +673,7 @@ class WorkflowExecutor:
             node_outputs: 이전 노드 출력들
             initial_input: 초기 입력
             session_id: 세션 ID
+            project_path: 프로젝트 디렉토리 경로 (CLAUDE.md 로드용)
 
         Yields:
             WorkflowNodeExecutionEvent: 노드 실행 이벤트
@@ -713,7 +717,7 @@ class WorkflowExecutor:
                     continue
 
                 # Worker Agent 생성
-                worker = WorkerAgent(config=worker_config)
+                worker = WorkerAgent(config=worker_config, project_dir=project_path)
                 worker_tasks.append((worker_name, worker.execute_task(task_description)))
 
             # 병렬 실행 및 결과 수집
@@ -895,7 +899,7 @@ class WorkflowExecutor:
                 elif node.type == "manager":
                     # Manager 노드 실행
                     async for event in self._execute_manager_node(
-                        node, node_outputs, initial_input, session_id
+                        node, node_outputs, initial_input, session_id, project_path
                     ):
                         if event.event_type == "node_complete":
                             # 통합 결과 저장
@@ -962,7 +966,7 @@ class WorkflowExecutor:
                     # 반복 노드 실행
                     async for event in self._execute_loop_node(
                         node, node_outputs, workflow.edges, workflow.nodes,
-                        initial_input, session_id
+                        initial_input, session_id, project_path
                     ):
                         if event.event_type == "node_complete":
                             # 통합 결과 저장
@@ -1100,7 +1104,7 @@ class WorkflowExecutor:
                         )
 
                         # Worker Agent 실행
-                        worker = WorkerAgent(config=agent_config)
+                        worker = WorkerAgent(config=agent_config, project_dir=project_path)
                         node_output_chunks = []
 
                         # 토큰 사용량 수집을 위한 변수

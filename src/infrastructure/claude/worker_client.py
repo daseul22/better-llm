@@ -38,13 +38,20 @@ class WorkerAgent:
         system_prompt: 시스템 프롬프트
     """
 
-    def __init__(self, config: AgentConfig, project_context: Optional[ProjectContext] = None):
+    def __init__(
+        self,
+        config: AgentConfig,
+        project_context: Optional[ProjectContext] = None,
+        project_dir: Optional[str] = None
+    ):
         """
         Args:
             config: 에이전트 설정
             project_context: 프로젝트 컨텍스트 (선택)
+            project_dir: 프로젝트 디렉토리 경로 (CLAUDE.md 로드용, 선택)
         """
         self.config = config
+        self.project_dir = project_dir
         self.project_context = project_context or self._load_project_context()
         self.system_prompt = self._load_system_prompt()
 
@@ -96,11 +103,24 @@ class WorkerAgent:
             except Exception as e:
                 logger.error(f"❌ 프롬프트 로드 실패: {e}, 기본값 사용")
 
-        # 프로젝트 컨텍스트 추가
+        # 프로젝트 컨텍스트 추가 (.context.json)
         if self.project_context:
             context_text = self.project_context.to_prompt_context()
             prompt_text = f"{prompt_text}\n\n{context_text}"
             logger.info(f"✅ 프로젝트 컨텍스트 추가: {self.project_context.project_name}")
+
+        # 프로젝트 CLAUDE.md 추가 (사용자가 선택한 프로젝트의 가이드라인)
+        if self.project_dir:
+            claude_md_path = Path(self.project_dir) / "CLAUDE.md"
+            if claude_md_path.exists():
+                try:
+                    with open(claude_md_path, 'r', encoding='utf-8') as f:
+                        claude_md_text = f.read().strip()
+                        if claude_md_text:
+                            prompt_text = f"{prompt_text}\n\n# Project Guidelines (from CLAUDE.md)\n\n{claude_md_text}"
+                            logger.info(f"✅ 프로젝트 CLAUDE.md 로드: {claude_md_path}")
+                except Exception as e:
+                    logger.warning(f"⚠️  CLAUDE.md 로드 실패: {e}")
 
         # Thinking 모드 활성화 시 ultrathink 프롬프트 추가
         if self.config.thinking:
@@ -200,50 +220,70 @@ Use your thinking process liberally throughout your response to show your reason
         Raises:
             Exception: 작업 실행 실패 시
         """
-        # 디버그 정보 출력 (기본 비활성화 - 컨텍스트 절약)
-        # WORKER_DEBUG_INFO=true로 설정하면 활성화
-        show_debug_info = os.getenv("WORKER_DEBUG_INFO", "false").lower() in (
-            "true", "1", "yes"
-        )
-        if show_debug_info:
-            debug_info = self._generate_debug_info(task_description)
-            yield debug_info
+        # Working directory 변경 (project_dir이 지정된 경우)
+        original_cwd = os.getcwd()
+        if self.project_dir:
+            try:
+                os.chdir(self.project_dir)
+                logger.info(f"[{self.config.name}] Working Directory 변경: {original_cwd} → {self.project_dir}")
+            except Exception as e:
+                logger.warning(f"[{self.config.name}] Working Directory 변경 실패: {e}")
+                # 변경 실패 시 원래 디렉토리에서 계속 진행
 
-        # 시스템 프롬프트와 작업 설명 결합
-        full_prompt = f"{self.system_prompt}\n\n{task_description}"
+        try:
+            # 디버그 정보 출력 (기본 비활성화 - 컨텍스트 절약)
+            # WORKER_DEBUG_INFO=true로 설정하면 활성화
+            show_debug_info = os.getenv("WORKER_DEBUG_INFO", "false").lower() in (
+                "true", "1", "yes"
+            )
+            if show_debug_info:
+                debug_info = self._generate_debug_info(task_description)
+                yield debug_info
 
-        logger.info(f"[{self.config.name}] Claude Agent SDK 실행 시작")
-        logger.info(f"[{self.config.name}] Working Directory: {os.getcwd()}")
-        logger.info(f"[{self.config.name}] Prompt 길이: {len(full_prompt)} characters")
-        logger.info(f"[{self.config.name}] Model: {self.config.model}")
-        logger.info(f"[{self.config.name}] Tools: {self.config.allowed_tools}")
-        logger.info(f"[{self.config.name}] Thinking Mode: {self.config.thinking}")
-        logger.info(f"[{self.config.name}] CLI Path: {get_claude_cli_path()}")
+            # 시스템 프롬프트와 작업 설명 결합
+            full_prompt = f"{self.system_prompt}\n\n{task_description}"
 
-        # SDK 실행 설정
-        config = SDKExecutionConfig(
-            model=self.config.model,
-            cli_path=get_claude_cli_path(),
-            permission_mode="bypassPermissions"
-        )
+            logger.info(f"[{self.config.name}] Claude Agent SDK 실행 시작")
+            logger.info(f"[{self.config.name}] Working Directory: {os.getcwd()}")
+            logger.info(f"[{self.config.name}] Prompt 길이: {len(full_prompt)} characters")
+            logger.info(f"[{self.config.name}] Model: {self.config.model}")
+            logger.info(f"[{self.config.name}] Tools: {self.config.allowed_tools}")
+            logger.info(f"[{self.config.name}] Thinking Mode: {self.config.thinking}")
+            logger.info(f"[{self.config.name}] CLI Path: {get_claude_cli_path()}")
 
-        # 응답 핸들러 생성 (usage_callback 전달)
-        response_handler = WorkerResponseHandler(usage_callback=usage_callback)
+            # SDK 실행 설정
+            config = SDKExecutionConfig(
+                model=self.config.model,
+                cli_path=get_claude_cli_path(),
+                permission_mode="bypassPermissions"
+            )
 
-        # Executor 생성
-        executor = WorkerSDKExecutor(
-            config=config,
-            allowed_tools=self.config.allowed_tools if self.config.allowed_tools else [],
-            response_handler=response_handler,
-            worker_name=self.config.name
-        )
+            # 응답 핸들러 생성 (usage_callback 전달)
+            response_handler = WorkerResponseHandler(usage_callback=usage_callback)
 
-        # 스트림 실행
-        async for text in executor.execute_stream(full_prompt):
-            yield text
+            # Executor 생성
+            executor = WorkerSDKExecutor(
+                config=config,
+                allowed_tools=self.config.allowed_tools if self.config.allowed_tools else [],
+                response_handler=response_handler,
+                worker_name=self.config.name
+            )
 
-        # Worker 실행 완료 표시
-        yield f"\n{'='*70}\n✅ [{self.config.name.upper()}] Worker execution completed\n{'='*70}\n"
+            # 스트림 실행
+            async for text in executor.execute_stream(full_prompt):
+                yield text
+
+            # Worker 실행 완료 표시
+            yield f"\n{'='*70}\n✅ [{self.config.name.upper()}] Worker execution completed\n{'='*70}\n"
+
+        finally:
+            # Working directory 복원
+            if self.project_dir and os.getcwd() != original_cwd:
+                try:
+                    os.chdir(original_cwd)
+                    logger.info(f"[{self.config.name}] Working Directory 복원: {os.getcwd()}")
+                except Exception as e:
+                    logger.error(f"[{self.config.name}] Working Directory 복원 실패: {e}")
 
     def __repr__(self) -> str:
         return f"WorkerAgent(name={self.config.name}, role={self.config.role})"
