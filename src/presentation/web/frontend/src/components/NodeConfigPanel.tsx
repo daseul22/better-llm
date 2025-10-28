@@ -165,6 +165,12 @@ export const NodeConfigPanel: React.FC = () => {
     loadTools()
   }, [])
 
+  // 입력 필드에서 키 이벤트 전파 방지 (노드 삭제 등 React Flow 기본 동작 방지)
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    // Backspace, Delete 등의 키 이벤트가 React Flow로 전파되지 않도록 차단
+    e.stopPropagation()
+  }
+
   // 키보드 단축키
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -538,6 +544,7 @@ export const NodeConfigPanel: React.FC = () => {
                   rows={10}
                   value={inputInitialInput}
                   onChange={(e) => setInputInitialInput(e.target.value)}
+                  onKeyDown={handleInputKeyDown}
                   placeholder="워크플로우 초기 입력을 입력하세요...&#10;예시:&#10;- 새로운 기능 추가&#10;- 버그 수정&#10;- 코드 리뷰"
                 />
                 <p className="text-xs text-muted-foreground">
@@ -841,6 +848,7 @@ export const NodeConfigPanel: React.FC = () => {
                   rows={8}
                   value={managerTaskDescription}
                   onChange={(e) => setManagerTaskDescription(e.target.value)}
+                  onKeyDown={handleInputKeyDown}
                   placeholder="Manager가 수행할 작업을 설명하세요...&#10;예시:&#10;- 웹 애플리케이션의 로그인 기능 구현&#10;- API 문서화 및 테스트 작성&#10;- 코드 리뷰 및 리팩토링"
                 />
                 {errors.task_description && (
@@ -912,6 +920,7 @@ export const NodeConfigPanel: React.FC = () => {
                     className="w-full pl-8 p-2 border rounded-md text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     value={workerSearchQuery}
                     onChange={(e) => setWorkerSearchQuery(e.target.value)}
+                    onKeyDown={handleInputKeyDown}
                   />
                 </div>
 
@@ -1149,6 +1158,7 @@ export const NodeConfigPanel: React.FC = () => {
               rows={5}
               value={taskTemplate}
               onChange={(e) => setTaskTemplate(e.target.value)}
+              onKeyDown={handleInputKeyDown}
               placeholder="예: {{input}}을(를) 분석해주세요."
             />
 
@@ -1239,6 +1249,7 @@ export const NodeConfigPanel: React.FC = () => {
                     className="w-full pl-8 p-2 border rounded-md text-sm"
                     value={toolSearchQuery}
                     onChange={(e) => setToolSearchQuery(e.target.value)}
+                    onKeyDown={handleInputKeyDown}
                   />
                 </div>
 
@@ -1338,6 +1349,7 @@ export const NodeConfigPanel: React.FC = () => {
               rows={6}
               value={customPrompt}
               onChange={(e) => setCustomPrompt(e.target.value)}
+              onKeyDown={handleInputKeyDown}
               placeholder="예: 코드 작성 시 주석을 포함해주세요."
             />
             <p className="text-xs text-muted-foreground">
@@ -1357,6 +1369,7 @@ export const NodeConfigPanel: React.FC = () => {
               className="w-full p-2 border rounded-md text-sm font-mono bg-gray-50"
               rows={15}
               value={systemPrompt}
+              onKeyDown={handleInputKeyDown}
               readOnly
             />
             <p className="text-xs text-muted-foreground">
