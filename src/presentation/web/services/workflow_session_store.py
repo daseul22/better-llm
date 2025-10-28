@@ -46,6 +46,7 @@ class WorkflowSession:
     status: Literal["running", "completed", "error", "cancelled"] = "running"
     current_node_id: Optional[str] = None
     node_outputs: Dict[str, str] = field(default_factory=dict)
+    node_inputs: Dict[str, str] = field(default_factory=dict)  # 노드별 입력 (디버깅용)
     logs: List[Dict[str, Any]] = field(default_factory=list)
     start_time: str = field(default_factory=lambda: datetime.now().isoformat())
     end_time: Optional[str] = None
@@ -61,6 +62,7 @@ class WorkflowSession:
             "status": self.status,
             "current_node_id": self.current_node_id,
             "node_outputs": self.node_outputs,
+            "node_inputs": self.node_inputs,
             "logs": self.logs,
             "start_time": self.start_time,
             "end_time": self.end_time,
@@ -81,6 +83,7 @@ class WorkflowSession:
             status=data["status"],
             current_node_id=data.get("current_node_id"),
             node_outputs=data.get("node_outputs", {}),
+            node_inputs=data.get("node_inputs", {}),  # 노드별 입력 복원
             logs=data.get("logs", []),
             start_time=data["start_time"],
             end_time=data.get("end_time"),
@@ -257,6 +260,10 @@ class WorkflowSessionStore:
         # 이벤트 타입별 처리
         if event.event_type == "node_start":
             session.current_node_id = event.node_id
+
+            # 노드 입력 저장 (디버깅용)
+            if "input" in event.data:
+                session.node_inputs[event.node_id] = event.data["input"]
 
         elif event.event_type == "node_output":
             # 노드 출력 누적 (청크 단위 추가)

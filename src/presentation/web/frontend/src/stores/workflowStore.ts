@@ -26,6 +26,7 @@ interface WorkflowExecutionState {
   isExecuting: boolean
   currentNodeId: string | null
   nodeOutputs: Record<string, string>
+  nodeInputs: Record<string, string>  // 노드별 입력 (디버깅용)
   nodeMeta: Record<string, NodeExecutionMeta>
   logs: Array<{
     nodeId: string
@@ -109,6 +110,7 @@ const initialExecutionState: WorkflowExecutionState = {
   isExecuting: false,
   currentNodeId: null,
   nodeOutputs: {},
+  nodeInputs: {},  // 노드별 입력 초기화
   nodeMeta: {},
   logs: [],
   totalTokenUsage: {
@@ -243,6 +245,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         isExecuting: true,
         currentNodeId: null,
         nodeOutputs: {},
+        nodeInputs: {},  // 노드 입력 초기화
         logs: [
           {
             nodeId: '',
@@ -514,6 +517,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       isExecuting: isStillRunning,
       currentNodeId: isStillRunning ? session.current_node_id : null,
       nodeOutputs: session.node_outputs,
+      nodeInputs: session.node_inputs || {},  // 노드 입력 복원
       nodeMeta,
       logs: session.logs.map((log: any) => {
         // 이벤트 타입별로 메시지 재구성 (InputNode.tsx의 로직과 동일)

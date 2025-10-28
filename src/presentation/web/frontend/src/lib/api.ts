@@ -681,6 +681,7 @@ export interface WorkflowSession {
   status: "running" | "completed" | "error" | "cancelled"
   current_node_id: string | null
   node_outputs: Record<string, string>
+  node_inputs: Record<string, string>  // 노드별 입력 (디버깅용)
   logs: WorkflowExecutionEvent[]
   start_time: string
   end_time: string | null

@@ -42,6 +42,8 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   const [systemPrompt, setSystemPrompt] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const nodes = useWorkflowStore((state) => state.nodes)
+  const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
+  const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
 
   // Agent 및 Tool 목록 로드
   useEffect(() => {
@@ -196,6 +198,9 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
           </TabsTrigger>
           <TabsTrigger value="advanced" className="text-xs flex-1 min-w-0">
             고급
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
+            로그
           </TabsTrigger>
           <TabsTrigger value="info" className="text-xs flex-1 min-w-0">
             정보
@@ -565,6 +570,78 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 <li>고급 탭에서 추가 지시사항 작성 가능</li>
                 <li>변경사항은 3초 후 자동 저장됩니다</li>
               </ul>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* 로그 탭 */}
+        <TabsContent value="logs" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+          <div className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              이 노드의 입력과 출력을 확인할 수 있습니다 (디버깅용)
+            </div>
+
+            {/* 노드 입력 */}
+            <div className="border rounded-md overflow-hidden">
+              <div className="bg-blue-50 px-3 py-2 border-b">
+                <div className="text-sm font-medium text-blue-900">노드 입력</div>
+                <div className="text-xs text-blue-700">이 노드가 받은 입력 데이터</div>
+              </div>
+              <div className="p-3">
+                {nodeInputs[node.id] ? (
+                  <pre className="text-xs font-mono bg-gray-50 p-3 rounded border overflow-x-auto whitespace-pre-wrap break-words">
+                    {nodeInputs[node.id]}
+                  </pre>
+                ) : (
+                  <div className="text-sm text-muted-foreground text-center py-4">
+                    아직 실행되지 않았습니다
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 노드 출력 */}
+            <div className="border rounded-md overflow-hidden">
+              <div className="bg-green-50 px-3 py-2 border-b">
+                <div className="text-sm font-medium text-green-900">노드 출력</div>
+                <div className="text-xs text-green-700">이 노드가 생성한 출력 데이터</div>
+              </div>
+              <div className="p-3">
+                {nodeOutputs[node.id] ? (
+                  <pre className="text-xs font-mono bg-gray-50 p-3 rounded border overflow-x-auto whitespace-pre-wrap break-words">
+                    {nodeOutputs[node.id]}
+                  </pre>
+                ) : (
+                  <div className="text-sm text-muted-foreground text-center py-4">
+                    아직 실행되지 않았습니다
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 통계 정보 */}
+            <div className="border rounded-md p-3 bg-purple-50 border-purple-200">
+              <div className="text-sm font-medium mb-2 text-purple-900">통계</div>
+              <div className="space-y-1 text-xs text-purple-800">
+                <div>
+                  <span className="font-medium">입력 길이:</span>{' '}
+                  {nodeInputs[node.id] ? `${nodeInputs[node.id].length.toLocaleString()}자` : '0자'}
+                </div>
+                <div>
+                  <span className="font-medium">출력 길이:</span>{' '}
+                  {nodeOutputs[node.id] ? `${nodeOutputs[node.id].length.toLocaleString()}자` : '0자'}
+                </div>
+                <div>
+                  <span className="font-medium">상태:</span>{' '}
+                  {nodeOutputs[node.id] ? (
+                    <span className="text-green-600 font-medium">✓ 완료</span>
+                  ) : nodeInputs[node.id] ? (
+                    <span className="text-yellow-600 font-medium">⏳ 진행중</span>
+                  ) : (
+                    <span className="text-gray-500">⏸ 대기중</span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </TabsContent>

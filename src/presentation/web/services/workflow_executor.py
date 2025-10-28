@@ -804,7 +804,8 @@ class WorkflowExecutor:
             node_id=node_id,
             data={
                 "node_type": "manager",
-                "available_workers": available_workers
+                "available_workers": available_workers,
+                "input": task_description,  # 노드 입력 추가 (디버깅용)
             },
             timestamp=datetime.now().isoformat(),
         )
@@ -951,7 +952,10 @@ class WorkflowExecutor:
             yield WorkflowNodeExecutionEvent(
                 event_type="node_start",
                 node_id=node_id,
-                data={"agent_name": "Input"},
+                data={
+                    "agent_name": "Input",
+                    "input": input_value,  # 노드 입력 추가 (디버깅용)
+                },
                 timestamp=datetime.now().isoformat(),
             )
 
@@ -1117,44 +1121,50 @@ class WorkflowExecutor:
 
             start_time = time.time()
 
+            # 먼저 task_description 생성 (입력 저장용)
+            agent_config = self._get_agent_config(agent_name)
+
+            if allowed_tools_override is not None:
+                agent_config = replace(agent_config, allowed_tools=allowed_tools_override)
+                logger.info(
+                    f"[{session_id}] 노드 {node_id}: allowed_tools 오버라이드 "
+                    f"({len(allowed_tools_override)}개 도구)"
+                )
+
+            if thinking_override is not None:
+                agent_config = replace(agent_config, thinking=thinking_override)
+                logger.info(
+                    f"[{session_id}] 노드 {node_id}: thinking 모드 오버라이드 "
+                    f"(thinking={thinking_override})"
+                )
+
+            parent_nodes = self._get_parent_nodes(node_id, edges)
+            parent_outputs = {
+                pid: node_outputs[pid] for pid in parent_nodes
+                if pid in node_outputs
+            }
+
+            task_description = self._render_task_template(
+                template=task_template,
+                node_id=node_id,
+                node_outputs=parent_outputs,
+                initial_input=initial_input,
+            )
+
+            # node_start 이벤트에 입력 포함
             start_event = WorkflowNodeExecutionEvent(
                 event_type="node_start",
                 node_id=node_id,
-                data={"agent_name": agent_name},
+                data={
+                    "agent_name": agent_name,
+                    "input": task_description,  # 노드 입력 추가 (디버깅용)
+                },
                 timestamp=datetime.now().isoformat(),
             )
             logger.info(f"[{session_id}] 🟢 이벤트 생성: node_start (node: {node_id}, agent: {agent_name})")
             yield start_event
 
             try:
-                agent_config = self._get_agent_config(agent_name)
-
-                if allowed_tools_override is not None:
-                    agent_config = replace(agent_config, allowed_tools=allowed_tools_override)
-                    logger.info(
-                        f"[{session_id}] 노드 {node_id}: allowed_tools 오버라이드 "
-                        f"({len(allowed_tools_override)}개 도구)"
-                    )
-
-                if thinking_override is not None:
-                    agent_config = replace(agent_config, thinking=thinking_override)
-                    logger.info(
-                        f"[{session_id}] 노드 {node_id}: thinking 모드 오버라이드 "
-                        f"(thinking={thinking_override})"
-                    )
-
-                parent_nodes = self._get_parent_nodes(node_id, edges)
-                parent_outputs = {
-                    pid: node_outputs[pid] for pid in parent_nodes
-                    if pid in node_outputs
-                }
-
-                task_description = self._render_task_template(
-                    template=task_template,
-                    node_id=node_id,
-                    node_outputs=parent_outputs,
-                    initial_input=initial_input,
-                )
 
                 logger.info(
                     f"[{session_id}] 노드 실행: {node_id} ({agent_name}) "
