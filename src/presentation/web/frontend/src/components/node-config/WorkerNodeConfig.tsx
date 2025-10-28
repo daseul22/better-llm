@@ -208,7 +208,7 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium">작업 템플릿</label>
-              <span title="{{input}}을 사용하여 이전 노드의 출력을 참조할 수 있습니다">
+              <span title="템플릿 변수를 사용하여 이전 노드의 출력을 참조할 수 있습니다. {{parent}}: 직전 부모 노드 출력, {{input}}: 초기 입력값, {{node_<id>}}: 특정 노드 출력">
                 <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
               </span>
             </div>
@@ -233,9 +233,22 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
               </div>
             )}
 
-            <div className="text-xs text-muted-foreground">
-              사용 가능한 변수: <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">{'{{input}}'}</code>{' '}
-              (이전 노드 출력)
+            <div className="text-xs text-muted-foreground space-y-1">
+              <div>사용 가능한 변수:</div>
+              <div className="space-y-0.5 ml-2">
+                <div>
+                  • <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">{'{{parent}}'}</code>{' '}
+                  - 직전 부모 노드의 출력
+                </div>
+                <div>
+                  • <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">{'{{input}}'}</code>{' '}
+                  - Input 노드의 초기 입력값
+                </div>
+                <div>
+                  • <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">{'{{node_<id>}}'}</code>{' '}
+                  - 특정 노드의 출력 (예: {'{{node_merge-123}}'})
+                </div>
+              </div>
             </div>
           </div>
 
@@ -545,7 +558,9 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
             <div className="border rounded-md p-3 bg-green-50 border-green-200">
               <div className="text-sm font-medium mb-2 text-green-900">사용법</div>
               <ul className="list-disc list-inside space-y-1 text-xs text-green-800">
-                <li>작업 템플릿에서 {'{{input}}'} 변수로 이전 노드 출력 참조</li>
+                <li>작업 템플릿에서 {'{{parent}}'} 변수로 부모 노드 출력 참조</li>
+                <li>{'{{input}}'} 변수는 Input 노드의 초기 입력값을 참조</li>
+                <li>{'{{node_<id>}}'} 변수로 특정 노드의 출력 참조</li>
                 <li>도구 탭에서 커스텀 도구 선택 가능 (일부 워커만)</li>
                 <li>고급 탭에서 추가 지시사항 작성 가능</li>
                 <li>변경사항은 3초 후 자동 저장됩니다</li>

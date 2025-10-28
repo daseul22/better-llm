@@ -224,7 +224,7 @@ class WorkflowValidator:
         """
         템플릿 변수 유효성 검사
 
-        {{input}}, {{node_123}} 등의 템플릿 변수가 유효한지 검사합니다.
+        {{parent}}, {{input}}, {{node_123}} 등의 템플릿 변수가 유효한지 검사합니다.
 
         Args:
             workflow: 검증할 워크플로우
@@ -260,8 +260,8 @@ class WorkflowValidator:
             variables = self.TEMPLATE_VAR_PATTERN.findall(template)
 
             for var in variables:
-                # 'input'은 항상 유효
-                if var == "input":
+                # 'input', 'parent'는 항상 유효
+                if var in ("input", "parent"):
                     continue
 
                 # 노드 ID 참조 검증 (예: {{node_123}})
@@ -277,7 +277,7 @@ class WorkflowValidator:
                         severity="error",
                         node_id=node.id,
                         message=f"유효하지 않은 템플릿 변수입니다: {{{{{var}}}}}",
-                        suggestion=f"변수 이름을 확인하세요. 사용 가능한 변수: {{{{input}}}}, 또는 노드 ID (예: {{{example_node}}})"
+                        suggestion=f"변수 이름을 확인하세요. 사용 가능한 변수: {{{{parent}}}} (부모 노드 출력), {{{{input}}}} (초기 입력), 또는 노드 ID (예: {{{{{example_node}}}}})"
                     ))
                     continue
 

@@ -158,7 +158,7 @@ export const NodePanel: React.FC = () => {
       position: { x, y },
       data: {
         agent_name: agent.name,
-        task_template: `{{input}}을(를) ${agent.role} 해주세요.`,
+        task_template: `{{parent}}를 ${agent.role} 해주세요.`,
       },
     }
 
@@ -492,7 +492,7 @@ export const NodePanel: React.FC = () => {
                     className="w-full justify-start text-left hover:bg-slate-50 bg-white cursor-grab active:cursor-grabbing"
                     onClick={() => handleAddAgent(agent)}
                     draggable
-                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{input}}을(를) ${agent.role} 해주세요.` })}
+                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{parent}}를 ${agent.role} 해주세요.` })}
                   >
                     <Plus className="mr-2 h-4 w-4" />
                     <div className="flex flex-col items-start flex-1">
@@ -541,7 +541,7 @@ export const NodePanel: React.FC = () => {
                     className="w-full justify-start text-left hover:bg-orange-50 bg-white cursor-grab active:cursor-grabbing"
                     onClick={() => handleAddAgent(agent)}
                     draggable
-                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{input}}을(를) ${agent.role} 해주세요.` })}
+                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{parent}}를 ${agent.role} 해주세요.` })}
                   >
                     <Target className="mr-2 h-4 w-4 text-orange-600" />
                     <div className="flex flex-col items-start flex-1">

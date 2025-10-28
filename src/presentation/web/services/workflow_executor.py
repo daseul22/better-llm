@@ -716,9 +716,14 @@ class WorkflowExecutor:
         if not parent_nodes:
             raise ValueError(f"병합 노드 {node_id}에 부모 노드가 없습니다")
 
-        parent_outputs = [
-            node_outputs.get(pid, "") for pid in parent_nodes
-        ]
+        parent_outputs = []
+        for pid in parent_nodes:
+            if pid not in node_outputs:
+                logger.warning(
+                    f"[{session_id}] 병합 노드 {node_id}: "
+                    f"부모 노드 '{pid}'의 출력이 없습니다. 빈 문자열을 사용합니다."
+                )
+            parent_outputs.append(node_outputs.get(pid, ""))
 
         # 병합 전략에 따라 출력 생성
         if node_data.merge_strategy == "concatenate":
