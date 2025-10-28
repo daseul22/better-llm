@@ -7,9 +7,10 @@
 import asyncio
 import time
 from datetime import datetime
-from typing import Dict, Any, AsyncIterator, Set, List, Optional
+from typing import Dict, Any, AsyncIterator, Set, List, Optional, Tuple
 from collections import deque
 from dataclasses import replace
+from pathlib import Path
 
 from src.domain.models import AgentConfig, Message
 from src.infrastructure.config import JsonConfigLoader, get_project_root
@@ -896,6 +897,357 @@ class WorkflowExecutor:
 
             raise
 
+    async def _execute_single_node(
+        self,
+        node: WorkflowNode,
+        node_outputs: Dict[str, str],
+        initial_input: str,
+        session_id: str,
+        edges: List[WorkflowEdge],
+        all_nodes: List[WorkflowNode],
+        project_path: Optional[str] = None,
+    ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
+        """
+        단일 노드 실행 (모든 노드 타입 지원)
+
+        Args:
+            node: 실행할 노드
+            node_outputs: 이전 노드 출력들
+            initial_input: 초기 입력
+            session_id: 세션 ID
+            edges: 엣지 목록
+            all_nodes: 모든 노드 목록
+            project_path: 프로젝트 디렉토리 경로
+
+        Yields:
+            WorkflowNodeExecutionEvent: 노드 실행 이벤트
+        """
+        node_id = node.id
+
+        # Input 노드 처리
+        if node.type == "input":
+            if isinstance(node.data, InputNodeData):
+                input_value = node.data.initial_input
+            elif isinstance(node.data, dict):
+                input_value = node.data.get("initial_input", initial_input)
+            else:
+                input_value = initial_input
+            node_outputs[node_id] = input_value
+
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_start",
+                node_id=node_id,
+                data={"agent_name": "Input"},
+                timestamp=datetime.now().isoformat(),
+            )
+
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_complete",
+                node_id=node_id,
+                data={
+                    "node_type": "input",
+                    "agent_name": "Input",
+                    "output_length": len(input_value),
+                    "output": input_value,
+                },
+                timestamp=datetime.now().isoformat(),
+                elapsed_time=0.0,
+            )
+
+            logger.info(
+                f"[{session_id}] Input 노드 완료: {node_id} "
+                f"(출력 길이: {len(input_value)})"
+            )
+            return
+
+        # Manager 노드
+        elif node.type == "manager":
+            async for event in self._execute_manager_node(
+                node, node_outputs, initial_input, session_id, project_path
+            ):
+                if event.event_type == "node_complete":
+                    node_outputs[node_id] = event.data.get("output", "")
+                yield event
+
+        # Condition 노드
+        elif node.type == "condition":
+            start_time = time.time()
+
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_start",
+                node_id=node_id,
+                data={"node_type": "condition"},
+                timestamp=datetime.now().isoformat(),
+            )
+
+            try:
+                next_node_id, result_text = await self._execute_condition_node(
+                    node, node_outputs, edges, session_id
+                )
+
+                node_outputs[node_id] = result_text
+                elapsed_time = time.time() - start_time
+
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_complete",
+                    node_id=node_id,
+                    data={
+                        "node_type": "condition",
+                        "next_node": next_node_id,
+                        "output": result_text,
+                    },
+                    timestamp=datetime.now().isoformat(),
+                    elapsed_time=elapsed_time,
+                )
+
+                logger.info(
+                    f"[{session_id}] 조건 노드 완료: {node_id} → {next_node_id}"
+                )
+
+            except Exception as e:
+                error_msg = f"조건 노드 실행 실패: {str(e)}"
+                logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+
+                elapsed_time = time.time() - start_time
+
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_error",
+                    node_id=node_id,
+                    data={"error": error_msg},
+                    timestamp=datetime.now().isoformat(),
+                    elapsed_time=elapsed_time,
+                )
+
+                raise
+
+        # Loop 노드
+        elif node.type == "loop":
+            async for event in self._execute_loop_node(
+                node, node_outputs, edges, all_nodes,
+                initial_input, session_id, project_path
+            ):
+                if event.event_type == "node_complete":
+                    node_outputs[node_id] = event.data.get("output", "")
+                yield event
+
+        # Merge 노드
+        elif node.type == "merge":
+            start_time = time.time()
+
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_start",
+                node_id=node_id,
+                data={"node_type": "merge"},
+                timestamp=datetime.now().isoformat(),
+            )
+
+            try:
+                merged_output = await self._execute_merge_node(
+                    node, node_outputs, edges, session_id
+                )
+
+                node_outputs[node_id] = merged_output
+                elapsed_time = time.time() - start_time
+
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_complete",
+                    node_id=node_id,
+                    data={
+                        "node_type": "merge",
+                        "output_length": len(merged_output),
+                        "output": merged_output,
+                    },
+                    timestamp=datetime.now().isoformat(),
+                    elapsed_time=elapsed_time,
+                )
+
+                logger.info(
+                    f"[{session_id}] 병합 노드 완료: {node_id} "
+                    f"(출력 길이: {len(merged_output)})"
+                )
+
+            except Exception as e:
+                error_msg = f"병합 노드 실행 실패: {str(e)}"
+                logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+
+                elapsed_time = time.time() - start_time
+
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_error",
+                    node_id=node_id,
+                    data={"error": error_msg},
+                    timestamp=datetime.now().isoformat(),
+                    elapsed_time=elapsed_time,
+                )
+
+                raise
+
+        # Worker 노드
+        else:
+            if isinstance(node.data, dict):
+                agent_name = node.data.get("agent_name")
+                task_template = node.data.get("task_template")
+                allowed_tools_override = node.data.get("allowed_tools")
+                thinking_override = node.data.get("thinking")
+
+                if not agent_name:
+                    raise ValueError(f"노드 {node_id}: agent_name이 지정되지 않았습니다")
+                if not task_template:
+                    raise ValueError(f"노드 {node_id}: task_template이 지정되지 않았습니다")
+            else:
+                node_data: WorkerNodeData = node.data  # type: ignore
+                agent_name = node_data.agent_name
+                task_template = node_data.task_template
+                allowed_tools_override = node_data.allowed_tools
+                thinking_override = node_data.thinking
+
+            start_time = time.time()
+
+            start_event = WorkflowNodeExecutionEvent(
+                event_type="node_start",
+                node_id=node_id,
+                data={"agent_name": agent_name},
+                timestamp=datetime.now().isoformat(),
+            )
+            logger.info(f"[{session_id}] 🟢 이벤트 생성: node_start (node: {node_id}, agent: {agent_name})")
+            yield start_event
+
+            try:
+                agent_config = self._get_agent_config(agent_name)
+
+                if allowed_tools_override is not None:
+                    agent_config = replace(agent_config, allowed_tools=allowed_tools_override)
+                    logger.info(
+                        f"[{session_id}] 노드 {node_id}: allowed_tools 오버라이드 "
+                        f"({len(allowed_tools_override)}개 도구)"
+                    )
+
+                if thinking_override is not None:
+                    agent_config = replace(agent_config, thinking=thinking_override)
+                    logger.info(
+                        f"[{session_id}] 노드 {node_id}: thinking 모드 오버라이드 "
+                        f"(thinking={thinking_override})"
+                    )
+
+                parent_nodes = self._get_parent_nodes(node_id, edges)
+                parent_outputs = {
+                    pid: node_outputs[pid] for pid in parent_nodes
+                    if pid in node_outputs
+                }
+
+                task_description = self._render_task_template(
+                    template=task_template,
+                    node_id=node_id,
+                    node_outputs=parent_outputs,
+                    initial_input=initial_input,
+                )
+
+                logger.info(
+                    f"[{session_id}] 노드 실행: {node_id} ({agent_name}) "
+                    f"- 작업 길이: {len(task_description)}"
+                )
+
+                worker = WorkerAgent(config=agent_config, project_dir=project_path)
+                node_output_chunks = []
+                node_token_usage: Optional[TokenUsage] = None
+
+                def usage_callback(usage_info: Dict[str, Any]):
+                    nonlocal node_token_usage
+                    node_token_usage = TokenUsage(
+                        input_tokens=usage_info.get("input_tokens", 0),
+                        output_tokens=usage_info.get("output_tokens", 0),
+                        total_tokens=usage_info.get("total_tokens", 0),
+                    )
+                    logger.debug(
+                        f"[{session_id}] 💰 토큰 사용량: {node_token_usage.total_tokens} "
+                        f"(입력: {node_token_usage.input_tokens}, 출력: {node_token_usage.output_tokens})"
+                    )
+
+                async for chunk in worker.execute_task(task_description, usage_callback=usage_callback):
+                    node_output_chunks.append(chunk)
+
+                    output_event = WorkflowNodeExecutionEvent(
+                        event_type="node_output",
+                        node_id=node_id,
+                        data={"chunk": chunk},
+                    )
+                    logger.debug(f"[{session_id}] 📝 이벤트 생성: node_output (node: {node_id}, chunk: {len(chunk)}자)")
+                    yield output_event
+
+                node_output = "".join(node_output_chunks)
+                node_outputs[node_id] = node_output
+                elapsed_time = time.time() - start_time
+
+                complete_event = WorkflowNodeExecutionEvent(
+                    event_type="node_complete",
+                    node_id=node_id,
+                    data={
+                        "agent_name": agent_name,
+                        "output_length": len(node_output),
+                    },
+                    timestamp=datetime.now().isoformat(),
+                    elapsed_time=elapsed_time,
+                    token_usage=node_token_usage,
+                )
+                logger.info(f"[{session_id}] ✅ 이벤트 생성: node_complete (node: {node_id}, agent: {agent_name})")
+                yield complete_event
+
+                logger.info(
+                    f"[{session_id}] 노드 완료: {node_id} ({agent_name}) "
+                    f"- 출력 길이: {len(node_output)}"
+                )
+
+            except Exception as e:
+                error_msg = f"노드 실행 실패: {str(e)}"
+                logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+
+                elapsed_time = time.time() - start_time
+
+                error_event = WorkflowNodeExecutionEvent(
+                    event_type="node_error",
+                    node_id=node_id,
+                    data={"error": error_msg},
+                    timestamp=datetime.now().isoformat(),
+                    elapsed_time=elapsed_time,
+                )
+                logger.error(f"[{session_id}] 🔴 이벤트 생성: node_error (node: {node_id})")
+                yield error_event
+
+                raise
+
+    async def _execute_node_and_collect_events(
+        self,
+        node: WorkflowNode,
+        node_outputs: Dict[str, str],
+        initial_input: str,
+        session_id: str,
+        edges: List[WorkflowEdge],
+        all_nodes: List[WorkflowNode],
+        project_path: Optional[str] = None,
+    ) -> List[WorkflowNodeExecutionEvent]:
+        """
+        단일 노드를 실행하고 모든 이벤트를 수집
+
+        Args:
+            node: 실행할 노드
+            node_outputs: 노드 출력 딕셔너리 (공유)
+            initial_input: 초기 입력
+            session_id: 세션 ID
+            edges: 엣지 목록
+            all_nodes: 모든 노드 목록
+            project_path: 프로젝트 경로
+
+        Returns:
+            List[WorkflowNodeExecutionEvent]: 수집된 이벤트 목록
+        """
+        events = []
+        async for event in self._execute_single_node(
+            node, node_outputs, initial_input, session_id,
+            edges, all_nodes, project_path
+        ):
+            events.append(event)
+        return events
+
     async def execute_workflow(
         self,
         workflow: Workflow,
@@ -904,7 +1256,7 @@ class WorkflowExecutor:
         project_path: Optional[str] = None,
     ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
         """
-        워크플로우 실행 (스트리밍)
+        워크플로우 실행 (스트리밍, 병렬 실행 지원)
 
         Args:
             workflow: 실행할 워크플로우
@@ -940,340 +1292,79 @@ class WorkflowExecutor:
                 f"{[node.id for node in sorted_nodes]}"
             )
 
+            # 실행 그룹 계산 (병렬 실행 그룹 포함)
+            execution_groups = self._compute_execution_groups(sorted_nodes, workflow.edges)
+
+            logger.info(
+                f"[{session_id}] 실행 그룹: {len(execution_groups)}개 "
+                f"(병렬 그룹: {sum(1 for g in execution_groups if len(g) > 1)}개)"
+            )
+
             # 노드 출력 저장 (노드 ID → 출력)
             node_outputs: Dict[str, str] = {}
 
-            # 각 노드 순차 실행
-            for node in sorted_nodes:
-                node_id = node.id
+            # 실행 그룹별로 처리 (병렬 실행 지원)
+            for group_idx, group in enumerate(execution_groups):
+                group_node_ids = [node.id for node in group]
 
-                # Input 노드 처리 (프론트엔드 전용 노드 - 스킵)
-                if node.type == "input":
-                    # Input 노드의 initial_input을 노드 출력으로 저장
-                    # (다음 노드가 {{node_<id>}} 형태로 참조 가능)
-                    if isinstance(node.data, InputNodeData):
-                        input_value = node.data.initial_input
-                    elif isinstance(node.data, dict):
-                        input_value = node.data.get("initial_input", initial_input)
-                    else:
-                        input_value = initial_input
-                    node_outputs[node_id] = input_value
-
-                    # 시작 이벤트
-                    yield WorkflowNodeExecutionEvent(
-                        event_type="node_start",
-                        node_id=node_id,
-                        data={"agent_name": "Input"},
-                        timestamp=datetime.now().isoformat(),
-                    )
-
-                    # 완료 이벤트 (Input 노드는 즉시 완료되므로 elapsed_time은 0에 가까움)
-                    yield WorkflowNodeExecutionEvent(
-                        event_type="node_complete",
-                        node_id=node_id,
-                        data={
-                            "node_type": "input",
-                            "agent_name": "Input",
-                            "output_length": len(input_value),
-                            "output": input_value,
-                        },
-                        timestamp=datetime.now().isoformat(),
-                        elapsed_time=0.0,
-                    )
-
+                if len(group) == 1:
+                    # 단독 실행
+                    node = group[0]
                     logger.info(
-                        f"[{session_id}] Input 노드 완료: {node_id} "
-                        f"(출력 길이: {len(input_value)})"
+                        f"[{session_id}] 그룹 {group_idx + 1}/{len(execution_groups)}: "
+                        f"노드 {node.id} 단독 실행"
                     )
-                    continue  # 다음 노드로
 
-                # Manager 노드 vs Worker 노드 vs 조건/반복/병합 노드 구분
-                elif node.type == "manager":
-                    # Manager 노드 실행
-                    async for event in self._execute_manager_node(
-                        node, node_outputs, initial_input, session_id, project_path
+                    async for event in self._execute_single_node(
+                        node, node_outputs, initial_input, session_id,
+                        workflow.edges, workflow.nodes, project_path
                     ):
-                        if event.event_type == "node_complete":
-                            # 통합 결과 저장
-                            node_outputs[node_id] = event.data.get("output", "")
                         yield event
-
-                elif node.type == "condition":
-                    # 조건 분기 노드 실행
-                    start_time = time.time()
-
-                    # 시작 이벤트
-                    yield WorkflowNodeExecutionEvent(
-                        event_type="node_start",
-                        node_id=node_id,
-                        data={"node_type": "condition"},
-                        timestamp=datetime.now().isoformat(),
-                    )
-
-                    try:
-                        next_node_id, result_text = await self._execute_condition_node(
-                            node, node_outputs, workflow.edges, session_id
-                        )
-
-                        # 조건 결과 저장
-                        node_outputs[node_id] = result_text
-
-                        # 실행 시간 계산
-                        elapsed_time = time.time() - start_time
-
-                        # 완료 이벤트
-                        yield WorkflowNodeExecutionEvent(
-                            event_type="node_complete",
-                            node_id=node_id,
-                            data={
-                                "node_type": "condition",
-                                "next_node": next_node_id,
-                                "output": result_text,
-                            },
-                            timestamp=datetime.now().isoformat(),
-                            elapsed_time=elapsed_time,
-                        )
-
-                        logger.info(
-                            f"[{session_id}] 조건 노드 완료: {node_id} → {next_node_id}"
-                        )
-
-                    except Exception as e:
-                        error_msg = f"조건 노드 실행 실패: {str(e)}"
-                        logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
-
-                        elapsed_time = time.time() - start_time
-
-                        yield WorkflowNodeExecutionEvent(
-                            event_type="node_error",
-                            node_id=node_id,
-                            data={"error": error_msg},
-                            timestamp=datetime.now().isoformat(),
-                            elapsed_time=elapsed_time,
-                        )
-
-                        raise
-
-                elif node.type == "loop":
-                    # 반복 노드 실행
-                    async for event in self._execute_loop_node(
-                        node, node_outputs, workflow.edges, workflow.nodes,
-                        initial_input, session_id, project_path
-                    ):
-                        if event.event_type == "node_complete":
-                            # 통합 결과 저장
-                            node_outputs[node_id] = event.data.get("output", "")
-                        yield event
-
-                elif node.type == "merge":
-                    # 병합 노드 실행
-                    start_time = time.time()
-
-                    # 시작 이벤트
-                    yield WorkflowNodeExecutionEvent(
-                        event_type="node_start",
-                        node_id=node_id,
-                        data={"node_type": "merge"},
-                        timestamp=datetime.now().isoformat(),
-                    )
-
-                    try:
-                        merged_output = await self._execute_merge_node(
-                            node, node_outputs, workflow.edges, session_id
-                        )
-
-                        # 병합 결과 저장
-                        node_outputs[node_id] = merged_output
-
-                        # 실행 시간 계산
-                        elapsed_time = time.time() - start_time
-
-                        # 완료 이벤트
-                        yield WorkflowNodeExecutionEvent(
-                            event_type="node_complete",
-                            node_id=node_id,
-                            data={
-                                "node_type": "merge",
-                                "output_length": len(merged_output),
-                                "output": merged_output,
-                            },
-                            timestamp=datetime.now().isoformat(),
-                            elapsed_time=elapsed_time,
-                        )
-
-                        logger.info(
-                            f"[{session_id}] 병합 노드 완료: {node_id} "
-                            f"(출력 길이: {len(merged_output)})"
-                        )
-
-                    except Exception as e:
-                        error_msg = f"병합 노드 실행 실패: {str(e)}"
-                        logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
-
-                        elapsed_time = time.time() - start_time
-
-                        yield WorkflowNodeExecutionEvent(
-                            event_type="node_error",
-                            node_id=node_id,
-                            data={"error": error_msg},
-                            timestamp=datetime.now().isoformat(),
-                            elapsed_time=elapsed_time,
-                        )
-
-                        raise
 
                 else:
-                    # Worker 노드 실행 (기존 로직)
-                    # node.data가 dict인 경우 처리
-                    if isinstance(node.data, dict):
-                        agent_name = node.data.get("agent_name")
-                        task_template = node.data.get("task_template")
-                        allowed_tools_override = node.data.get("allowed_tools")
-                        thinking_override = node.data.get("thinking")
-
-                        if not agent_name:
-                            raise ValueError(f"노드 {node_id}: agent_name이 지정되지 않았습니다")
-                        if not task_template:
-                            raise ValueError(f"노드 {node_id}: task_template이 지정되지 않았습니다")
-                    else:
-                        # WorkerNodeData 객체인 경우
-                        node_data: WorkerNodeData = node.data  # type: ignore
-                        agent_name = node_data.agent_name
-                        task_template = node_data.task_template
-                        allowed_tools_override = node_data.allowed_tools
-                        thinking_override = node_data.thinking
-
-                    # 노드 시작 시간 기록
-                    start_time = time.time()
-
-                    # 노드 시작 이벤트
-                    start_event = WorkflowNodeExecutionEvent(
-                        event_type="node_start",
-                        node_id=node_id,
-                        data={"agent_name": agent_name},
-                        timestamp=datetime.now().isoformat(),
+                    # 병렬 실행
+                    logger.info(
+                        f"[{session_id}] 그룹 {group_idx + 1}/{len(execution_groups)}: "
+                        f"{len(group)}개 노드 병렬 실행 ({group_node_ids})"
                     )
-                    logger.info(f"[{session_id}] 🟢 이벤트 생성: node_start (node: {node_id}, agent: {agent_name})")
-                    yield start_event
 
-                    try:
-                        # Agent 설정 조회
-                        agent_config = self._get_agent_config(agent_name)
-
-                        # allowed_tools 오버라이드 (노드에서 지정한 경우)
-                        if allowed_tools_override is not None:
-                            agent_config = replace(agent_config, allowed_tools=allowed_tools_override)
-                            logger.info(
-                                f"[{session_id}] 노드 {node_id}: allowed_tools 오버라이드 "
-                                f"({len(allowed_tools_override)}개 도구)"
-                            )
-
-                        # thinking 모드 오버라이드 (노드에서 지정한 경우)
-                        if thinking_override is not None:
-                            agent_config = replace(agent_config, thinking=thinking_override)
-                            logger.info(
-                                f"[{session_id}] 노드 {node_id}: thinking 모드 오버라이드 "
-                                f"(thinking={thinking_override})"
-                            )
-
-                        # 작업 설명 렌더링
-                        parent_nodes = self._get_parent_nodes(node_id, workflow.edges)
-                        parent_outputs = {
-                            pid: node_outputs[pid] for pid in parent_nodes
-                            if pid in node_outputs
-                        }
-
-                        task_description = self._render_task_template(
-                            template=task_template,
-                            node_id=node_id,
-                            node_outputs=parent_outputs,
-                            initial_input=initial_input,
+                    # 병렬 실행 태스크 생성
+                    tasks = [
+                        self._execute_node_and_collect_events(
+                            node, node_outputs, initial_input, session_id,
+                            workflow.edges, workflow.nodes, project_path
                         )
+                        for node in group
+                    ]
 
+                    # 병렬 실행 및 결과 수집
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    # 에러 체크
+                    for i, result in enumerate(results):
+                        if isinstance(result, Exception):
+                            error_msg = f"병렬 실행 중 노드 {group[i].id} 실패: {str(result)}"
+                            logger.error(f"[{session_id}] {error_msg}", exc_info=result)
+
+                            # 에러 이벤트 생성
+                            yield WorkflowNodeExecutionEvent(
+                                event_type="node_error",
+                                node_id=group[i].id,
+                                data={"error": error_msg},
+                                timestamp=datetime.now().isoformat(),
+                            )
+
+                            raise result
+
+                    # 모든 이벤트를 순서대로 yield
+                    # (각 노드의 이벤트를 노드별로 묶어서 yield)
+                    for node_idx, events in enumerate(results):
                         logger.info(
-                            f"[{session_id}] 노드 실행: {node_id} ({agent_name}) "
-                            f"- 작업 길이: {len(task_description)}"
+                            f"[{session_id}] 병렬 노드 {group[node_idx].id}: "
+                            f"{len(events)}개 이벤트 스트리밍"
                         )
-
-                        # Worker Agent 실행
-                        worker = WorkerAgent(config=agent_config, project_dir=project_path)
-                        node_output_chunks = []
-
-                        # 토큰 사용량 수집을 위한 변수
-                        node_token_usage: Optional[TokenUsage] = None
-
-                        def usage_callback(usage_info: Dict[str, Any]):
-                            """토큰 사용량 콜백"""
-                            nonlocal node_token_usage
-                            node_token_usage = TokenUsage(
-                                input_tokens=usage_info.get("input_tokens", 0),
-                                output_tokens=usage_info.get("output_tokens", 0),
-                                total_tokens=usage_info.get("total_tokens", 0),
-                            )
-                            logger.debug(
-                                f"[{session_id}] 💰 토큰 사용량: {node_token_usage.total_tokens} "
-                                f"(입력: {node_token_usage.input_tokens}, 출력: {node_token_usage.output_tokens})"
-                            )
-
-                        async for chunk in worker.execute_task(task_description, usage_callback=usage_callback):
-                            node_output_chunks.append(chunk)
-
-                            # 노드 출력 이벤트 (스트리밍)
-                            output_event = WorkflowNodeExecutionEvent(
-                                event_type="node_output",
-                                node_id=node_id,
-                                data={"chunk": chunk},
-                            )
-                            logger.debug(f"[{session_id}] 📝 이벤트 생성: node_output (node: {node_id}, chunk: {len(chunk)}자)")
-                            yield output_event
-
-                        # 노드 출력 저장
-                        node_output = "".join(node_output_chunks)
-                        node_outputs[node_id] = node_output
-
-                        # 실행 시간 계산
-                        elapsed_time = time.time() - start_time
-
-                        # 노드 완료 이벤트
-                        complete_event = WorkflowNodeExecutionEvent(
-                            event_type="node_complete",
-                            node_id=node_id,
-                            data={
-                                "agent_name": agent_name,
-                                "output_length": len(node_output),
-                            },
-                            timestamp=datetime.now().isoformat(),
-                            elapsed_time=elapsed_time,
-                            token_usage=node_token_usage,
-                        )
-                        logger.info(f"[{session_id}] ✅ 이벤트 생성: node_complete (node: {node_id}, agent: {agent_name})")
-                        yield complete_event
-
-                        logger.info(
-                            f"[{session_id}] 노드 완료: {node_id} ({agent_name}) "
-                            f"- 출력 길이: {len(node_output)}"
-                        )
-
-                    except Exception as e:
-                        error_msg = f"노드 실행 실패: {str(e)}"
-                        logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
-
-                        # 실행 시간 계산 (에러 발생까지의 시간)
-                        elapsed_time = time.time() - start_time
-
-                        # 노드 에러 이벤트
-                        error_event = WorkflowNodeExecutionEvent(
-                            event_type="node_error",
-                            node_id=node_id,
-                            data={"error": error_msg},
-                            timestamp=datetime.now().isoformat(),
-                            elapsed_time=elapsed_time,
-                        )
-                        logger.error(f"[{session_id}] 🔴 이벤트 생성: node_error (node: {node_id})")
-                        yield error_event
-
-                        # 워크플로우 중단
-                        raise
+                        for event in events:
+                            yield event
 
             logger.info(f"[{session_id}] 워크플로우 실행 완료: {workflow.name}")
 

@@ -21,6 +21,7 @@ interface ManagerNodeConfigProps {
 interface ManagerNodeData {
   task_description: string
   available_workers: string[]
+  parallel_execution?: boolean
 }
 
 export const ManagerNodeConfig: React.FC<ManagerNodeConfigProps> = ({ node }) => {
@@ -48,6 +49,7 @@ export const ManagerNodeConfig: React.FC<ManagerNodeConfigProps> = ({ node }) =>
     initialData: {
       task_description: node.data.task_description || '',
       available_workers: node.data.available_workers || [],
+      parallel_execution: node.data.parallel_execution ?? false,
     },
     onValidate: (data) => {
       const errors: Record<string, string> = {}
@@ -198,6 +200,30 @@ export const ManagerNodeConfig: React.FC<ManagerNodeConfigProps> = ({ node }) =>
                   })}
                 </div>
               )}
+            </div>
+
+            {/* 병렬 실행 옵션 */}
+            <div className="space-y-2 border-t pt-4">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">병렬 실행</label>
+                <span title="이 노드에서 여러 자식 노드로 연결된 경우, 자식 노드들을 병렬로 실행할지 순차적으로 실행할지 선택합니다">
+                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                </span>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={data.parallel_execution ?? false}
+                  onChange={(e) => setData({ ...data, parallel_execution: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span>자식 노드들을 병렬로 실행</span>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                {data.parallel_execution
+                  ? '✅ 이 노드의 자식 노드들이 동시에 실행되어 전체 실행 시간이 단축됩니다'
+                  : '⚪ 자식 노드들이 순차적으로 실행됩니다'}
+              </p>
             </div>
           </TabsContent>
 

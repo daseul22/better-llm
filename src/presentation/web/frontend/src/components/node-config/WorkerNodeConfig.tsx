@@ -25,6 +25,7 @@ interface WorkerNodeData {
   allowed_tools?: string[]
   thinking?: boolean
   system_prompt?: string  // 커스텀 워커용 시스템 프롬프트
+  parallel_execution?: boolean  // 병렬 실행 플래그
   config?: {
     output_format?: string
     custom_prompt?: string
@@ -62,6 +63,7 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
     allowed_tools: node.data.allowed_tools || [],
     thinking: node.data.thinking,
     system_prompt: node.data.system_prompt || '',  // 커스텀 워커용
+    parallel_execution: node.data.parallel_execution ?? false,
     config: {
       output_format: node.data.config?.output_format || 'plain_text',
       custom_prompt: node.data.config?.custom_prompt || '',
@@ -255,6 +257,30 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
               <option value="json">JSON</option>
               <option value="code">Code Block</option>
             </select>
+          </div>
+
+          {/* 병렬 실행 옵션 */}
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">병렬 실행</label>
+              <span title="이 노드에서 여러 자식 노드로 연결된 경우, 자식 노드들을 병렬로 실행할지 순차적으로 실행할지 선택합니다">
+                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+              </span>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={data.parallel_execution ?? false}
+                onChange={(e) => setData({ ...data, parallel_execution: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <span>자식 노드들을 병렬로 실행</span>
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {data.parallel_execution
+                ? '✅ 이 노드의 자식 노드들이 동시에 실행되어 전체 실행 시간이 단축됩니다'
+                : '⚪ 자식 노드들이 순차적으로 실행됩니다'}
+            </p>
           </div>
         </TabsContent>
 
