@@ -1,3 +1,0 @@
-"""
-Mock objects for testing
-"""
