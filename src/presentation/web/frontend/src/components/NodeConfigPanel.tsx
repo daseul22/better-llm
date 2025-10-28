@@ -515,7 +515,7 @@ export const NodeConfigPanel: React.FC = () => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           {/* 탭 헤더 */}
-          <TabsList className="flex w-full mx-1 mt-4 gap-1">
+          <TabsList className="flex w-full px-4 mt-4 gap-1">
             <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">기본</TabsTrigger>
             <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">로그</TabsTrigger>
             <TabsTrigger value="info" className="text-xs flex-1 min-w-0">정보</TabsTrigger>
@@ -818,7 +818,7 @@ export const NodeConfigPanel: React.FC = () => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           {/* 탭 헤더 */}
-          <TabsList className="flex w-full mx-1 mt-4 gap-1">
+          <TabsList className="flex w-full px-4 mt-4 gap-1">
             <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">기본</TabsTrigger>
             <TabsTrigger value="workers" className="text-xs flex-1 min-w-0">워커</TabsTrigger>
             <TabsTrigger value="info" className="text-xs flex-1 min-w-0">정보</TabsTrigger>
@@ -1127,7 +1127,7 @@ export const NodeConfigPanel: React.FC = () => {
       </CardHeader>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="flex w-full mx-1 mt-4 gap-1">
+        <TabsList className="flex w-full px-4 mt-4 gap-1">
           <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">기본</TabsTrigger>
           <TabsTrigger value="tools" className="text-xs flex-1 min-w-0">도구</TabsTrigger>
           <TabsTrigger value="advanced" className="text-xs flex-1 min-w-0">고급</TabsTrigger>
