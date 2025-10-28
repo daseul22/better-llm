@@ -126,7 +126,8 @@ export async function executeWorkflow(
   initialInput: string,
   onEvent: (event: WorkflowExecutionEvent) => void,
   onComplete: () => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/workflows/execute`, {
     method: 'POST',
@@ -138,6 +139,7 @@ export async function executeWorkflow(
       workflow,
       initial_input: initialInput,
     }),
+    signal,
   })
 
   if (!response.ok) {
@@ -233,6 +235,12 @@ export async function executeWorkflow(
       }
     }
   } catch (error) {
+    // AbortError는 정상적인 중단이므로 에러로 처리하지 않음
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.log('[SSE] 사용자가 실행을 중단했습니다')
+      onComplete()
+      return
+    }
     const errorMsg = error instanceof Error ? error.message : String(error)
     onError(errorMsg)
   } finally {

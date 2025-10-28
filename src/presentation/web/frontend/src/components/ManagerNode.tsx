@@ -47,7 +47,7 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
   }
 
   return (
-    <div className={cn('min-w-[280px] relative', !isExecuting && !isCompleted && 'node-appear')}>
+    <div style={{ width: '260px', display: 'block', boxSizing: 'border-box' }}>
       {/* 입력 핸들 (위쪽 가운데) */}
       <Handle
         type="target"
@@ -55,9 +55,9 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
         id="input"
         style={{
           position: 'absolute',
-          top: '-6px',
+          top: 0,
           left: '50%',
-          transform: 'translateX(-50%)',
+          transform: 'translate(-50%, -50%)',
           backgroundColor: '#a855f7',
           width: '12px',
           height: '12px',
@@ -67,54 +67,49 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
       />
 
       <Card
+        style={{ width: '260px', boxSizing: 'border-box' }}
         className={cn(
           'border-2 transition-all',
           statusClass,
           selected && 'ring-2 ring-purple-500',
-          isExecuting && 'pulse-border'
+          isExecuting && 'pulse-border',
+          !isExecuting && !isCompleted && 'node-appear'
         )}
       >
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              {isExecuting && <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />}
-              {isCompleted && !hasError && <CheckCircle2 className="h-4 w-4 text-green-600" />}
-              {hasError && <XCircle className="h-4 w-4 text-red-600" />}
-              {!isExecuting && !isCompleted && !hasError && <Target className="h-4 w-4 text-purple-600" />}
+        <CardHeader className="py-2 px-3">
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              {isExecuting && <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-600" />}
+              {isCompleted && !hasError && <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />}
+              {hasError && <XCircle className="h-3.5 w-3.5 text-red-600" />}
+              {!isExecuting && !isCompleted && !hasError && <Target className="h-3.5 w-3.5 text-purple-600" />}
               Manager
             </span>
             {statusText && (
-              <span className={cn('text-xs font-normal', statusColor)}>
+              <span className={cn('text-[10px] font-normal', statusColor)}>
                 {statusText}
               </span>
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="pb-4 space-y-2">
+        <CardContent className="py-1.5 px-3 space-y-1">
           {/* 작업 설명 미리보기 */}
-          <div className="text-xs text-muted-foreground">
-            {task_description?.substring(0, 60) || '작업 설명을 입력하세요...'}
-            {(task_description?.length || 0) > 60 && '...'}
+          <div className="text-[11px] text-muted-foreground line-clamp-1">
+            {task_description?.substring(0, 80) || '작업 설명을 입력하세요...'}
+            {(task_description?.length || 0) > 80 && '...'}
           </div>
-
-          {/* 진행 바 */}
-          {isExecuting && (
-            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-              <div className="h-full bg-purple-500 progress-bar rounded-full" />
-            </div>
-          )}
 
           {/* 등록된 워커 표시 */}
           {available_workers && available_workers.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-purple-200">
-              <div className="text-xs font-semibold text-purple-700 mb-1">
-                등록된 워커 ({available_workers.length}개)
+            <div className="pt-1 border-t border-purple-200">
+              <div className="text-[10px] font-semibold text-purple-700 mb-1">
+                워커 ({available_workers.length})
               </div>
               <div className="flex flex-wrap gap-1">
                 {available_workers.map((worker) => (
                   <span
                     key={worker}
-                    className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded"
+                    className="px-1.5 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded"
                   >
                     {worker}
                   </span>
@@ -132,9 +127,9 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
         id="output"
         style={{
           position: 'absolute',
-          bottom: '-6px',
+          bottom: 0,
           left: '50%',
-          transform: 'translateX(-50%)',
+          transform: 'translate(-50%, 50%)',
           backgroundColor: '#a855f7',
           width: '12px',
           height: '12px',

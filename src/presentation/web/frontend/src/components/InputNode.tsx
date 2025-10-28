@@ -7,7 +7,7 @@
  * - 실행 상태 표시
  */
 
-import { memo, useState } from 'react'
+import { memo, useState, useRef } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,7 @@ interface InputNodeData {
 export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>) => {
   const { initial_input, isExecuting, isCompleted, hasError } = data
   const [localIsRunning, setLocalIsRunning] = useState(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const {
     getWorkflow,
@@ -70,6 +71,10 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
       startExecution()
 
       const workflow = getWorkflow()
+
+      // AbortController 생성
+      const abortController = new AbortController()
+      abortControllerRef.current = abortController
 
       await executeWorkflow(
         workflow,
@@ -138,7 +143,9 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
           updateNode(id, { isExecuting: false, hasError: true })
           stopExecution()
           addLog('', 'error', `실행 실패: ${error}`)
-        }
+        },
+        // signal
+        abortController.signal
       )
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
@@ -151,76 +158,75 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
 
   // 실행 중단
   const handleStop = () => {
+    // AbortController로 실행 중단
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+
     setLocalIsRunning(false)
     updateNode(id, { isExecuting: false })
     stopExecution()
-    addLog('', 'error', '사용자가 실행을 중단했습니다')
+    addLog('', 'error', '⏹️ 사용자가 실행을 중단했습니다')
   }
 
   return (
-    <div className={cn('min-w-[300px] relative', !isExecuting && !isCompleted && 'node-appear')}>
+    <div style={{ width: '260px', display: 'block', boxSizing: 'border-box' }}>
       <Card
+        style={{ width: '260px', boxSizing: 'border-box' }}
         className={cn(
           'border-2 transition-all',
           statusClass,
           selected && 'ring-2 ring-emerald-500',
-          isExecuting && 'pulse-border'
+          isExecuting && 'pulse-border',
+          !isExecuting && !isCompleted && 'node-appear'
         )}
       >
-        <CardHeader className="pb-3 bg-gradient-to-r from-emerald-500 to-teal-500">
-          <CardTitle className="text-base flex items-center justify-between text-white">
-            <span className="flex items-center gap-2">
-              {isExecuting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isCompleted && !hasError && <CheckCircle2 className="h-4 w-4" />}
-              {hasError && <XCircle className="h-4 w-4" />}
-              {!isExecuting && !isCompleted && !hasError && <Zap className="h-4 w-4" />}
+        <CardHeader className="py-2 px-3 bg-gradient-to-r from-emerald-500 to-teal-500">
+          <CardTitle className="text-sm flex items-center justify-between text-white">
+            <span className="flex items-center gap-1.5">
+              {isExecuting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {isCompleted && !hasError && <CheckCircle2 className="h-3.5 w-3.5" />}
+              {hasError && <XCircle className="h-3.5 w-3.5" />}
+              {!isExecuting && !isCompleted && !hasError && <Zap className="h-3.5 w-3.5" />}
               START
             </span>
             {statusText && (
-              <span className={cn('text-xs font-normal', statusColor, 'bg-white/20 px-2 py-1 rounded')}>
+              <span className="text-[10px] font-normal bg-white/20 px-1.5 py-0.5 rounded">
                 {statusText}
               </span>
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="pb-4 space-y-2">
+        <CardContent className="py-1.5 px-3 space-y-1">
           {/* 입력 텍스트 미리보기 */}
-          <div className="text-xs text-muted-foreground bg-white border border-emerald-200 rounded-md p-2.5 max-h-16 overflow-hidden">
-            {initial_input?.substring(0, 80) || '초기 입력을 설정하세요...'}
-            {(initial_input?.length || 0) > 80 && '...'}
+          <div className="text-[11px] text-muted-foreground bg-white border border-emerald-200 rounded p-1.5 max-h-12 overflow-hidden line-clamp-2">
+            {initial_input?.substring(0, 60) || '초기 입력을 설정하세요...'}
+            {(initial_input?.length || 0) > 60 && '...'}
           </div>
-
-          {/* 진행 바 */}
-          {isExecuting && (
-            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-              <div className="h-full bg-emerald-500 progress-bar rounded-full" />
-            </div>
-          )}
 
           {/* 실행 버튼 */}
-          <div className="flex gap-2 pt-1">
-            {!localIsRunning ? (
-              <Button
-                onClick={handleExecute}
-                disabled={!initial_input?.trim()}
-                size="sm"
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-              >
-                <Play className="mr-2 h-4 w-4" />
-                워크플로우 시작
-              </Button>
-            ) : (
-              <Button
-                onClick={handleStop}
-                size="sm"
-                variant="destructive"
-                className="flex-1 font-semibold"
-              >
-                <Square className="mr-2 h-4 w-4" />
-                중단
-              </Button>
-            )}
-          </div>
+          {!localIsRunning ? (
+            <Button
+              onClick={handleExecute}
+              disabled={!initial_input?.trim()}
+              size="sm"
+              className="w-full h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+            >
+              <Play className="mr-1 h-3 w-3" />
+              시작
+            </Button>
+          ) : (
+            <Button
+              onClick={handleStop}
+              size="sm"
+              variant="destructive"
+              className="w-full h-7 text-xs font-semibold"
+            >
+              <Square className="mr-1 h-3 w-3" />
+              중단
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -231,14 +237,13 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
         id="output"
         style={{
           position: 'absolute',
-          bottom: '-6px',
+          bottom: 0,
           left: '50%',
-          transform: 'translateX(-50%)',
+          transform: 'translate(-50%, 50%)',
           backgroundColor: '#10b981',
-          width: '16px',
-          height: '16px',
+          width: '12px',
+          height: '12px',
           borderRadius: '50%',
-          border: '2px solid white',
           zIndex: 1
         }}
       />

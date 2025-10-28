@@ -4,6 +4,7 @@
 워크플로우 저장, 조회, 실행을 위한 엔드포인트를 제공합니다.
 """
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -148,6 +149,12 @@ async def execute_workflow(
             logger.info(f"[{session_id}] ✅ SSE 스트림 완료 (총 {event_count}개 이벤트)")
             logger.info(f"[{session_id}] 📤 [DONE] 시그널 전송")
             yield {"data": "[DONE]"}
+
+        except asyncio.CancelledError:
+            # 클라이언트가 연결을 끊은 경우 (정상적인 중단)
+            logger.info(f"[{session_id}] ⏹️ 클라이언트가 연결을 끊었습니다 (워크플로우 중단)")
+            # [DONE] 시그널을 보내지 않음 (이미 연결이 끊어짐)
+            raise  # CancelledError는 재발생시켜 정리 작업이 이루어지도록 함
 
         except Exception as e:
             error_msg = f"ERROR: {str(e)}"

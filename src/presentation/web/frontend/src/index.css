@@ -75,6 +75,22 @@
   }
 }
 
+/* React Flow 레이어 구조 재정의 */
+/* 엣지 컨테이너를 노드 컨테이너보다 위에 표시 */
+.react-flow__edges {
+  z-index: 1000 !important;
+  pointer-events: none !important; /* 엣지 자체는 클릭 가능하게 */
+}
+
+.react-flow__edges * {
+  pointer-events: auto !important; /* 엣지 요소는 클릭 가능 */
+}
+
+/* 노드 컨테이너를 엣지보다 아래에 표시 */
+.react-flow__nodes {
+  z-index: 1 !important;
+}
+
 /* React Flow 커스텀 노드 스타일 오버라이드 */
 .react-flow__node-input,
 .react-flow__node-worker,
@@ -89,47 +105,51 @@
   box-shadow: none !important;
   /* 기본 border-radius 제거 */
   border-radius: 0 !important;
+  /* 노드를 엣지보다 아래로 */
+  z-index: 1 !important;
 }
 
-/* Handle 위치 고정 - 모든 노드 타입에 동일하게 적용 */
+/* 개별 노드도 낮은 z-index */
+.react-flow__node {
+  z-index: 1 !important;
+}
+
+/* 선택된 노드는 다른 노드보다 위에 표시하되 여전히 엣지보다는 아래 */
+.react-flow__node.selected {
+  z-index: 10 !important;
+}
+
+/* 드래그 중인 노드도 엣지보다 아래 */
+.react-flow__node.dragging {
+  z-index: 10 !important;
+}
+
+/* Handle 기본 스타일 - 위치는 인라인 스타일 사용 */
 .react-flow__node .react-flow__handle {
-  position: absolute !important;
   border-radius: 50% !important;
   z-index: 1 !important;
 }
 
-/* 엣지(화살표)를 핸들보다 위에 표시 */
+/* 개별 엣지도 높은 z-index */
 .react-flow__edge {
-  z-index: 100 !important;
+  z-index: 1000 !important;
+  transition: stroke 0.2s ease, stroke-width 0.2s ease !important;
 }
 
-/* 위쪽 핸들 */
-.react-flow__node .react-flow__handle-top {
-  top: -6px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: 12px !important;
-  height: 12px !important;
+/* 선택된 엣지는 더 위에 표시하고 강조 */
+.react-flow__edge.selected {
+  z-index: 1001 !important;
 }
 
-/* 아래쪽 핸들 */
-.react-flow__node .react-flow__handle-bottom {
-  bottom: -6px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: 12px !important;
-  height: 12px !important;
+.react-flow__edge.selected path {
+  stroke: #10b981 !important; /* 초록색 */
+  stroke-width: 4 !important;
 }
 
-/* InputNode의 출력 핸들만 조금 더 크게 */
-.react-flow__node-input .react-flow__handle-bottom {
-  width: 16px !important;
-  height: 16px !important;
-  bottom: -8px !important;
-  /* 디버깅용: 강제로 눈에 띄게 */
-  background-color: #10b981 !important;
-  border: 3px solid white !important;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.8) !important;
+/* 엣지 호버 효과 */
+.react-flow__edge:hover path {
+  stroke-width: 3 !important;
+  opacity: 0.8;
 }
 
 /* React Flow 노드가 선택되었을 때 기본 스타일 제거 */

@@ -616,7 +616,7 @@ export const NodeConfigPanel: React.FC = () => {
                     초기화
                   </Button>
                 </div>
-                <div className="overflow-y-auto bg-gray-50 border rounded-md p-3 space-y-1 max-h-96">
+                <div className="overflow-y-auto bg-gray-50 border rounded-md p-3 space-y-1 max-h-[600px]">
                   {logs.length === 0 ? (
                     <div className="text-xs text-muted-foreground">
                       실행 로그가 표시됩니다...

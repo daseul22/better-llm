@@ -94,7 +94,7 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
   }
 
   return (
-    <div className={cn('min-w-[250px] relative', !isExecuting && !isCompleted && 'node-appear')}>
+    <div style={{ width: '260px', display: 'block', boxSizing: 'border-box' }}>
       {/* 입력 핸들 (위쪽 가운데) */}
       <Handle
         type="target"
@@ -102,9 +102,9 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
         id="input"
         style={{
           position: 'absolute',
-          top: '-6px',
+          top: 0,
           left: '50%',
-          transform: 'translateX(-50%)',
+          transform: 'translate(-50%, -50%)',
           backgroundColor: '#3b82f6',
           width: '12px',
           height: '12px',
@@ -114,38 +114,40 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
       />
 
       <Card
+        style={{ width: '260px', boxSizing: 'border-box' }}
         className={cn(
           'border-2 transition-all',
           statusClass,
           selected && 'ring-2 ring-blue-500',
-          isExecuting && 'pulse-border'
+          isExecuting && 'pulse-border',
+          !isExecuting && !isCompleted && 'node-appear'
         )}
       >
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              {isExecuting && <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />}
-              {isCompleted && !hasError && !hasValidationError && <CheckCircle2 className="h-4 w-4 text-green-600" />}
-              {hasError && <XCircle className="h-4 w-4 text-red-600" />}
-              {statusIcon}
+        <CardHeader className="py-2 px-3">
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              {isExecuting && <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-600" />}
+              {!isExecuting && isCompleted && !hasError && !hasValidationError && <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />}
+              {!isExecuting && hasError && <XCircle className="h-3.5 w-3.5 text-red-600" />}
+              {!isExecuting && !isCompleted && !hasError && statusIcon}
               {agent_name || '워커 선택'}
             </span>
             {statusText && (
-              <span className={cn('text-xs font-normal', statusColor)}>
+              <span className={cn('text-[10px] font-normal', statusColor)}>
                 {statusText}
               </span>
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="pb-4 space-y-2">
-          <div className="text-xs text-muted-foreground">
-            {data.task_template?.substring(0, 60) || '작업 템플릿을 입력하세요...'}
-            {(data.task_template?.length || 0) > 60 && '...'}
+        <CardContent className="py-1.5 px-3 space-y-1">
+          <div className="text-[11px] text-muted-foreground line-clamp-1">
+            {data.task_template?.substring(0, 80) || '작업 템플릿을 입력하세요...'}
+            {(data.task_template?.length || 0) > 80 && '...'}
           </div>
 
           {/* 실행 시간 표시 */}
           {elapsedTime !== undefined && (
-            <div className="flex items-center gap-1 text-xs text-gray-600">
+            <div className="flex items-center gap-1 text-[10px] text-gray-600">
               <Clock className="h-3 w-3" />
               <span>{elapsedTime.toFixed(1)}초</span>
             </div>
@@ -153,22 +155,19 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
 
           {/* 토큰 사용량 표시 */}
           {tokenUsage && (
-            <div className="text-xs text-gray-600 bg-gray-100 rounded px-2 py-1">
+            <div className="text-[10px] text-gray-600 bg-gray-100 rounded px-1.5 py-1">
               <span className="font-mono">{tokenUsage.total_tokens.toLocaleString()} tokens</span>
-              <span className="text-gray-400 ml-1">
-                ({tokenUsage.input_tokens.toLocaleString()} in / {tokenUsage.output_tokens.toLocaleString()} out)
-              </span>
             </div>
           )}
 
           {/* 검증 에러 표시 */}
           {validationErrors.length > 0 && (
-            <div className="space-y-1 text-xs">
+            <div className="space-y-1 text-[10px]">
               {validationErrors.map((error, idx) => (
                 <div
                   key={idx}
                   className={cn(
-                    'p-2 rounded',
+                    'p-1.5 rounded',
                     error.severity === 'error' && 'bg-red-100 text-red-800',
                     error.severity === 'warning' && 'bg-yellow-100 text-yellow-800',
                     error.severity === 'info' && 'bg-blue-100 text-blue-800'
@@ -176,17 +175,10 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
                 >
                   <div className="font-medium">{error.message}</div>
                   {error.suggestion && (
-                    <div className="text-xs mt-1 opacity-90">{error.suggestion}</div>
+                    <div className="text-[10px] mt-0.5 opacity-90">{error.suggestion}</div>
                   )}
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* 진행 바 */}
-          {isExecuting && (
-            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-              <div className="h-full bg-yellow-500 progress-bar rounded-full" />
             </div>
           )}
         </CardContent>
@@ -199,9 +191,9 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
         id="output"
         style={{
           position: 'absolute',
-          bottom: '-6px',
+          bottom: 0,
           left: '50%',
-          transform: 'translateX(-50%)',
+          transform: 'translate(-50%, 50%)',
           backgroundColor: '#3b82f6',
           width: '12px',
           height: '12px',

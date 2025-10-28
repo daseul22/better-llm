@@ -107,6 +107,14 @@ class WorkflowExecutor:
                 continue
             valid_edges.append(edge)
 
+        # Input 노드 찾기 (시작점)
+        input_nodes = [node for node in nodes if node.type == "input"]
+        if not input_nodes:
+            raise ValueError("워크플로우에 Input 노드가 없습니다. Input 노드에서 시작해야 합니다.")
+
+        # 여러 Input 노드가 있는 경우 모두 시작점으로 사용
+        input_node_ids = [node.id for node in input_nodes]
+
         # 인접 리스트 (노드 ID → 자식 노드 ID 목록)
         adjacency: Dict[str, List[str]] = {node.id: [] for node in nodes}
         in_degree: Dict[str, int] = {node.id: 0 for node in nodes}
@@ -115,22 +123,64 @@ class WorkflowExecutor:
             adjacency[edge.source].append(edge.target)
             in_degree[edge.target] += 1
 
-        # 진입 차수가 0인 노드로 시작
-        queue = deque([node_id for node_id, deg in in_degree.items() if deg == 0])
+        # Input 노드에서 도달 가능한 노드만 필터링 (BFS)
+        reachable_nodes = set(input_node_ids)
+        bfs_queue = deque(input_node_ids)
+
+        while bfs_queue:
+            current_id = bfs_queue.popleft()
+            for child_id in adjacency[current_id]:
+                if child_id not in reachable_nodes:
+                    reachable_nodes.add(child_id)
+                    bfs_queue.append(child_id)
+
+        # 도달 불가능한 노드 경고
+        unreachable_nodes = [node.id for node in nodes if node.id not in reachable_nodes]
+        if unreachable_nodes:
+            logger.warning(
+                f"Input 노드에서 도달할 수 없는 노드가 있습니다: {unreachable_nodes}. "
+                "이 노드들은 실행되지 않습니다."
+            )
+
+        # 도달 가능한 노드만으로 위상 정렬 수행
+        # Input 노드만 시작점으로 설정
+        queue = deque(input_node_ids)
         sorted_nodes = []
+        visited = set()
 
         while queue:
             node_id = queue.popleft()
+
+            if node_id in visited:
+                continue
+
+            # 도달 불가능한 노드는 건너뜀
+            if node_id not in reachable_nodes:
+                continue
+
+            # 모든 부모 노드가 처리되었는지 확인
+            parents_ready = True
+            for edge in valid_edges:
+                if edge.target == node_id and edge.source in reachable_nodes:
+                    if edge.source not in visited:
+                        parents_ready = False
+                        break
+
+            if not parents_ready:
+                # 부모 노드가 아직 처리되지 않았으면 큐 뒤로
+                queue.append(node_id)
+                continue
+
+            visited.add(node_id)
             sorted_nodes.append(node_map[node_id])
 
-            # 자식 노드의 진입 차수 감소
+            # 자식 노드를 큐에 추가
             for child_id in adjacency[node_id]:
-                in_degree[child_id] -= 1
-                if in_degree[child_id] == 0:
+                if child_id not in visited and child_id in reachable_nodes:
                     queue.append(child_id)
 
-        # 순환 참조 검사
-        if len(sorted_nodes) != len(nodes):
+        # 순환 참조 검사 (도달 가능한 노드 기준)
+        if len(sorted_nodes) != len(reachable_nodes):
             raise ValueError("워크플로우에 순환 참조가 있습니다")
 
         return sorted_nodes

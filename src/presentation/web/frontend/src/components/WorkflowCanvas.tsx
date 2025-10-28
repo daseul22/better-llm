@@ -103,7 +103,6 @@ export const WorkflowCanvas: React.FC = () => {
       type: 'default',
       animated: true,
       style: { stroke: '#3b82f6', strokeWidth: 2 },
-      zIndex: 100,
       markerEnd: {
         type: 'arrowclosed' as const,
         color: '#3b82f6',
@@ -158,7 +157,6 @@ export const WorkflowCanvas: React.FC = () => {
             stroke: isActiveEdge ? '#facc15' : '#3b82f6', // 실행 중: 노란색, 기본: 파란색
             strokeWidth: isActiveEdge ? 3 : 2,
           },
-          zIndex: 100,
           markerEnd: {
             ...(edge.markerEnd as any),
             color: isActiveEdge ? '#facc15' : '#3b82f6',
@@ -202,10 +200,31 @@ export const WorkflowCanvas: React.FC = () => {
     (changes) => {
       onEdgesChange(changes)
 
-      // 삭제된 엣지를 Zustand에 반영
+      // 선택/삭제된 엣지 처리
       changes.forEach((change) => {
         if (change.type === 'remove') {
           deleteEdge(change.id)
+        } else if (change.type === 'select') {
+          // 선택된 엣지 강조
+          setLocalEdges((eds) =>
+            eds.map((edge) => {
+              if (edge.id === change.id) {
+                return {
+                  ...edge,
+                  style: {
+                    ...edge.style,
+                    stroke: change.selected ? '#10b981' : '#3b82f6', // 선택: 초록색, 기본: 파란색
+                    strokeWidth: change.selected ? 4 : 2,
+                  },
+                  markerEnd: {
+                    ...(edge.markerEnd as any),
+                    color: change.selected ? '#10b981' : '#3b82f6',
+                  },
+                }
+              }
+              return edge
+            })
+          )
         }
       })
 
@@ -236,7 +255,6 @@ export const WorkflowCanvas: React.FC = () => {
         type: 'default',
         animated: true,  // 애니메이션 효과
         style: { stroke: '#3b82f6', strokeWidth: 2 },  // 파란색, 두께 2
-        zIndex: 100,
         markerEnd: {
           type: 'arrowclosed' as const,
           color: '#3b82f6',
@@ -314,6 +332,8 @@ export const WorkflowCanvas: React.FC = () => {
         nodeTypes={nodeTypes}
         fitView
         className="bg-gray-50"
+        elevateEdgesOnSelect={false}
+        elevateNodesOnSelect={false}
       >
         <Background />
         <Controls />

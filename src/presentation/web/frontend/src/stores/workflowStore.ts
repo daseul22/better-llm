@@ -247,7 +247,23 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         ...state.execution,
         isExecuting: false,
         currentNodeId: null,
+        // 모든 노드 상태 초기화 (실행 중단 시)
+        nodeMeta: Object.keys(state.execution.nodeMeta).reduce((acc, nodeId) => {
+          acc[nodeId] = {
+            ...state.execution.nodeMeta[nodeId],
+            status: 'idle' as NodeExecutionStatus,
+          }
+          return acc
+        }, {} as Record<string, NodeExecutionMeta>),
       },
+      // 노드 데이터의 isExecuting 플래그도 초기화
+      nodes: state.nodes.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          isExecuting: false,
+        }
+      })),
     })),
 
   setCurrentNode: (nodeId) =>

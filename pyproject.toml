@@ -41,6 +41,7 @@ dev = [
 better-llm = "src.presentation.tui.tui_app:main"
 better-llm-cli = "src.presentation.cli.orchestrator:main"
 better-llm-web = "src.presentation.web.app:main"
+better-llm-calculator = "src.presentation.calculator.calculator_app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
