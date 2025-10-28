@@ -57,6 +57,7 @@ class AgentInfo(BaseModel):
     description: str = Field(..., description="Agent 설명")
     system_prompt: str = Field(..., description="시스템 프롬프트 원본")
     allowed_tools: List[str] = Field(default_factory=list, description="사용 가능한 도구 목록")
+    model: Optional[str] = Field(None, description="사용하는 Claude 모델")
 
 
 class AgentListResponse(BaseModel):

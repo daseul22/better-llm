@@ -124,12 +124,18 @@ async def list_agents(
             if hasattr(config, 'allowed_tools') and config.allowed_tools:
                 allowed_tools = list(config.allowed_tools)
 
+            # model 정보 안전하게 처리
+            model = None
+            if hasattr(config, 'model') and config.model:
+                model = config.model
+
             agents.append(AgentInfo(
                 name=config.name,
                 role=config.role,
                 description=f"{config.role} 전문가",
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
+                model=model,
             ))
 
         logger.info(f"✅ Agent 목록 조회: {len(agents)}개 (시스템 프롬프트 포함)")

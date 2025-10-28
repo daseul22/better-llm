@@ -1140,53 +1140,64 @@ export const NodeConfigPanel: React.FC = () => {
         </TabsContent>
 
         {/* 정보 탭 */}
-        <TabsContent value="info" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+        <TabsContent value="info" className="flex-1 overflow-y-auto px-4 pb-20 space-y-4 mt-4">
           <div className="space-y-4">
             {/* 노드 정보 */}
             <div className="border rounded-md p-3 bg-gray-50">
               <div className="text-sm font-medium mb-2">노드 정보</div>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <div className="flex justify-between">
-                  <span>ID:</span>
-                  <span className="font-mono">{selectedNode.id}</span>
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <div>
+                  <span className="font-medium">ID:</span>
+                  <div className="font-mono text-gray-600 mt-0.5 break-all">{selectedNode.id}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span>타입:</span>
-                  <span>Worker</span>
+                <div>
+                  <span className="font-medium">타입:</span>
+                  <div className="text-gray-600 mt-0.5">Worker</div>
                 </div>
-                <div className="flex justify-between">
-                  <span>Agent:</span>
-                  <span className="font-medium">{selectedNode.data.agent_name}</span>
+                <div>
+                  <span className="font-medium">Agent:</span>
+                  <div className="text-gray-600 mt-0.5">{selectedNode.data.agent_name}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span>위치:</span>
-                  <span className="font-mono">
+                <div>
+                  <span className="font-medium">위치:</span>
+                  <div className="font-mono text-gray-600 mt-0.5">
                     ({Math.round(selectedNode.position.x)}, {Math.round(selectedNode.position.y)})
-                  </span>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Agent 정보 */}
-            {agents.find((a) => a.name === selectedNode.data.agent_name) && (
-              <div className="border rounded-md p-3 bg-blue-50 border-blue-200">
-                <div className="text-sm font-medium mb-2 text-blue-900">Agent 정보</div>
-                <div className="space-y-1 text-xs text-blue-800">
-                  <div>
-                    <span className="font-medium">역할:</span>{' '}
-                    {agents.find((a) => a.name === selectedNode.data.agent_name)?.role}
-                  </div>
-                  <div>
-                    <span className="font-medium">모델:</span>{' '}
-                    {agents.find((a) => a.name === selectedNode.data.agent_name)?.model}
-                  </div>
-                  <div>
-                    <span className="font-medium">기본 도구:</span>{' '}
-                    {agents.find((a) => a.name === selectedNode.data.agent_name)?.allowed_tools.join(', ')}
+            {(() => {
+              const currentAgent = agents.find((a) => a.name === selectedNode.data.agent_name)
+              if (!currentAgent) return null
+
+              return (
+                <div className="border rounded-md p-3 bg-blue-50 border-blue-200">
+                  <div className="text-sm font-medium mb-2 text-blue-900">Agent 정보</div>
+                  <div className="space-y-2 text-xs text-blue-800">
+                    <div>
+                      <span className="font-medium">역할:</span>
+                      <div className="mt-0.5">{currentAgent.role}</div>
+                    </div>
+                    <div>
+                      <span className="font-medium">모델:</span>
+                      <div className="mt-0.5 break-all">
+                        {currentAgent.model || 'claude-sonnet-4-5-20250929'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-medium">기본 도구:</span>
+                      <div className="mt-0.5 break-words">
+                        {currentAgent.allowed_tools?.length > 0
+                          ? currentAgent.allowed_tools.join(', ')
+                          : '없음'}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
             {/* 사용법 안내 */}
             <div className="border rounded-md p-3 bg-green-50 border-green-200">
