@@ -6,12 +6,12 @@
  */
 
 import React, { useEffect, useState, useRef } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Agent, getAgents, getCustomWorkers, getCurrentProject, CustomWorkerInfo, loadDisplayConfig, saveDisplayConfig } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus, Target, Zap, Search, ChevronDown, ChevronUp, Sparkles, GitBranch, RotateCw, Merge, Wand2, Loader2 } from 'lucide-react'
+import { Plus, Target, Zap, ChevronDown, ChevronUp, GitBranch, RotateCw, Merge, Wand2, Loader2 } from 'lucide-react'
 import { CustomWorkerCreateModal } from './CustomWorkerCreateModal'
 
 export const NodePanel: React.FC = () => {
@@ -19,7 +19,6 @@ export const NodePanel: React.FC = () => {
   const [customWorkers, setCustomWorkers] = useState<CustomWorkerInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'manager', 'advanced', 'general', 'specialized', 'custom']))
   const [isCustomWorkerModalOpen, setIsCustomWorkerModalOpen] = useState(false)
   const [projectPath, setProjectPath] = useState<string | null>(null)
@@ -90,15 +89,9 @@ export const NodePanel: React.FC = () => {
   const generalWorkers = ['planner', 'coder', 'reviewer', 'tester', 'committer', 'ideator', 'product_manager', 'documenter']
   const specializedWorkers = ['style_reviewer', 'security_reviewer', 'architecture_reviewer', 'bug_fixer', 'log_analyzer', 'summarizer']
 
-  // 검색 필터
-  const filteredAgents = agents.filter((agent) =>
-    agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    agent.role.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
   // 범용/특화 워커 분리
-  const filteredGeneralWorkers = filteredAgents.filter((agent) => generalWorkers.includes(agent.name))
-  const filteredSpecializedWorkers = filteredAgents.filter((agent) => specializedWorkers.includes(agent.name))
+  const filteredGeneralWorkers = agents.filter((agent) => generalWorkers.includes(agent.name))
+  const filteredSpecializedWorkers = agents.filter((agent) => specializedWorkers.includes(agent.name))
 
   // 프로젝트 경로 및 Agent 목록 로드
   useEffect(() => {
@@ -297,10 +290,7 @@ export const NodePanel: React.FC = () => {
   if (loading) {
     return (
       <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="text-lg">Worker 노드</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="text-sm text-muted-foreground">로딩 중...</div>
         </CardContent>
       </Card>
@@ -310,10 +300,7 @@ export const NodePanel: React.FC = () => {
   if (error) {
     return (
       <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="text-lg">Worker 노드</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="text-sm text-red-500">에러: {error}</div>
         </CardContent>
       </Card>
@@ -322,24 +309,7 @@ export const NodePanel: React.FC = () => {
 
   return (
     <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-primary" />
-          노드 추가
-        </CardTitle>
-        {/* 검색 바 */}
-        <div className="relative mt-3">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="노드 검색..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-      </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto space-y-3">
+      <CardContent className="flex-1 overflow-y-auto space-y-3 pt-6">
         {/* Input 노드 섹션 */}
         <div className="border rounded-lg overflow-hidden bg-emerald-50/50">
           <button
@@ -679,13 +649,6 @@ export const NodePanel: React.FC = () => {
               )}
             </div>
           )}
-        </div>
-
-        {/* 드래그 힌트 */}
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-xs text-blue-700">
-            <strong>💡 팁:</strong> 노드를 드래그하여 캔버스에 배치하거나 클릭하여 추가하세요
-          </p>
         </div>
       </CardContent>
 
