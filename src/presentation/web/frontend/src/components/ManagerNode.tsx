@@ -52,7 +52,7 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
       <Handle
         type="target"
         position={Position.Top}
-        className="!bg-purple-500 !w-3 !h-3"
+        className="!bg-purple-500 !w-3 !h-3 !left-1/2 !-translate-x-1/2"
       />
 
       <Card
@@ -118,7 +118,7 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!bg-purple-500 !w-3 !h-3"
+        className="!bg-purple-500 !w-3 !h-3 !left-1/2 !-translate-x-1/2"
       />
     </div>
   )

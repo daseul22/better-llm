@@ -15,6 +15,7 @@ export interface Agent {
   description: string
   system_prompt: string  // 시스템 프롬프트 원본
   allowed_tools: string[]  // 기본 도구 목록
+  model?: string  // 모델 정보 (옵셔널)
 }
 
 /**

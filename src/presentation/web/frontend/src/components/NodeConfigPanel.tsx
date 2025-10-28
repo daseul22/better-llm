@@ -2,9 +2,11 @@
  * 노드 설정 패널 컴포넌트
  *
  * 선택된 노드의 상세 설정을 표시하고 편집합니다.
- * - 기본 프롬프트 (task_template)
- * - Output 형식
- * - 추가 설정 (config)
+ * - 탭 기반 구조 (기본 설정 / 도구 / 고급 / 정보)
+ * - 검색 가능한 워커/도구 선택
+ * - 실시간 미리보기 및 유효성 검증
+ * - 키보드 단축키 지원 (Cmd+S, Cmd+K, Esc)
+ * - 자동 저장 (3초 debounce)
  */
 
 import React, { useEffect, useState, useRef } from 'react'
@@ -13,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { getAgents, Agent, getTools, Tool } from '@/lib/api'
-import { Save, Settings, ListChecks, Terminal } from 'lucide-react'
+import { Save, Settings, ListChecks, Terminal, Search, HelpCircle, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { parseClaudeMessage } from '@/lib/messageParser'
 
 export const NodeConfigPanel: React.FC = () => {
@@ -47,24 +49,67 @@ export const NodeConfigPanel: React.FC = () => {
   const [useDefaultTools, setUseDefaultTools] = useState(true) // 기본 도구 사용 여부
   const [canModifyTools, setCanModifyTools] = useState(true) // 도구 수정 가능 여부
 
+  // 검색 관련 상태
+  const [workerSearchQuery, setWorkerSearchQuery] = useState('')
+  const [toolSearchQuery, setToolSearchQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // 유효성 검증 상태
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // 탭 상태 (Worker 노드용)
+  const [activeTab, setActiveTab] = useState('basic')
+
+  // 자동 저장 타이머
+  const autoSaveTimerRef = useRef<number | null>(null)
+
   // 실행 로그 관련
   const logs = useWorkflowStore((state) => state.execution.logs)
   const logEndRef = useRef<HTMLDivElement>(null)
   const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set())
 
-  // 섹션 접기/펼치기 상태
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+  // 유효성 검증 함수
+  const validateSettings = () => {
+    const newErrors: Record<string, string> = {}
 
-  const toggleSection = (section: string) => {
-    setCollapsedSections((prev) => {
-      const next = new Set(prev)
-      if (next.has(section)) {
-        next.delete(section)
-      } else {
-        next.add(section)
+    if (!selectedNode) return true
+
+    // Input 노드 검증
+    if (selectedNode.type === 'input') {
+      if (!inputInitialInput.trim()) {
+        newErrors.initial_input = '초기 입력을 입력하세요'
       }
-      return next
-    })
+    }
+
+    // Manager 노드 검증
+    if (selectedNode.type === 'manager') {
+      if (!managerTaskDescription.trim()) {
+        newErrors.task_description = '작업 설명을 입력하세요'
+      }
+      if (managerAvailableWorkers.length === 0) {
+        newErrors.workers = '최소 1개의 워커를 선택하세요'
+      }
+    }
+
+    // Worker 노드 검증
+    if (selectedNode.type === 'worker') {
+      if (!taskTemplate.trim()) {
+        newErrors.task_template = '작업 템플릿을 입력하세요'
+      }
+      // 변수 구문 검증
+      const openBraces = (taskTemplate.match(/\{\{/g) || []).length
+      const closeBraces = (taskTemplate.match(/\}\}/g) || []).length
+      if (openBraces !== closeBraces) {
+        newErrors.task_template = '변수 구문이 올바르지 않습니다 ({{ }})'
+      }
+      // 도구 선택 검증
+      if (!useDefaultTools && allowedTools.length === 0) {
+        newErrors.tools = '최소 1개의 도구를 선택하거나 기본 설정을 사용하세요'
+      }
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
   }
 
   // 로그 자동 스크롤
@@ -119,6 +164,63 @@ export const NodeConfigPanel: React.FC = () => {
     }
     loadTools()
   }, [])
+
+  // 키보드 단축키
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+S / Ctrl+S: 저장
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        if (hasChanges && validateSettings()) {
+          handleSave()
+        }
+      }
+
+      // Cmd+K / Ctrl+K: 검색 포커스
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+
+      // Esc: 변경사항 초기화
+      if (e.key === 'Escape' && hasChanges) {
+        handleReset()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [hasChanges])
+
+  // 자동 저장 (3초 debounce)
+  useEffect(() => {
+    // 자동 저장 타이머 정리
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+    }
+
+    // 변경사항이 있고 유효성 검증 통과 시 자동 저장
+    if (hasChanges && validateSettings()) {
+      autoSaveTimerRef.current = setTimeout(() => {
+        handleSave()
+        setSaveMessage('✅ 자동 저장됨')
+        setTimeout(() => setSaveMessage(null), 2000)
+      }, 3000)
+    }
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+  }, [hasChanges, taskTemplate, outputFormat, customPrompt, allowedTools, useDefaultTools, managerTaskDescription, managerAvailableWorkers, inputInitialInput])
+
+  // 실시간 유효성 검증
+  useEffect(() => {
+    if (selectedNode) {
+      validateSettings()
+    }
+  }, [taskTemplate, managerTaskDescription, managerAvailableWorkers, inputInitialInput, allowedTools, useDefaultTools])
 
   // 선택된 노드가 변경되면 로컬 상태 초기화
   useEffect(() => {
@@ -345,6 +447,43 @@ export const NodeConfigPanel: React.FC = () => {
     }
   }
 
+  // 워커 선택 헬퍼
+  const selectAllWorkers = () => {
+    setManagerAvailableWorkers(agents.map((a) => a.name))
+  }
+
+  const selectNoWorkers = () => {
+    setManagerAvailableWorkers([])
+  }
+
+  const selectWorkerPreset = (preset: string) => {
+    switch (preset) {
+      case 'full-dev':
+        setManagerAvailableWorkers(['planner', 'coder', 'reviewer', 'tester'])
+        break
+      case 'quick-code':
+        setManagerAvailableWorkers(['coder', 'reviewer'])
+        break
+      case 'planning':
+        setManagerAvailableWorkers(['planner', 'product_manager'])
+        break
+      case 'creative':
+        setManagerAvailableWorkers(['ideator', 'planner'])
+        break
+    }
+  }
+
+  // 필터링된 워커 및 도구
+  const filteredAgents = agents.filter((agent) =>
+    agent.name.toLowerCase().includes(workerSearchQuery.toLowerCase()) ||
+    agent.role.toLowerCase().includes(workerSearchQuery.toLowerCase())
+  )
+
+  const filteredTools = tools.filter((tool) =>
+    tool.name.toLowerCase().includes(toolSearchQuery.toLowerCase()) ||
+    tool.description.toLowerCase().includes(toolSearchQuery.toLowerCase())
+  )
+
   if (!selectedNode) {
     return (
       <div className="h-full flex items-center justify-center p-6">
@@ -377,7 +516,12 @@ export const NodeConfigPanel: React.FC = () => {
         <CardContent className="flex-1 overflow-y-auto space-y-4">
           {/* 초기 입력 */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">초기 입력</label>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">초기 입력</label>
+              <span title="워크플로우를 시작하는 초기 입력입니다">
+                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+              </span>
+            </div>
             <textarea
               className="w-full p-2 border rounded-md text-sm"
               rows={8}
@@ -388,6 +532,12 @@ export const NodeConfigPanel: React.FC = () => {
             <p className="text-xs text-muted-foreground">
               이 입력이 연결된 첫 번째 노드로 전달됩니다.
             </p>
+            {errors.initial_input && (
+              <div className="text-xs text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                {errors.initial_input}
+              </div>
+            )}
           </div>
 
           {/* 노드 정보 */}
@@ -508,7 +658,8 @@ export const NodeConfigPanel: React.FC = () => {
         <div className="border-t p-4 space-y-2">
           {/* 저장 메시지 */}
           {saveMessage && (
-            <div className="text-xs text-center py-1 px-2 rounded bg-gray-100">
+            <div className="text-xs text-center py-1 px-2 rounded bg-green-100 text-green-700">
+              <CheckCircle2 className="inline h-3 w-3 mr-1" />
               {saveMessage}
             </div>
           )}
@@ -531,11 +682,17 @@ export const NodeConfigPanel: React.FC = () => {
             </Button>
           </div>
 
-          {hasChanges && (
+          {hasChanges && !saveMessage && (
             <div className="text-xs text-yellow-600 text-center">
-              변경사항이 있습니다. 저장 버튼을 클릭하세요.
+              변경사항이 있습니다. 3초 후 자동 저장됩니다.
             </div>
           )}
+
+          {/* 키보드 단축키 안내 */}
+          <div className="text-xs text-muted-foreground text-center border-t pt-2">
+            <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">⌘S</kbd> 저장 ·{' '}
+            <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Esc</kbd> 초기화
+          </div>
         </div>
       </Card>
     )
@@ -558,7 +715,12 @@ export const NodeConfigPanel: React.FC = () => {
         <CardContent className="flex-1 overflow-y-auto space-y-4">
           {/* 작업 설명 */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">작업 설명</label>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">작업 설명</label>
+              <span title="이 작업 설명이 등록된 모든 워커에게 동일하게 전달됩니다">
+                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+              </span>
+            </div>
             <textarea
               className="w-full p-2 border rounded-md text-sm"
               rows={6}
@@ -566,22 +728,74 @@ export const NodeConfigPanel: React.FC = () => {
               onChange={(e) => setManagerTaskDescription(e.target.value)}
               placeholder="Manager가 수행할 작업을 설명하세요..."
             />
-            <p className="text-xs text-muted-foreground">
-              이 작업 설명이 등록된 워커들에게 전달됩니다.
-            </p>
+            {errors.task_description && (
+              <div className="text-xs text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                {errors.task_description}
+              </div>
+            )}
           </div>
 
           {/* 사용 가능한 워커 선택 */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">사용 가능한 워커</label>
-            <div className="border rounded-md p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">사용 가능한 워커</label>
+                <span title="Manager가 병렬로 실행할 워커들을 선택하세요">
+                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {managerAvailableWorkers.length}개 선택됨
+              </span>
+            </div>
+
+            {/* 검색 바 */}
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="워커 검색... (이름 또는 역할)"
+                className="w-full pl-8 p-2 border rounded-md text-sm"
+                value={workerSearchQuery}
+                onChange={(e) => setWorkerSearchQuery(e.target.value)}
+              />
+            </div>
+
+            {/* 빠른 선택 버튼 */}
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" variant="outline" onClick={selectAllWorkers}>
+                모두 선택
+              </Button>
+              <Button size="sm" variant="outline" onClick={selectNoWorkers}>
+                모두 해제
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('full-dev')}>
+                풀스택 개발
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('quick-code')}>
+                빠른 코드
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('planning')}>
+                기획
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('creative')}>
+                창의적
+              </Button>
+            </div>
+
+            {/* 워커 목록 */}
+            <div className="border rounded-md p-3 space-y-2 max-h-80 overflow-y-auto">
               {agents.length === 0 ? (
                 <div className="text-sm text-muted-foreground">워커 로딩 중...</div>
+              ) : filteredAgents.length === 0 ? (
+                <div className="text-sm text-muted-foreground">검색 결과가 없습니다</div>
               ) : (
-                agents.map((agent) => (
+                filteredAgents.map((agent) => (
                   <label
                     key={agent.name}
-                    className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                    className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors"
                   >
                     <input
                       type="checkbox"
@@ -590,20 +804,24 @@ export const NodeConfigPanel: React.FC = () => {
                       className="w-4 h-4"
                     />
                     <div className="flex-1">
-                      <div className="text-sm font-medium">{agent.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{agent.name}</span>
+                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+                          {agent.allowed_tools.length}개 도구
+                        </span>
+                      </div>
                       <div className="text-xs text-muted-foreground">{agent.role}</div>
                     </div>
                   </label>
                 ))
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              선택된 워커: {managerAvailableWorkers.length}개
-            </p>
-            {managerAvailableWorkers.length === 0 && (
-              <p className="text-xs text-yellow-600">
-                ⚠️ 최소 1개의 워커를 선택해야 합니다.
-              </p>
+
+            {errors.workers && (
+              <div className="text-xs text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                {errors.workers}
+              </div>
             )}
           </div>
 
@@ -625,7 +843,8 @@ export const NodeConfigPanel: React.FC = () => {
         <div className="border-t p-4 space-y-2">
           {/* 저장 메시지 */}
           {saveMessage && (
-            <div className="text-xs text-center py-1 px-2 rounded bg-gray-100">
+            <div className="text-xs text-center py-1 px-2 rounded bg-green-100 text-green-700">
+              <CheckCircle2 className="inline h-3 w-3 mr-1" />
               {saveMessage}
             </div>
           )}
@@ -648,17 +867,24 @@ export const NodeConfigPanel: React.FC = () => {
             </Button>
           </div>
 
-          {hasChanges && (
+          {hasChanges && !saveMessage && (
             <div className="text-xs text-yellow-600 text-center">
-              변경사항이 있습니다. 저장 버튼을 클릭하세요.
+              변경사항이 있습니다. 3초 후 자동 저장됩니다.
             </div>
           )}
+
+          {/* 키보드 단축키 안내 */}
+          <div className="text-xs text-muted-foreground text-center border-t pt-2">
+            <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">⌘S</kbd> 저장 ·{' '}
+            <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">⌘K</kbd> 검색 ·{' '}
+            <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Esc</kbd> 초기화
+          </div>
         </div>
       </Card>
     )
   }
 
-  // Worker 노드 설정 UI
+  // Worker 노드 설정 UI (탭 기반)
   return (
     <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
       <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
@@ -668,182 +894,320 @@ export const NodeConfigPanel: React.FC = () => {
         </CardTitle>
         <div className="text-sm text-muted-foreground flex items-center gap-2">
           <span className="font-medium">{selectedNode.data.agent_name}</span>
+          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+            {agents.find((a) => a.name === selectedNode.data.agent_name)?.role || '워커'}
+          </span>
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-y-auto space-y-4">
-        {/* 시스템 프롬프트 (읽기 전용) */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">시스템 프롬프트 (읽기 전용)</label>
-          <textarea
-            className="w-full p-2 border rounded-md text-sm font-mono bg-gray-50"
-            rows={12}
-            value={systemPrompt}
-            readOnly
-          />
-          <p className="text-xs text-muted-foreground">
-            기본 워커의 시스템 프롬프트는 수정할 수 없습니다.
-          </p>
-        </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+        <TabsList className="grid w-full grid-cols-4 mx-4 mt-4">
+          <TabsTrigger value="basic" className="text-xs">기본 설정</TabsTrigger>
+          <TabsTrigger value="tools" className="text-xs">도구</TabsTrigger>
+          <TabsTrigger value="advanced" className="text-xs">고급</TabsTrigger>
+          <TabsTrigger value="info" className="text-xs">정보</TabsTrigger>
+        </TabsList>
 
-        {/* 작업 템플릿 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">작업 템플릿</label>
-          <textarea
-            className="w-full p-2 border rounded-md text-sm"
-            rows={4}
-            value={taskTemplate}
-            onChange={(e) => setTaskTemplate(e.target.value)}
-            placeholder="예: {{input}}을(를) 분석해주세요."
-          />
-          <p className="text-xs text-muted-foreground">
-            {'{{input}}'}은 이전 노드의 출력으로 대체됩니다.
-          </p>
-        </div>
-
-        {/* Output 형식 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Output 형식</label>
-          <select
-            className="w-full p-2 border rounded-md text-sm"
-            value={outputFormat}
-            onChange={(e) => setOutputFormat(e.target.value)}
-          >
-            <option value="plain_text">Plain Text (일반 텍스트)</option>
-            <option value="markdown">Markdown</option>
-            <option value="json">JSON</option>
-            <option value="code">Code Block</option>
-          </select>
-          <p className="text-xs text-muted-foreground">
-            Worker Agent의 출력 형식을 지정합니다.
-          </p>
-        </div>
-
-        {/* 커스텀 프롬프트 (추가 지시사항) */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">추가 지시사항 (선택)</label>
-          <textarea
-            className="w-full p-2 border rounded-md text-sm"
-            rows={6}
-            value={customPrompt}
-            onChange={(e) => setCustomPrompt(e.target.value)}
-            placeholder="예: 코드 작성 시 주석을 포함해주세요."
-          />
-          <p className="text-xs text-muted-foreground">
-            이 지시사항은 Worker의 시스템 프롬프트에 추가됩니다.
-          </p>
-        </div>
-
-        {/* 사용 가능한 도구 선택 */}
-        {canModifyTools ? (
+        {/* 기본 설정 탭 */}
+        <TabsContent value="basic" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+          {/* 작업 템플릿 */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">사용 가능한 도구</label>
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={useDefaultTools}
-                  onChange={(e) => {
-                    setUseDefaultTools(e.target.checked)
-                    if (e.target.checked) {
-                      setAllowedTools([])
-                    }
-                  }}
-                  className="w-3 h-3"
-                />
-                기본 설정 사용
-              </label>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">작업 템플릿</label>
+              <span title="{{input}}을 사용하여 이전 노드의 출력을 참조할 수 있습니다">
+                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+              </span>
             </div>
+            <textarea
+              className="w-full p-2 border rounded-md text-sm font-mono"
+              rows={5}
+              value={taskTemplate}
+              onChange={(e) => setTaskTemplate(e.target.value)}
+              placeholder="예: {{input}}을(를) 분석해주세요."
+            />
 
-            {!useDefaultTools && (
-              <div className="border rounded-md p-3 space-y-2">
-                {tools.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">도구 로딩 중...</div>
-                ) : (
-                  tools.map((tool) => (
-                    <label
-                      key={tool.name}
-                      className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={allowedTools.includes(tool.name)}
-                        onChange={() => handleToggleTool(tool.name)}
-                        className="w-4 h-4"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{tool.name}</span>
-                          {tool.readonly && (
-                            <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
-                              읽기 전용
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {tool.description} · {tool.category}
-                        </div>
-                      </div>
-                    </label>
-                  ))
-                )}
+            {/* 실시간 미리보기 */}
+            {taskTemplate.includes('{{') && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <div className="text-xs font-medium text-blue-900 mb-2 flex items-center gap-1">
+                  <span>미리보기 (예시 입력 적용)</span>
+                </div>
+                <div className="text-sm text-gray-700 font-mono bg-white p-2 rounded border">
+                  {taskTemplate.replace(/\{\{input\}\}/g, '이전 노드의 출력 예시...')}
+                </div>
               </div>
             )}
 
+            {/* 변수 가이드 */}
+            <div className="text-xs text-muted-foreground">
+              사용 가능한 변수:{' '}
+              <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">{'{{input}}'}</code>{' '}
+              (이전 노드 출력)
+            </div>
+
+            {errors.task_template && (
+              <div className="text-xs text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                {errors.task_template}
+              </div>
+            )}
+          </div>
+
+          {/* Output 형식 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">출력 형식</label>
+              <span title="Worker Agent가 생성할 출력의 형식을 지정합니다">
+                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+              </span>
+            </div>
+            <select
+              className="w-full p-2 border rounded-md text-sm"
+              value={outputFormat}
+              onChange={(e) => setOutputFormat(e.target.value)}
+            >
+              <option value="plain_text">Plain Text (일반 텍스트)</option>
+              <option value="markdown">Markdown</option>
+              <option value="json">JSON</option>
+              <option value="code">Code Block</option>
+            </select>
+          </div>
+        </TabsContent>
+
+        {/* 도구 탭 */}
+        <TabsContent value="tools" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">사용 가능한 도구</label>
+                <span title={canModifyTools ? "Worker가 사용할 수 있는 도구를 선택하세요" : "이 워커는 기본 도구만 사용합니다"}>
+                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                </span>
+              </div>
+              {canModifyTools && (
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={useDefaultTools}
+                    onChange={(e) => {
+                      setUseDefaultTools(e.target.checked)
+                      if (e.target.checked) {
+                        setAllowedTools([])
+                      }
+                    }}
+                    className="w-3 h-3"
+                  />
+                  기본 설정 사용
+                </label>
+              )}
+            </div>
+
+            {canModifyTools && !useDefaultTools && (
+              <>
+                {/* 검색 바 */}
+                <div className="relative">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="도구 검색... (이름 또는 설명)"
+                    className="w-full pl-8 p-2 border rounded-md text-sm"
+                    value={toolSearchQuery}
+                    onChange={(e) => setToolSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                {/* 도구 목록 */}
+                <div className="border rounded-md p-3 space-y-2 max-h-96 overflow-y-auto">
+                  {tools.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">도구 로딩 중...</div>
+                  ) : filteredTools.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">검색 결과가 없습니다</div>
+                  ) : (
+                    filteredTools.map((tool) => (
+                      <label
+                        key={tool.name}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={allowedTools.includes(tool.name)}
+                          onChange={() => handleToggleTool(tool.name)}
+                          className="w-4 h-4"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{tool.name}</span>
+                            {tool.readonly && (
+                              <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+                                읽기 전용
+                              </span>
+                            )}
+                            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">
+                              {tool.category}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{tool.description}</div>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  선택된 도구: {allowedTools.length}개
+                </p>
+
+                {errors.tools && (
+                  <div className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.tools}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 기본 설정 사용 시 또는 수정 불가 시 */}
+            {(useDefaultTools || !canModifyTools) && (
+              <div className="border rounded-md p-3 bg-gray-50">
+                <p className="text-sm text-muted-foreground mb-3">
+                  {canModifyTools
+                    ? 'agent_config.json의 기본 도구 설정을 사용합니다.'
+                    : '이 워커는 agent_config.json에 정의된 기본 도구만 사용합니다. (변경 불가)'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {agents.find((a) => a.name === selectedNode.data.agent_name)?.allowed_tools.map((toolName) => {
+                    const tool = tools.find((t) => t.name === toolName)
+                    return (
+                      <div
+                        key={toolName}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border rounded-md text-sm"
+                      >
+                        <span className="font-medium">{toolName}</span>
+                        {tool?.readonly && (
+                          <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+                            읽기 전용
+                          </span>
+                        )}
+                      </div>
+                    )
+                  }) || <span className="text-xs text-muted-foreground">도구 없음</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* 고급 탭 */}
+        <TabsContent value="advanced" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+          {/* 커스텀 프롬프트 (추가 지시사항) */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">추가 지시사항 (선택)</label>
+              <span title="이 지시사항은 Worker의 시스템 프롬프트에 추가됩니다">
+                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+              </span>
+            </div>
+            <textarea
+              className="w-full p-2 border rounded-md text-sm"
+              rows={6}
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              placeholder="예: 코드 작성 시 주석을 포함해주세요."
+            />
             <p className="text-xs text-muted-foreground">
-              {useDefaultTools
-                ? 'agent_config.json의 기본 도구 설정을 사용합니다.'
-                : `선택된 도구: ${allowedTools.length}개`}
+              워커의 기본 시스템 프롬프트에 이 지시사항이 추가됩니다.
             </p>
           </div>
-        ) : (
+
+          {/* 시스템 프롬프트 (읽기 전용) */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">사용 가능한 도구</label>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">시스템 프롬프트 (읽기 전용)</label>
+              <span title="워커의 기본 시스템 프롬프트입니다. 수정할 수 없습니다">
+                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+              </span>
+            </div>
+            <textarea
+              className="w-full p-2 border rounded-md text-sm font-mono bg-gray-50"
+              rows={15}
+              value={systemPrompt}
+              readOnly
+            />
+            <p className="text-xs text-muted-foreground">
+              기본 워커의 시스템 프롬프트는 수정할 수 없습니다.
+            </p>
+          </div>
+        </TabsContent>
+
+        {/* 정보 탭 */}
+        <TabsContent value="info" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+          <div className="space-y-4">
+            {/* 노드 정보 */}
             <div className="border rounded-md p-3 bg-gray-50">
-              <p className="text-sm text-muted-foreground mb-3">
-                이 워커는 agent_config.json에 정의된 기본 도구만 사용합니다. (변경 불가)
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {agents.find((a) => a.name === selectedNode.data.agent_name)?.allowed_tools.map((toolName) => {
-                  const tool = tools.find((t) => t.name === toolName)
-                  return (
-                    <div
-                      key={toolName}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border rounded-md text-sm"
-                    >
-                      <span className="font-medium">{toolName}</span>
-                      {tool?.readonly && (
-                        <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
-                          읽기 전용
-                        </span>
-                      )}
-                    </div>
-                  )
-                }) || <span className="text-xs text-muted-foreground">도구 없음</span>}
+              <div className="text-sm font-medium mb-2">노드 정보</div>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>ID:</span>
+                  <span className="font-mono">{selectedNode.id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>타입:</span>
+                  <span>Worker</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Agent:</span>
+                  <span className="font-medium">{selectedNode.data.agent_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>위치:</span>
+                  <span className="font-mono">
+                    ({Math.round(selectedNode.position.x)}, {Math.round(selectedNode.position.y)})
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
 
-        {/* 노드 정보 */}
-        <div className="border-t pt-4 space-y-2">
-          <div className="text-xs text-muted-foreground">
-            <div className="font-medium mb-1">노드 정보</div>
-            <div>ID: {selectedNode.id}</div>
-            <div>Agent: {selectedNode.data.agent_name}</div>
-            <div>
-              위치: ({Math.round(selectedNode.position.x)},{' '}
-              {Math.round(selectedNode.position.y)})
+            {/* Agent 정보 */}
+            {agents.find((a) => a.name === selectedNode.data.agent_name) && (
+              <div className="border rounded-md p-3 bg-blue-50 border-blue-200">
+                <div className="text-sm font-medium mb-2 text-blue-900">Agent 정보</div>
+                <div className="space-y-1 text-xs text-blue-800">
+                  <div>
+                    <span className="font-medium">역할:</span>{' '}
+                    {agents.find((a) => a.name === selectedNode.data.agent_name)?.role}
+                  </div>
+                  <div>
+                    <span className="font-medium">모델:</span>{' '}
+                    {agents.find((a) => a.name === selectedNode.data.agent_name)?.model}
+                  </div>
+                  <div>
+                    <span className="font-medium">기본 도구:</span>{' '}
+                    {agents.find((a) => a.name === selectedNode.data.agent_name)?.allowed_tools.join(', ')}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 사용법 안내 */}
+            <div className="border rounded-md p-3 bg-green-50 border-green-200">
+              <div className="text-sm font-medium mb-2 text-green-900">💡 사용법</div>
+              <ul className="list-disc list-inside space-y-1 text-xs text-green-800">
+                <li>작업 템플릿에서 {'{{input}}'} 변수로 이전 노드 출력 참조</li>
+                <li>도구 탭에서 커스텀 도구 선택 가능 (일부 워커만)</li>
+                <li>고급 탭에서 추가 지시사항 작성 가능</li>
+                <li>변경사항은 3초 후 자동 저장됩니다</li>
+              </ul>
             </div>
           </div>
-        </div>
-      </CardContent>
+        </TabsContent>
+      </Tabs>
 
       {/* 저장/초기화 버튼 */}
       <div className="border-t p-4 space-y-2">
         {/* 저장 메시지 */}
         {saveMessage && (
-          <div className="text-xs text-center py-1 px-2 rounded bg-gray-100">
+          <div className="text-xs text-center py-1 px-2 rounded bg-green-100 text-green-700">
+            <CheckCircle2 className="inline h-3 w-3 mr-1" />
             {saveMessage}
           </div>
         )}
@@ -866,11 +1230,18 @@ export const NodeConfigPanel: React.FC = () => {
           </Button>
         </div>
 
-        {hasChanges && (
+        {hasChanges && !saveMessage && (
           <div className="text-xs text-yellow-600 text-center">
-            변경사항이 있습니다. 저장 버튼을 클릭하세요.
+            변경사항이 있습니다. 3초 후 자동 저장됩니다.
           </div>
         )}
+
+        {/* 키보드 단축키 안내 */}
+        <div className="text-xs text-muted-foreground text-center border-t pt-2">
+          <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">⌘S</kbd> 저장 ·{' '}
+          <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">⌘K</kbd> 검색 ·{' '}
+          <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Esc</kbd> 초기화
+        </div>
       </div>
     </Card>
   )

@@ -203,7 +203,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!bg-emerald-500 !w-4 !h-4 !border-2 !border-white"
+        className="!bg-emerald-500 !w-4 !h-4 !border-2 !border-white !left-1/2 !-translate-x-1/2"
       />
     </div>
   )

@@ -66,7 +66,7 @@ export const WorkerNode = memo(({ data, selected }: NodeProps<WorkerNodeData>) =
       <Handle
         type="target"
         position={Position.Top}
-        className="!bg-blue-500 !w-3 !h-3"
+        className="!bg-blue-500 !w-3 !h-3 !left-1/2 !-translate-x-1/2"
       />
 
       <Card
@@ -111,7 +111,7 @@ export const WorkerNode = memo(({ data, selected }: NodeProps<WorkerNodeData>) =
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!bg-blue-500 !w-3 !h-3"
+        className="!bg-blue-500 !w-3 !h-3 !left-1/2 !-translate-x-1/2"
       />
     </div>
   )

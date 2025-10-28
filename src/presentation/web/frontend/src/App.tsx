@@ -16,7 +16,7 @@ import {
   saveProjectWorkflow,
   loadProjectWorkflow,
 } from './lib/api'
-import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, Moon, Sun } from 'lucide-react'
+import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose } from 'lucide-react'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
 import { ToastContainer, ToastType } from './components/Toast'
 
@@ -46,8 +46,6 @@ function App() {
     duration?: number
   }>>([])
 
-  // 다크 모드 상태
-  const [isDarkMode, setIsDarkMode] = useState(false)
 
   // 토스트 추가 함수
   const addToast = (type: ToastType, message: string, duration = 3000) => {
@@ -215,18 +213,6 @@ function App() {
     await handleSelectProjectPath(projectPathInput.trim())
   }
 
-  // 다크 모드 토글
-  const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode)
-    if (!isDarkMode) {
-      document.documentElement.classList.add('dark')
-      addToast('info', '다크 모드 활성화')
-    } else {
-      document.documentElement.classList.remove('dark')
-      addToast('info', '라이트 모드 활성화')
-    }
-  }
-
   return (
     <ReactFlowProvider>
       <div className="h-screen flex flex-col bg-background transition-colors duration-300">
@@ -271,14 +257,6 @@ function App() {
             </div>
 
             <div className="flex gap-2">
-              <Button
-                onClick={toggleDarkMode}
-                variant="outline"
-                size="icon"
-                title={isDarkMode ? '라이트 모드로 전환' : '다크 모드로 전환'}
-              >
-                {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
               <Button onClick={() => setShowProjectDialog(true)} variant="outline">
                 <Folder className="mr-2 h-4 w-4" />
                 프로젝트 선택
@@ -291,7 +269,7 @@ function App() {
         <div className="flex-1 flex overflow-hidden">
           {/* 왼쪽: 노드 패널 */}
           {leftSidebarOpen && (
-            <aside className="w-64 border-r bg-white p-4 overflow-y-auto transition-transform duration-300 ease-out">
+            <aside className="w-80 border-r bg-white p-4 overflow-y-auto transition-transform duration-300 ease-out">
               <NodePanel />
             </aside>
           )}
@@ -336,7 +314,7 @@ function App() {
 
           {/* 오른쪽: 노드 설정 패널 */}
           {rightSidebarOpen && (
-            <aside className="w-96 border-l bg-white flex flex-col overflow-hidden transition-transform duration-300 ease-out">
+            <aside className="w-[28rem] border-l bg-white flex flex-col overflow-hidden transition-transform duration-300 ease-out">
               {/* 패널 내용 */}
               <div className="flex-1 overflow-hidden p-4">
                 <NodeConfigPanel />
