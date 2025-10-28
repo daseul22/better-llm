@@ -50,6 +50,7 @@ class WorkflowValidator:
 
     # Worker별 사용 가능한 도구 (agent_config.json 기반)
     WORKER_TOOLS: Dict[str, List[str]] = {
+        # 범용 워커
         "planner": ["read", "glob", "grep"],
         "coder": ["read", "write", "edit", "glob", "grep"],
         "reviewer": ["read", "glob", "grep"],
@@ -58,6 +59,13 @@ class WorkflowValidator:
         "ideator": ["read", "glob"],
         "product_manager": ["read", "glob", "grep"],
         "documenter": ["read", "write", "edit", "glob", "grep"],
+        # 특화 워커
+        "style_reviewer": ["read", "glob", "grep"],
+        "security_reviewer": ["read", "glob", "grep"],
+        "summarizer": ["read", "glob"],
+        "architecture_reviewer": ["read", "glob", "grep"],
+        "bug_fixer": ["read", "write", "edit", "bash", "glob", "grep"],
+        "log_analyzer": ["read", "bash", "glob", "grep"],
     }
 
     # 템플릿 변수 패턴 ({{input}}, {{node_123}} 등)
