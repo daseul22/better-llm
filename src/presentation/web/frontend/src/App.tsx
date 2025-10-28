@@ -16,9 +16,10 @@ import {
   saveProjectWorkflow,
   loadProjectWorkflow,
 } from './lib/api'
-import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose } from 'lucide-react'
+import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate } from 'lucide-react'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
 import { ToastContainer, ToastType } from './components/Toast'
+import { TemplateGallery } from './components/TemplateGallery'
 
 const STORAGE_KEY_PROJECT_PATH = 'better-llm-last-project-path'
 
@@ -30,6 +31,9 @@ function App() {
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [projectPathInput, setProjectPathInput] = useState('')
   const [useBrowser, setUseBrowser] = useState(true) // 브라우저 vs 텍스트 입력
+
+  // 템플릿 갤러리 상태
+  const [showTemplateGallery, setShowTemplateGallery] = useState(false)
 
   // 사이드바 토글 상태
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
@@ -257,6 +261,10 @@ function App() {
             </div>
 
             <div className="flex gap-2">
+              <Button onClick={() => setShowTemplateGallery(true)} variant="outline">
+                <BookTemplate className="mr-2 h-4 w-4" />
+                템플릿
+              </Button>
               <Button onClick={() => setShowProjectDialog(true)} variant="outline">
                 <Folder className="mr-2 h-4 w-4" />
                 프로젝트 선택
@@ -325,6 +333,21 @@ function App() {
 
         {/* 토스트 알림 */}
         <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
+
+        {/* 템플릿 갤러리 */}
+        {showTemplateGallery && (
+          <TemplateGallery
+            onClose={() => setShowTemplateGallery(false)}
+            onSelectTemplate={(workflow) => {
+              loadWorkflow(workflow)
+              addToast('success', `템플릿 "${workflow.name}"이(가) 로드되었습니다`)
+            }}
+            onImportTemplate={(workflow) => {
+              loadWorkflow(workflow)
+              addToast('success', `워크플로우 "${workflow.name}"이(가) 가져오기 되었습니다`)
+            }}
+          />
+        )}
 
         {/* 프로젝트 선택 다이얼로그 */}
         {showProjectDialog && (

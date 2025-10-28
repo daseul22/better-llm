@@ -452,3 +452,129 @@ export async function getTools(): Promise<Tool[]> {
   const data = await response.json()
   return data.tools
 }
+
+// ==================== Template API ====================
+
+/**
+ * 템플릿 메타데이터 (목록 조회용)
+ */
+export interface TemplateMetadata {
+  id: string
+  name: string
+  description: string | null
+  category: string
+  node_count: number
+  edge_count: number
+  thumbnail: string | null
+  tags: string[]
+  is_builtin: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+/**
+ * 템플릿 (전체)
+ */
+export interface Template {
+  id: string
+  name: string
+  description: string | null
+  category: string
+  workflow: Workflow
+  thumbnail: string | null
+  tags: string[]
+  is_builtin: boolean
+  metadata: Record<string, any>
+  created_at: string | null
+  updated_at: string | null
+}
+
+/**
+ * 템플릿 저장 요청
+ */
+export interface TemplateSaveRequest {
+  name: string
+  description: string | null
+  category: string
+  workflow: Workflow
+  tags: string[]
+}
+
+/**
+ * 템플릿 목록 조회
+ */
+export async function getTemplates(): Promise<TemplateMetadata[]> {
+  const response = await fetch(`${API_BASE}/templates`)
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+  const data = await response.json()
+  return data.templates
+}
+
+/**
+ * 템플릿 상세 조회
+ */
+export async function getTemplate(templateId: string): Promise<Template> {
+  const response = await fetch(`${API_BASE}/templates/${templateId}`)
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+  return await response.json()
+}
+
+/**
+ * 템플릿 저장
+ */
+export async function saveTemplate(template: TemplateSaveRequest): Promise<string> {
+  const response = await fetch(`${API_BASE}/templates`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(template),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const data = await response.json()
+  return data.template_id
+}
+
+/**
+ * 템플릿 삭제
+ */
+export async function deleteTemplate(templateId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/templates/${templateId}`, {
+    method: 'DELETE',
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+}
+
+/**
+ * 템플릿 검증 (워크플로우 유효성 검사)
+ */
+export async function validateTemplate(workflow: Workflow): Promise<{ valid: boolean; errors: string[] }> {
+  const response = await fetch(`${API_BASE}/templates/validate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(workflow),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}

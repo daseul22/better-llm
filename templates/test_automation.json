@@ -1,0 +1,70 @@
+{
+  "id": "test_automation",
+  "name": "테스트 자동화 워크플로우",
+  "description": "코드 작성 → 테스트 실행 → Git 커밋을 수행하는 자동화 워크플로우입니다.",
+  "category": "testing",
+  "workflow": {
+    "id": "test_automation_workflow",
+    "name": "테스트 자동화 워크플로우",
+    "description": "코드 작성 → 테스트 실행 → Git 커밋",
+    "nodes": [
+      {
+        "id": "input-1",
+        "type": "input",
+        "position": {"x": 100, "y": 200},
+        "data": {
+          "initial_input": "테스트 자동화 작업을 시작합니다"
+        }
+      },
+      {
+        "id": "coder-1",
+        "type": "worker",
+        "position": {"x": 350, "y": 200},
+        "data": {
+          "agent_name": "coder",
+          "task_template": "{{input}}\n\n요구사항에 맞는 코드를 작성해주세요."
+        }
+      },
+      {
+        "id": "tester-1",
+        "type": "worker",
+        "position": {"x": 600, "y": 200},
+        "data": {
+          "agent_name": "tester",
+          "task_template": "다음 코드에 대한 테스트를 실행해주세요:\n\n{{coder-1}}"
+        }
+      },
+      {
+        "id": "committer-1",
+        "type": "worker",
+        "position": {"x": 850, "y": 200},
+        "data": {
+          "agent_name": "committer",
+          "task_template": "테스트가 통과한 코드를 커밋해주세요:\n\n코드: {{coder-1}}\n\n테스트 결과: {{tester-1}}"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-input-coder",
+        "source": "input-1",
+        "target": "coder-1"
+      },
+      {
+        "id": "e-coder-tester",
+        "source": "coder-1",
+        "target": "tester-1"
+      },
+      {
+        "id": "e-tester-committer",
+        "source": "tester-1",
+        "target": "committer-1"
+      }
+    ]
+  },
+  "tags": ["testing", "automation", "coder", "tester", "committer"],
+  "is_builtin": true,
+  "metadata": {},
+  "created_at": "2025-10-28T00:00:00Z",
+  "updated_at": "2025-10-28T00:00:00Z"
+}

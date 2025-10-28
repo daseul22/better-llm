@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from src.infrastructure.logging import get_logger
-from src.presentation.web.routers import agents_router, health_router, workflows_router, projects_router, filesystem_router
+from src.presentation.web.routers import agents_router, health_router, workflows_router, projects_router, filesystem_router, templates_router
 
 # .env 파일 로드 (프로젝트 루트)
 load_dotenv()
@@ -51,6 +51,7 @@ app.include_router(agents_router)
 app.include_router(workflows_router)
 app.include_router(projects_router)
 app.include_router(filesystem_router)
+app.include_router(templates_router)
 
 REACT_BUILD_DIR = Path(__file__).parent / "static-react"
 

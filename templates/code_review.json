@@ -1,0 +1,70 @@
+{
+  "id": "code_review",
+  "name": "코드 리뷰 워크플로우",
+  "description": "계획 수립 → 코드 작성 → 코드 리뷰를 수행하는 표준 워크플로우입니다.",
+  "category": "code_review",
+  "workflow": {
+    "id": "code_review_workflow",
+    "name": "코드 리뷰 워크플로우",
+    "description": "계획 수립 → 코드 작성 → 코드 리뷰",
+    "nodes": [
+      {
+        "id": "input-1",
+        "type": "input",
+        "position": {"x": 100, "y": 200},
+        "data": {
+          "initial_input": "코드 리뷰 작업을 시작합니다"
+        }
+      },
+      {
+        "id": "planner-1",
+        "type": "worker",
+        "position": {"x": 350, "y": 200},
+        "data": {
+          "agent_name": "planner",
+          "task_template": "{{input}}\n\n다음 작업을 위한 상세한 계획을 수립해주세요."
+        }
+      },
+      {
+        "id": "coder-1",
+        "type": "worker",
+        "position": {"x": 600, "y": 200},
+        "data": {
+          "agent_name": "coder",
+          "task_template": "다음 계획에 따라 코드를 작성해주세요:\n\n{{planner-1}}"
+        }
+      },
+      {
+        "id": "reviewer-1",
+        "type": "worker",
+        "position": {"x": 850, "y": 200},
+        "data": {
+          "agent_name": "reviewer",
+          "task_template": "다음 코드를 리뷰해주세요:\n\n{{coder-1}}"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-input-planner",
+        "source": "input-1",
+        "target": "planner-1"
+      },
+      {
+        "id": "e-planner-coder",
+        "source": "planner-1",
+        "target": "coder-1"
+      },
+      {
+        "id": "e-coder-reviewer",
+        "source": "coder-1",
+        "target": "reviewer-1"
+      }
+    ]
+  },
+  "tags": ["code-review", "planner", "coder", "reviewer"],
+  "is_builtin": true,
+  "metadata": {},
+  "created_at": "2025-10-28T00:00:00Z",
+  "updated_at": "2025-10-28T00:00:00Z"
+}

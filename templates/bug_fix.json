@@ -1,0 +1,70 @@
+{
+  "id": "bug_fix",
+  "name": "버그 수정 워크플로우",
+  "description": "계획 수립 → 코드 수정 → 테스트 검증을 수행하는 버그 수정 워크플로우입니다.",
+  "category": "bug_fix",
+  "workflow": {
+    "id": "bug_fix_workflow",
+    "name": "버그 수정 워크플로우",
+    "description": "계획 수립 → 코드 수정 → 테스트 검증",
+    "nodes": [
+      {
+        "id": "input-1",
+        "type": "input",
+        "position": {"x": 100, "y": 200},
+        "data": {
+          "initial_input": "버그 수정 작업을 시작합니다"
+        }
+      },
+      {
+        "id": "planner-1",
+        "type": "worker",
+        "position": {"x": 350, "y": 200},
+        "data": {
+          "agent_name": "planner",
+          "task_template": "{{input}}\n\n버그 원인을 분석하고 수정 계획을 수립해주세요."
+        }
+      },
+      {
+        "id": "coder-1",
+        "type": "worker",
+        "position": {"x": 600, "y": 200},
+        "data": {
+          "agent_name": "coder",
+          "task_template": "다음 계획에 따라 버그를 수정해주세요:\n\n{{planner-1}}"
+        }
+      },
+      {
+        "id": "tester-1",
+        "type": "worker",
+        "position": {"x": 850, "y": 200},
+        "data": {
+          "agent_name": "tester",
+          "task_template": "버그 수정이 올바르게 되었는지 테스트해주세요:\n\n{{coder-1}}"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-input-planner",
+        "source": "input-1",
+        "target": "planner-1"
+      },
+      {
+        "id": "e-planner-coder",
+        "source": "planner-1",
+        "target": "coder-1"
+      },
+      {
+        "id": "e-coder-tester",
+        "source": "coder-1",
+        "target": "tester-1"
+      }
+    ]
+  },
+  "tags": ["bug-fix", "planner", "coder", "tester"],
+  "is_builtin": true,
+  "metadata": {},
+  "created_at": "2025-10-28T00:00:00Z",
+  "updated_at": "2025-10-28T00:00:00Z"
+}

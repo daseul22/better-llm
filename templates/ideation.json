@@ -1,0 +1,70 @@
+{
+  "id": "ideation",
+  "name": "아이디어 기획 워크플로우",
+  "description": "아이디어 생성 → 제품 기획 → 계획 수립을 수행하는 기획 워크플로우입니다.",
+  "category": "planning",
+  "workflow": {
+    "id": "ideation_workflow",
+    "name": "아이디어 기획 워크플로우",
+    "description": "아이디어 생성 → 제품 기획 → 계획 수립",
+    "nodes": [
+      {
+        "id": "input-1",
+        "type": "input",
+        "position": {"x": 100, "y": 200},
+        "data": {
+          "initial_input": "아이디어 기획 작업을 시작합니다"
+        }
+      },
+      {
+        "id": "ideator-1",
+        "type": "worker",
+        "position": {"x": 350, "y": 200},
+        "data": {
+          "agent_name": "ideator",
+          "task_template": "{{input}}\n\n창의적인 아이디어를 생성해주세요."
+        }
+      },
+      {
+        "id": "product-manager-1",
+        "type": "worker",
+        "position": {"x": 600, "y": 200},
+        "data": {
+          "agent_name": "product_manager",
+          "task_template": "다음 아이디어를 제품 요구사항으로 구체화해주세요:\n\n{{ideator-1}}"
+        }
+      },
+      {
+        "id": "planner-1",
+        "type": "worker",
+        "position": {"x": 850, "y": 200},
+        "data": {
+          "agent_name": "planner",
+          "task_template": "다음 제품 요구사항에 따라 구현 계획을 수립해주세요:\n\n{{product-manager-1}}"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-input-ideator",
+        "source": "input-1",
+        "target": "ideator-1"
+      },
+      {
+        "id": "e-ideator-pm",
+        "source": "ideator-1",
+        "target": "product-manager-1"
+      },
+      {
+        "id": "e-pm-planner",
+        "source": "product-manager-1",
+        "target": "planner-1"
+      }
+    ]
+  },
+  "tags": ["ideation", "planning", "ideator", "product-manager", "planner"],
+  "is_builtin": true,
+  "metadata": {},
+  "created_at": "2025-10-28T00:00:00Z",
+  "updated_at": "2025-10-28T00:00:00Z"
+}
