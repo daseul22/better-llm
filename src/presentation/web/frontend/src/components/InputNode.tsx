@@ -12,7 +12,7 @@ import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Play, Square, Loader2, Zap } from 'lucide-react'
+import { Play, Square, Zap, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { executeWorkflow } from '@/lib/api'
 
@@ -38,31 +38,23 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
     updateNode
   } = useWorkflowStore()
 
-  // 상태별 스타일
-  let statusClass = 'border-emerald-400'
-  let bodyBgClass = 'bg-gradient-to-br from-emerald-50 to-teal-50'
+  // 상태별 스타일 (WorkerNode 패턴과 동일)
+  let statusClass = 'border-emerald-400 bg-emerald-50'
   let statusText = ''
   let statusColor = ''
-  let borderGlow = ''
 
   if (isExecuting || localIsRunning) {
-    statusClass = 'border-yellow-500'
-    bodyBgClass = 'bg-yellow-50'
+    statusClass = 'border-yellow-500 bg-yellow-50'
     statusText = '실행 중...'
     statusColor = 'text-yellow-700'
-    borderGlow = 'shadow-lg shadow-yellow-200'
   } else if (hasError) {
-    statusClass = 'border-red-500'
-    bodyBgClass = 'bg-red-50'
+    statusClass = 'border-red-500 bg-red-50'
     statusText = '에러 발생'
     statusColor = 'text-red-700'
   } else if (isCompleted) {
-    statusClass = 'border-green-500'
-    bodyBgClass = 'bg-green-50'
+    statusClass = 'border-green-500 bg-green-50'
     statusText = '완료'
     statusColor = 'text-green-700'
-  } else {
-    borderGlow = 'shadow-md shadow-emerald-100'
   }
 
   // 워크플로우 실행 (이 Input 노드에서 시작)
@@ -144,42 +136,53 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
   }
 
   return (
-    <div className="min-w-[300px]">
+    <div className={cn('min-w-[300px] relative', !isExecuting && !isCompleted && 'node-appear')}>
       <Card
         className={cn(
-          'border-2 transition-all duration-200',
+          'border-2 transition-all',
           statusClass,
-          borderGlow,
-          selected && 'ring-2 ring-emerald-500 ring-offset-2'
+          selected && 'ring-2 ring-emerald-500',
+          isExecuting && 'pulse-border'
         )}
       >
-        <CardHeader className="pb-2 bg-gradient-to-r from-emerald-500 to-teal-500">
+        <CardHeader className="pb-3 bg-gradient-to-r from-emerald-500 to-teal-500">
           <CardTitle className="text-base flex items-center justify-between text-white">
             <span className="flex items-center gap-2">
-              <Zap className="h-5 w-5" />
-              <span className="font-bold">START</span>
+              {isExecuting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isCompleted && !hasError && <CheckCircle2 className="h-4 w-4" />}
+              {hasError && <XCircle className="h-4 w-4" />}
+              {!isExecuting && !isCompleted && !hasError && <Zap className="h-4 w-4" />}
+              START
             </span>
             {statusText && (
-              <span className={cn('text-xs font-semibold px-2 py-1 rounded bg-white/20')}>
+              <span className={cn('text-xs font-normal', statusColor, 'bg-white/20 px-2 py-1 rounded')}>
                 {statusText}
               </span>
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className={cn("pt-3 pb-4 space-y-3", bodyBgClass)}>
+        <CardContent className="pb-4 space-y-2">
           {/* 입력 텍스트 미리보기 */}
-          <div className="text-xs text-gray-600 bg-white border border-emerald-200 rounded-md p-2.5 max-h-16 overflow-hidden font-medium">
-            {initial_input || '초기 입력을 설정하세요...'}
+          <div className="text-xs text-muted-foreground bg-white border border-emerald-200 rounded-md p-2.5 max-h-16 overflow-hidden">
+            {initial_input?.substring(0, 80) || '초기 입력을 설정하세요...'}
+            {(initial_input?.length || 0) > 80 && '...'}
           </div>
 
+          {/* 진행 바 */}
+          {isExecuting && (
+            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+              <div className="h-full bg-emerald-500 progress-bar rounded-full" />
+            </div>
+          )}
+
           {/* 실행 버튼 */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 pt-1">
             {!localIsRunning ? (
               <Button
                 onClick={handleExecute}
                 disabled={!initial_input?.trim()}
                 size="sm"
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-md"
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
               >
                 <Play className="mr-2 h-4 w-4" />
                 워크플로우 시작
@@ -189,7 +192,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
                 onClick={handleStop}
                 size="sm"
                 variant="destructive"
-                className="flex-1 font-semibold shadow-md"
+                className="flex-1 font-semibold"
               >
                 <Square className="mr-2 h-4 w-4" />
                 중단
@@ -199,11 +202,23 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
         </CardContent>
       </Card>
 
-      {/* 출력 핸들 (아래쪽만) */}
+      {/* 출력 핸들 (아래쪽 가운데) - WorkerNode와 동일한 패턴 */}
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!bg-emerald-500 !w-4 !h-4 !border-2 !border-white !left-1/2 !-translate-x-1/2"
+        id="output"
+        style={{
+          position: 'absolute',
+          bottom: '-6px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: '#10b981',
+          width: '16px',
+          height: '16px',
+          borderRadius: '50%',
+          border: '2px solid white',
+          zIndex: 10
+        }}
       />
     </div>
   )

@@ -47,12 +47,23 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
   }
 
   return (
-    <div className={cn('min-w-[280px]', !isExecuting && !isCompleted && 'node-appear')}>
-      {/* 입력 핸들 (위쪽) */}
+    <div className={cn('min-w-[280px] relative', !isExecuting && !isCompleted && 'node-appear')}>
+      {/* 입력 핸들 (위쪽 가운데) */}
       <Handle
         type="target"
         position={Position.Top}
-        className="!bg-purple-500 !w-3 !h-3 !left-1/2 !-translate-x-1/2"
+        id="input"
+        style={{
+          position: 'absolute',
+          top: '-6px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: '#a855f7',
+          width: '12px',
+          height: '12px',
+          borderRadius: '50%',
+          zIndex: 10
+        }}
       />
 
       <Card
@@ -114,11 +125,22 @@ export const ManagerNode = memo(({ data, selected }: NodeProps<ManagerNodeData>)
         </CardContent>
       </Card>
 
-      {/* 출력 핸들 (아래쪽) */}
+      {/* 출력 핸들 (아래쪽 가운데) */}
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!bg-purple-500 !w-3 !h-3 !left-1/2 !-translate-x-1/2"
+        id="output"
+        style={{
+          position: 'absolute',
+          bottom: '-6px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: '#a855f7',
+          width: '12px',
+          height: '12px',
+          borderRadius: '50%',
+          zIndex: 10
+        }}
       />
     </div>
   )

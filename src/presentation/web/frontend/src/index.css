@@ -91,6 +91,42 @@
   border-radius: 0 !important;
 }
 
+/* Handle 위치 고정 - 모든 노드 타입에 동일하게 적용 */
+.react-flow__node .react-flow__handle {
+  position: absolute !important;
+  border-radius: 50% !important;
+  z-index: 10 !important;
+}
+
+/* 위쪽 핸들 */
+.react-flow__node .react-flow__handle-top {
+  top: -6px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+
+/* 아래쪽 핸들 */
+.react-flow__node .react-flow__handle-bottom {
+  bottom: -6px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+
+/* InputNode의 출력 핸들만 조금 더 크게 */
+.react-flow__node-input .react-flow__handle-bottom {
+  width: 16px !important;
+  height: 16px !important;
+  bottom: -8px !important;
+  /* 디버깅용: 강제로 눈에 띄게 */
+  background-color: #10b981 !important;
+  border: 3px solid white !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.8) !important;
+}
+
 /* React Flow 노드가 선택되었을 때 기본 스타일 제거 */
 .react-flow__node.selected .react-flow__node-input,
 .react-flow__node.selected .react-flow__node-worker,
