@@ -114,16 +114,19 @@ async def list_agents(
     try:
         # 1. 기본 워커 로드
         agent_configs = config_loader.load_agent_configs()
+        base_worker_names = {config.name for config in agent_configs}
 
         # 2. 커스텀 워커 로드 (프로젝트가 선택된 경우만)
         from src.presentation.web.routers.projects import _current_project_path
         from src.infrastructure.storage import CustomWorkerRepository
         from pathlib import Path
 
+        custom_worker_names = set()
         if _current_project_path:
             try:
                 custom_repo = CustomWorkerRepository(Path(_current_project_path))
                 custom_configs = custom_repo.load_custom_workers()
+                custom_worker_names = {config.name for config in custom_configs}
                 agent_configs.extend(custom_configs)
                 logger.info(f"커스텀 워커 로드: {len(custom_configs)}개")
             except Exception as e:
@@ -145,6 +148,9 @@ async def list_agents(
             if hasattr(config, 'model') and config.model:
                 model = config.model
 
+            # 커스텀 워커 여부 판단
+            is_custom = config.name in custom_worker_names
+
             agents.append(AgentInfo(
                 name=config.name,
                 role=config.role,
@@ -152,6 +158,7 @@ async def list_agents(
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
                 model=model,
+                is_custom=is_custom,
             ))
 
         logger.info(f"✅ Agent 목록 조회: {len(agents)}개 (기본 + 커스텀, 시스템 프롬프트 포함)")

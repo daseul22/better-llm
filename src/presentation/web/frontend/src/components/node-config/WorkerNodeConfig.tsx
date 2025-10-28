@@ -24,6 +24,7 @@ interface WorkerNodeData {
   task_template: string
   allowed_tools?: string[]
   thinking?: boolean
+  system_prompt?: string  // 커스텀 워커용 시스템 프롬프트
   config?: {
     output_format?: string
     custom_prompt?: string
@@ -60,6 +61,7 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
     task_template: node.data.task_template || '',
     allowed_tools: node.data.allowed_tools || [],
     thinking: node.data.thinking,
+    system_prompt: node.data.system_prompt || '',  // 커스텀 워커용
     config: {
       output_format: node.data.config?.output_format || 'plain_text',
       custom_prompt: node.data.config?.custom_prompt || '',
@@ -81,15 +83,23 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
 
     const agent = agents.find((a) => a.name === node.data.agent_name)
     if (agent) {
-      setSystemPrompt(agent.system_prompt || '')
+      // 커스텀 워커인 경우 노드 데이터의 system_prompt 사용, 없으면 agent의 것 사용
+      const promptToUse = agent.is_custom && node.data.system_prompt
+        ? node.data.system_prompt
+        : agent.system_prompt || ''
+      setSystemPrompt(promptToUse)
 
-      // 쓰기 도구가 있으면 커스터마이즈 가능
-      const hasWriteTools = agent.allowed_tools.some((tool) => ['write', 'edit', 'bash'].includes(tool))
-      setCanModifyTools(hasWriteTools)
+      // 커스텀 워커는 항상 도구 수정 가능, 기본 워커는 쓰기 도구가 있어야 수정 가능
+      if (agent.is_custom) {
+        setCanModifyTools(true)
+      } else {
+        const hasWriteTools = agent.allowed_tools.some((tool) => ['write', 'edit', 'bash'].includes(tool))
+        setCanModifyTools(hasWriteTools)
+      }
     } else {
       setSystemPrompt(`❌ Agent '${node.data.agent_name}'의 시스템 프롬프트를 찾을 수 없습니다.`)
     }
-  }, [agents, node.data.agent_name])
+  }, [agents, node.data.agent_name, node.data.system_prompt])
 
   // 노드 설정 Hook
   const { data, setData, hasChanges, saveMessage, save, reset } = useNodeConfig<WorkerNodeData>({
@@ -423,22 +433,34 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
             </p>
           </div>
 
-          {/* 시스템 프롬프트 (읽기 전용) */}
+          {/* 시스템 프롬프트 */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">시스템 프롬프트 (읽기 전용)</label>
-              <span title="워커의 기본 시스템 프롬프트입니다. 수정할 수 없습니다">
+              <label className="text-sm font-medium">
+                시스템 프롬프트 {currentAgent?.is_custom ? '' : '(읽기 전용)'}
+              </label>
+              <span title={currentAgent?.is_custom
+                ? "커스텀 워커의 시스템 프롬프트를 수정할 수 있습니다"
+                : "기본 워커의 시스템 프롬프트는 수정할 수 없습니다"
+              }>
                 <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
               </span>
             </div>
             <textarea
-              className="w-full p-2 border rounded-md text-sm font-mono bg-gray-50"
+              className={`w-full p-2 border rounded-md text-sm font-mono ${
+                currentAgent?.is_custom ? 'bg-white' : 'bg-gray-50'
+              }`}
               rows={15}
-              value={systemPrompt}
+              value={currentAgent?.is_custom ? (data.system_prompt || systemPrompt) : systemPrompt}
+              onChange={currentAgent?.is_custom ? (e) => setData({ ...data, system_prompt: e.target.value }) : undefined}
               onKeyDown={handleInputKeyDown}
-              readOnly
+              readOnly={!currentAgent?.is_custom}
             />
-            <p className="text-xs text-muted-foreground">기본 워커의 시스템 프롬프트는 수정할 수 없습니다.</p>
+            <p className="text-xs text-muted-foreground">
+              {currentAgent?.is_custom
+                ? '커스텀 워커의 시스템 프롬프트를 자유롭게 수정할 수 있습니다.'
+                : '기본 워커의 시스템 프롬프트는 수정할 수 없습니다.'}
+            </p>
           </div>
         </TabsContent>
 

@@ -17,6 +17,7 @@ export interface Agent {
   allowed_tools: string[]  // 기본 도구 목록
   model?: string  // 모델 정보 (옵셔널)
   thinking?: boolean  // Thinking 모드 기본값 (옵셔널)
+  is_custom?: boolean  // 커스텀 워커 여부 (옵셔널)
 }
 
 /**
