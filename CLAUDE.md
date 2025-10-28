@@ -380,6 +380,16 @@ async def _execute_manager_node(self, node, ...):
 
 프로젝트 메타데이터, 코딩 스타일, 테스팅 방침. Worker Agent 초기화 시 자동 로드.
 
+**주요 필드**:
+- `project_name`: 프로젝트 이름
+- `architecture`: 아키텍처 패턴 (Clean Architecture)
+- `key_files`: 주요 파일 경로 (entry_points, domain, infrastructure, presentation)
+- `coding_style`: 코딩 스타일 (docstring, type hints, line length)
+- `dependencies`: 주요 의존성 패키지
+- `description`: 프로젝트 설명
+
+Worker Agent는 이 정보를 바탕으로 프로젝트 구조를 이해하고 더 정확한 코드를 생성합니다.
+
 ---
 
 ## 디버깅

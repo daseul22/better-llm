@@ -5,8 +5,7 @@
   "architecture": "Clean Architecture (4-Layer)",
   "key_files": {
     "entry_points": {
-      "cli": "orchestrator.py",
-      "tui": "tui.py"
+      "web": "src/presentation/web/app.py"
     },
     "domain": {
       "models": "src/domain/models/",
@@ -24,12 +23,14 @@
       "storage": "src/infrastructure/storage/"
     },
     "presentation": {
-      "cli": "src/presentation/cli/orchestrator.py",
-      "tui": "src/presentation/tui/tui_app.py",
-      "utils": "src/presentation/cli/utils.py"
+      "web": "src/presentation/web/",
+      "routers": "src/presentation/web/routers/",
+      "services": "src/presentation/web/services/",
+      "schemas": "src/presentation/web/schemas/"
     },
     "config": "config/agent_config.json",
-    "system_config": "config/system_config.json"
+    "system_config": "config/system_config.json",
+    "prompts": "prompts/"
   },
   "coding_style": {
     "docstring_style": "google",
@@ -40,10 +41,13 @@
   },
   "dependencies": [
     "claude-agent-sdk",
-    "textual",
-    "rich",
-    "click",
+    "fastapi",
+    "uvicorn",
+    "sse-starlette",
     "python-dotenv",
+    "jinja2",
+    "pyyaml",
+    "structlog",
     "pytest",
     "pytest-asyncio"
   ],
@@ -51,5 +55,5 @@
     "framework": "pytest",
     "test_directory": "tests/"
   },
-  "description": "그룹 챗 오케스트레이션 시스템 - Clean Architecture 기반, Manager Agent가 Worker Tools를 호출하여 소프트웨어 개발 작업 자동화"
+  "description": "워크플로우 기반 AI 개발 자동화 시스템 - Clean Architecture 기반, 전문화된 Worker Agent들을 노드로 연결하여 복잡한 소프트웨어 개발 작업을 자동화"
 }
