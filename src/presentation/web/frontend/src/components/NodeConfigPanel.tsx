@@ -499,7 +499,7 @@ export const NodeConfigPanel: React.FC = () => {
     )
   }
 
-  // Input 노드 설정 UI
+  // Input 노드 설정 UI (탭 기반)
   if (selectedNode.type === 'input') {
     return (
       <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
@@ -513,146 +513,250 @@ export const NodeConfigPanel: React.FC = () => {
           </div>
         </CardHeader>
 
-        <CardContent className="flex-1 overflow-y-auto space-y-4">
-          {/* 초기 입력 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">초기 입력</label>
-              <span title="워크플로우를 시작하는 초기 입력입니다">
-                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
-            </div>
-            <textarea
-              className="w-full p-2 border rounded-md text-sm"
-              rows={8}
-              value={inputInitialInput}
-              onChange={(e) => setInputInitialInput(e.target.value)}
-              placeholder="워크플로우 초기 입력을 입력하세요..."
-            />
-            <p className="text-xs text-muted-foreground">
-              이 입력이 연결된 첫 번째 노드로 전달됩니다.
-            </p>
-            {errors.initial_input && (
-              <div className="text-xs text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                {errors.initial_input}
-              </div>
-            )}
-          </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+          {/* 탭 헤더 */}
+          <TabsList className="flex w-full mx-2 mt-4 gap-1">
+            <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">기본</TabsTrigger>
+            <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">로그</TabsTrigger>
+            <TabsTrigger value="info" className="text-xs flex-1 min-w-0">정보</TabsTrigger>
+          </TabsList>
 
-          {/* 노드 정보 */}
-          <div className="border-t pt-4 space-y-2">
-            <div className="text-xs text-muted-foreground">
-              <div className="font-medium mb-1">노드 정보</div>
-              <div>ID: {selectedNode.id}</div>
-              <div>타입: Input (시작점)</div>
-              <div>
-                위치: ({Math.round(selectedNode.position.x)},{' '}
-                {Math.round(selectedNode.position.y)})
-              </div>
-            </div>
-          </div>
-
-          {/* 사용법 안내 */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="text-sm text-blue-900">
-              <strong>💡 사용법:</strong>
-              <ul className="list-disc list-inside mt-1 space-y-1 text-xs">
-                <li>노드 내부의 "실행" 버튼으로 독립적으로 실행 가능</li>
-                <li>여러 Input 노드를 만들어 여러 플로우 실행 가능</li>
-                <li>연결된 노드가 없으면 실행되지 않습니다</li>
-              </ul>
-            </div>
-          </div>
-
-          {/* 실행 로그 섹션 */}
-          <div className="border-t pt-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">실행 로그 ({logs.length})</label>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const clearExecution = useWorkflowStore.getState().clearExecution
-                  clearExecution()
-                }}
-                disabled={logs.length === 0}
-              >
-                초기화
-              </Button>
-            </div>
-            <div className="overflow-y-auto bg-gray-50 border rounded-md p-3 space-y-1 max-h-64">
-              {logs.length === 0 ? (
-                <div className="text-xs text-muted-foreground">
-                  실행 로그가 표시됩니다...
+          {/* 탭 컨텐츠 */}
+          <div className="flex-1 overflow-hidden">
+            {/* 기본 설정 탭 */}
+            <TabsContent value="basic" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
+              {/* 초기 입력 */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">초기 입력</label>
+                  <span title="워크플로우를 시작하는 초기 입력입니다">
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </span>
                 </div>
-              ) : (
-                <>
-                  {logs.map((log, index) => {
-                    // output 타입만 파싱 시도
-                    const parsed = log.type === 'output'
-                      ? parseClaudeMessage(log.message)
-                      : { type: 'raw' as const, content: log.message, isCollapsible: false }
+                <textarea
+                  className="w-full p-3 border rounded-md text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  rows={10}
+                  value={inputInitialInput}
+                  onChange={(e) => setInputInitialInput(e.target.value)}
+                  placeholder="워크플로우 초기 입력을 입력하세요...&#10;예시:&#10;- 새로운 기능 추가&#10;- 버그 수정&#10;- 코드 리뷰"
+                />
+                <p className="text-xs text-muted-foreground">
+                  이 입력이 연결된 첫 번째 노드로 전달됩니다.
+                </p>
+                {errors.initial_input && (
+                  <div className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.initial_input}
+                  </div>
+                )}
+              </div>
 
-                    const isExpanded = expandedLogs.has(index)
+              {/* 미리보기 */}
+              {inputInitialInput.trim() && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-md p-3">
+                  <div className="text-xs font-medium text-emerald-900 mb-2">
+                    초기 입력 미리보기
+                  </div>
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap bg-white p-3 rounded border">
+                    {inputInitialInput}
+                  </div>
+                  <div className="text-xs text-emerald-700 mt-2">
+                    글자 수: {inputInitialInput.length}자
+                  </div>
+                </div>
+              )}
 
-                    let colorClass = 'text-gray-700'
-                    let fontWeight = ''
-
-                    // 로그 타입별 색상 및 스타일
-                    if (log.type === 'error') {
-                      colorClass = 'text-red-600'
-                      fontWeight = 'font-semibold'
-                    } else if (log.type === 'complete') {
-                      colorClass = 'text-green-600'
-                      fontWeight = 'font-semibold'
-                    } else if (log.type === 'start') {
-                      colorClass = 'text-blue-600'
-                      fontWeight = 'font-semibold'
-                    } else if (log.type === 'output') {
-                      colorClass = 'text-gray-600'
-                      fontWeight = 'font-normal'
-                    }
-
-                    // 접을 수 있는 로그 (UserMessage, ToolResult)
-                    if (parsed.isCollapsible) {
-                      const lines = parsed.content.split('\n')
-                      const firstLine = lines[0] || parsed.content.substring(0, 80)
-                      const hasMore = lines.length > 1 || parsed.content.length > 80
-
-                      return (
-                        <div key={index} className="border-l-2 border-gray-300 pl-2 my-1">
-                          <div
-                            className={`text-xs ${colorClass} font-mono cursor-pointer hover:bg-gray-100 rounded px-1`}
-                            onClick={() => toggleLogExpand(index)}
-                          >
-                            <span className="select-none">{isExpanded ? '▼' : '▶'}</span> {firstLine}
-                            {hasMore && !isExpanded && ' ...'}
-                          </div>
-                          {isExpanded && (
-                            <div className="text-xs text-gray-600 font-mono whitespace-pre-wrap mt-1 pl-3 max-h-24 overflow-y-auto bg-gray-50 rounded p-2 border border-gray-200">
-                              {parsed.content}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    }
-
-                    // 일반 로그
-                    return (
-                      <div key={index} className={`text-xs ${colorClass} ${fontWeight} font-mono whitespace-pre-wrap`}>
-                        {log.nodeId && log.type !== 'output' && `[${log.nodeId}] `}
-                        {parsed.content}
+              {/* 연결 상태 */}
+              <div className="bg-gray-50 border rounded-md p-3">
+                <div className="text-xs font-medium mb-2">연결 상태</div>
+                <div className="text-xs text-muted-foreground">
+                  {/* 연결된 노드 체크 (edges에서 확인) */}
+                  {(() => {
+                    const edges = useWorkflowStore.getState().edges
+                    const connectedEdges = edges.filter(e => e.source === selectedNode.id)
+                    return connectedEdges.length > 0 ? (
+                      <div className="flex items-center gap-2 text-green-600">
+                        <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                        <span>{connectedEdges.length}개 노드에 연결됨</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-yellow-600">
+                        <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                        <span>연결된 노드 없음 (실행 불가)</span>
                       </div>
                     )
-                  })}
-                  {/* 자동 스크롤 앵커 */}
-                  <div ref={logEndRef} />
-                </>
-              )}
-            </div>
+                  })()}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* 실행 로그 탭 */}
+            <TabsContent value="logs" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">실행 로그 ({logs.length})</label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const clearExecution = useWorkflowStore.getState().clearExecution
+                      clearExecution()
+                    }}
+                    disabled={logs.length === 0}
+                  >
+                    초기화
+                  </Button>
+                </div>
+                <div className="overflow-y-auto bg-gray-50 border rounded-md p-3 space-y-1 max-h-96">
+                  {logs.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">
+                      실행 로그가 표시됩니다...
+                    </div>
+                  ) : (
+                    <>
+                      {logs.map((log, index) => {
+                        // output 타입만 파싱 시도
+                        const parsed = log.type === 'output'
+                          ? parseClaudeMessage(log.message)
+                          : { type: 'raw' as const, content: log.message, isCollapsible: false }
+
+                        const isExpanded = expandedLogs.has(index)
+
+                        let colorClass = 'text-gray-700'
+                        let fontWeight = ''
+
+                        // 로그 타입별 색상 및 스타일
+                        if (log.type === 'error') {
+                          colorClass = 'text-red-600'
+                          fontWeight = 'font-semibold'
+                        } else if (log.type === 'complete') {
+                          colorClass = 'text-green-600'
+                          fontWeight = 'font-semibold'
+                        } else if (log.type === 'start') {
+                          colorClass = 'text-blue-600'
+                          fontWeight = 'font-semibold'
+                        } else if (log.type === 'output') {
+                          colorClass = 'text-gray-600'
+                          fontWeight = 'font-normal'
+                        }
+
+                        // 접을 수 있는 로그 (UserMessage, ToolResult)
+                        if (parsed.isCollapsible) {
+                          const lines = parsed.content.split('\n')
+                          const firstLine = lines[0] || parsed.content.substring(0, 80)
+                          const hasMore = lines.length > 1 || parsed.content.length > 80
+
+                          return (
+                            <div key={index} className="border-l-2 border-gray-300 pl-2 my-1">
+                              <div
+                                className={`text-xs ${colorClass} font-mono cursor-pointer hover:bg-gray-100 rounded px-1`}
+                                onClick={() => toggleLogExpand(index)}
+                              >
+                                <span className="select-none">{isExpanded ? '▼' : '▶'}</span> {firstLine}
+                                {hasMore && !isExpanded && ' ...'}
+                              </div>
+                              {isExpanded && (
+                                <div className="text-xs text-gray-600 font-mono whitespace-pre-wrap mt-1 pl-3 max-h-24 overflow-y-auto bg-gray-50 rounded p-2 border border-gray-200">
+                                  {parsed.content}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        }
+
+                        // 일반 로그
+                        return (
+                          <div key={index} className={`text-xs ${colorClass} ${fontWeight} font-mono whitespace-pre-wrap`}>
+                            {log.nodeId && log.type !== 'output' && `[${log.nodeId}] `}
+                            {parsed.content}
+                          </div>
+                        )
+                      })}
+                      {/* 자동 스크롤 앵커 */}
+                      <div ref={logEndRef} />
+                    </>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* 정보 탭 */}
+            <TabsContent value="info" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
+              {/* 노드 정보 */}
+              <div className="space-y-3">
+                <div className="text-sm font-semibold border-b pb-2">노드 정보</div>
+
+                <div>
+                  <span className="font-medium">노드 ID:</span>
+                  <div className="mt-0.5 break-all text-sm text-muted-foreground">
+                    {selectedNode.id}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-medium">타입:</span>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    Input (시작점)
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-medium">위치:</span>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    ({Math.round(selectedNode.position.x)}, {Math.round(selectedNode.position.y)})
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-medium">입력 크기:</span>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    {inputInitialInput.length}자
+                  </div>
+                </div>
+              </div>
+
+              {/* 사용 가이드 */}
+              <div className="space-y-3">
+                <div className="text-sm font-semibold border-b pb-2">사용 가이드</div>
+
+                <div className="text-xs text-muted-foreground space-y-2">
+                  <div>
+                    <div className="font-medium text-emerald-700 mb-1">Input 노드란?</div>
+                    <div>워크플로우의 시작점입니다. 연결된 노드들에게 초기 입력을 전달합니다.</div>
+                  </div>
+
+                  <div>
+                    <div className="font-medium text-emerald-700 mb-1">실행 방법</div>
+                    <ul className="list-disc list-inside space-y-1 mt-1">
+                      <li>노드 내부의 "실행" 버튼 클릭</li>
+                      <li>연결된 노드가 있어야 실행 가능</li>
+                      <li>독립적으로 실행되며 다른 Input 노드에 영향 없음</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div className="font-medium text-emerald-700 mb-1">활용 팁</div>
+                    <ul className="list-disc list-inside space-y-1 mt-1">
+                      <li>여러 Input 노드를 만들어 다양한 시나리오 테스트</li>
+                      <li>각 Input 노드는 별도의 워크플로우로 실행됨</li>
+                      <li>Manager 노드에 연결하면 병렬 워커 실행 가능</li>
+                      <li>Worker 노드에 직접 연결하면 단일 작업 실행</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div className="font-medium text-emerald-700 mb-1">주의사항</div>
+                    <ul className="list-disc list-inside space-y-1 mt-1">
+                      <li>연결된 노드가 없으면 실행되지 않습니다</li>
+                      <li>입력이 비어있어도 실행 가능 (빈 문자열 전달)</li>
+                      <li>로그는 실행 완료 시까지 누적됩니다</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
           </div>
-        </CardContent>
+        </Tabs>
 
         {/* 저장/초기화 버튼 */}
         <div className="border-t p-4 space-y-2">
