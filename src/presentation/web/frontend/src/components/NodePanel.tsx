@@ -11,14 +11,14 @@ import { Button } from '@/components/ui/button'
 import { Agent, getAgents } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus, Target, Zap, Search, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { Plus, Target, Zap, Search, ChevronDown, ChevronUp, Sparkles, GitBranch, RotateCw, Merge } from 'lucide-react'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'manager', 'workers']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'manager', 'advanced', 'general', 'specialized']))
 
   const { addNode, nodes } = useWorkflowStore()
 
@@ -35,11 +35,19 @@ export const NodePanel: React.FC = () => {
     })
   }
 
+  // 워커 분류
+  const generalWorkers = ['planner', 'coder', 'reviewer', 'tester', 'committer', 'ideator', 'product_manager', 'documenter']
+  const specializedWorkers = ['style_reviewer', 'security_reviewer', 'architecture_reviewer', 'bug_fixer', 'log_analyzer', 'summarizer']
+
   // 검색 필터
   const filteredAgents = agents.filter((agent) =>
     agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     agent.role.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // 범용/특화 워커 분리
+  const filteredGeneralWorkers = filteredAgents.filter((agent) => generalWorkers.includes(agent.name))
+  const filteredSpecializedWorkers = filteredAgents.filter((agent) => specializedWorkers.includes(agent.name))
 
   // Agent 목록 로드
   useEffect(() => {
@@ -115,6 +123,61 @@ export const NodePanel: React.FC = () => {
       position: { x, y },
       data: {
         initial_input: '초기 입력을 입력하세요',
+      },
+    }
+
+    addNode(newNode)
+  }
+
+  // Condition 노드를 캔버스에 추가
+  const handleAddCondition = () => {
+    const x = 100 + (nodes.length % 3) * 300
+    const y = 100 + Math.floor(nodes.length / 3) * 150
+
+    const newNode: WorkflowNode = {
+      id: `condition-${Date.now()}`,
+      type: 'condition',
+      position: { x, y },
+      data: {
+        condition_type: 'contains',
+        condition_value: 'success',
+      },
+    }
+
+    addNode(newNode)
+  }
+
+  // Loop 노드를 캔버스에 추가
+  const handleAddLoop = () => {
+    const x = 100 + (nodes.length % 3) * 300
+    const y = 100 + Math.floor(nodes.length / 3) * 150
+
+    const newNode: WorkflowNode = {
+      id: `loop-${Date.now()}`,
+      type: 'loop',
+      position: { x, y },
+      data: {
+        max_iterations: 5,
+        loop_condition: '완료',
+        loop_condition_type: 'contains',
+      },
+    }
+
+    addNode(newNode)
+  }
+
+  // Merge 노드를 캔버스에 추가
+  const handleAddMerge = () => {
+    const x = 100 + (nodes.length % 3) * 300
+    const y = 100 + Math.floor(nodes.length / 3) * 150
+
+    const newNode: WorkflowNode = {
+      id: `merge-${Date.now()}`,
+      type: 'merge',
+      position: { x, y },
+      data: {
+        merge_strategy: 'concatenate',
+        separator: '\n\n---\n\n',
       },
     }
 
@@ -243,42 +306,164 @@ export const NodePanel: React.FC = () => {
           )}
         </div>
 
-        {/* Worker 노드 섹션 */}
-        <div className="border rounded-lg overflow-hidden bg-gray-50/50">
+        {/* 고급 노드 섹션 (Condition, Loop, Merge) */}
+        <div className="border rounded-lg overflow-hidden bg-blue-50/50">
           <button
-            onClick={() => toggleSection('workers')}
-            className="w-full flex items-center justify-between p-3 hover:bg-gray-100 transition-colors"
+            onClick={() => toggleSection('advanced')}
+            className="w-full flex items-center justify-between p-3 hover:bg-blue-100/50 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <Plus className="h-4 w-4 text-gray-600" />
-              <span className="font-semibold text-sm text-gray-700">Worker 노드</span>
-              <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full">
-                {filteredAgents.length}
-              </span>
+              <GitBranch className="h-4 w-4 text-blue-600" />
+              <span className="font-semibold text-sm text-blue-700">고급 노드</span>
+              <span className="text-xs px-2 py-0.5 bg-blue-200 text-blue-700 rounded-full">3</span>
             </div>
-            {expandedSections.has('workers') ? (
-              <ChevronUp className="h-4 w-4 text-gray-600" />
+            {expandedSections.has('advanced') ? (
+              <ChevronUp className="h-4 w-4 text-blue-600" />
             ) : (
-              <ChevronDown className="h-4 w-4 text-gray-600" />
+              <ChevronDown className="h-4 w-4 text-blue-600" />
             )}
           </button>
-          {expandedSections.has('workers') && (
+          {expandedSections.has('advanced') && (
             <div className="p-3 pt-0 space-y-2">
-              {filteredAgents.length === 0 ? (
+              {/* Condition 노드 */}
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left border-amber-300 hover:bg-amber-50 bg-white cursor-grab active:cursor-grabbing"
+                onClick={handleAddCondition}
+                draggable
+                onDragStart={(e) => onDragStart(e, 'condition', { condition_type: 'contains', condition_value: 'success' })}
+              >
+                <GitBranch className="mr-2 h-4 w-4 text-amber-600" />
+                <div className="flex flex-col items-start">
+                  <span className="font-medium text-amber-700">조건 분기</span>
+                  <span className="text-xs text-muted-foreground">
+                    조건에 따라 True/False 분기
+                  </span>
+                </div>
+              </Button>
+
+              {/* Loop 노드 */}
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left border-teal-300 hover:bg-teal-50 bg-white cursor-grab active:cursor-grabbing"
+                onClick={handleAddLoop}
+                draggable
+                onDragStart={(e) => onDragStart(e, 'loop', { max_iterations: 5, loop_condition: '완료', loop_condition_type: 'contains' })}
+              >
+                <RotateCw className="mr-2 h-4 w-4 text-teal-600" />
+                <div className="flex flex-col items-start">
+                  <span className="font-medium text-teal-700">반복</span>
+                  <span className="text-xs text-muted-foreground">
+                    조건 만족 시까지 반복 실행
+                  </span>
+                </div>
+              </Button>
+
+              {/* Merge 노드 */}
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left border-sky-300 hover:bg-sky-50 bg-white cursor-grab active:cursor-grabbing"
+                onClick={handleAddMerge}
+                draggable
+                onDragStart={(e) => onDragStart(e, 'merge', { merge_strategy: 'concatenate', separator: '\n\n---\n\n' })}
+              >
+                <Merge className="mr-2 h-4 w-4 text-sky-600" />
+                <div className="flex flex-col items-start">
+                  <span className="font-medium text-sky-700">병합</span>
+                  <span className="text-xs text-muted-foreground">
+                    여러 분기 결과를 통합
+                  </span>
+                </div>
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* 범용 Worker 노드 섹션 */}
+        <div className="border rounded-lg overflow-hidden bg-slate-50/50">
+          <button
+            onClick={() => toggleSection('general')}
+            className="w-full flex items-center justify-between p-3 hover:bg-slate-100 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Plus className="h-4 w-4 text-slate-600" />
+              <span className="font-semibold text-sm text-slate-700">범용 워커</span>
+              <span className="text-xs px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full">
+                {filteredGeneralWorkers.length}
+              </span>
+            </div>
+            {expandedSections.has('general') ? (
+              <ChevronUp className="h-4 w-4 text-slate-600" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-slate-600" />
+            )}
+          </button>
+          {expandedSections.has('general') && (
+            <div className="p-3 pt-0 space-y-2">
+              {filteredGeneralWorkers.length === 0 ? (
                 <div className="text-sm text-muted-foreground text-center py-4">
                   검색 결과가 없습니다
                 </div>
               ) : (
-                filteredAgents.map((agent) => (
+                filteredGeneralWorkers.map((agent) => (
                   <Button
                     key={agent.name}
                     variant="outline"
-                    className="w-full justify-start text-left hover:bg-gray-50 bg-white cursor-grab active:cursor-grabbing"
+                    className="w-full justify-start text-left hover:bg-slate-50 bg-white cursor-grab active:cursor-grabbing"
                     onClick={() => handleAddAgent(agent)}
                     draggable
                     onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{input}}을(를) ${agent.role} 해주세요.` })}
                   >
                     <Plus className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col items-start flex-1">
+                      <span className="font-medium">{agent.name}</span>
+                      <span className="text-xs text-muted-foreground line-clamp-1">
+                        {agent.role}
+                      </span>
+                    </div>
+                  </Button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 특화 Worker 노드 섹션 */}
+        <div className="border rounded-lg overflow-hidden bg-orange-50/50">
+          <button
+            onClick={() => toggleSection('specialized')}
+            className="w-full flex items-center justify-between p-3 hover:bg-orange-100/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-orange-600" />
+              <span className="font-semibold text-sm text-orange-700">특화 워커</span>
+              <span className="text-xs px-2 py-0.5 bg-orange-200 text-orange-700 rounded-full">
+                {filteredSpecializedWorkers.length}
+              </span>
+            </div>
+            {expandedSections.has('specialized') ? (
+              <ChevronUp className="h-4 w-4 text-orange-600" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-orange-600" />
+            )}
+          </button>
+          {expandedSections.has('specialized') && (
+            <div className="p-3 pt-0 space-y-2">
+              {filteredSpecializedWorkers.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  검색 결과가 없습니다
+                </div>
+              ) : (
+                filteredSpecializedWorkers.map((agent) => (
+                  <Button
+                    key={agent.name}
+                    variant="outline"
+                    className="w-full justify-start text-left hover:bg-orange-50 bg-white cursor-grab active:cursor-grabbing"
+                    onClick={() => handleAddAgent(agent)}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{input}}을(를) ${agent.role} 해주세요.` })}
+                  >
+                    <Target className="mr-2 h-4 w-4 text-orange-600" />
                     <div className="flex flex-col items-start flex-1">
                       <span className="font-medium">{agent.name}</span>
                       <span className="text-xs text-muted-foreground line-clamp-1">

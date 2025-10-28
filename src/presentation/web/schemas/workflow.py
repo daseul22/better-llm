@@ -84,8 +84,95 @@ class InputNodeData(BaseModel):
     )
 
 
-# Union 타입으로 Worker/Manager/Input 구분
-WorkflowNodeData = Union[WorkerNodeData, ManagerNodeData, InputNodeData]
+class ConditionNodeData(BaseModel):
+    """
+    조건 분기 노드의 데이터
+
+    조건 분기 노드는 이전 노드의 출력을 평가하여 True/False 경로로 분기합니다.
+
+    Attributes:
+        condition_type: 조건 타입 ('contains', 'regex', 'length', 'custom')
+        condition_value: 조건 값 (예: 'success', '\\d{3}', '100', 'len(output) > 0')
+        true_branch_id: True 경로 노드 ID
+        false_branch_id: False 경로 노드 ID (옵션)
+    """
+    condition_type: str = Field(
+        ...,
+        description="조건 타입 (contains, regex, length, custom)"
+    )
+    condition_value: str = Field(
+        ...,
+        description="조건 값 (타입에 따라 다름)"
+    )
+    true_branch_id: Optional[str] = Field(
+        default=None,
+        description="True 경로 노드 ID (동적으로 엣지로 관리될 수 있음)"
+    )
+    false_branch_id: Optional[str] = Field(
+        default=None,
+        description="False 경로 노드 ID (동적으로 엣지로 관리될 수 있음)"
+    )
+
+
+class LoopNodeData(BaseModel):
+    """
+    반복 노드의 데이터
+
+    반복 노드는 지정된 조건이 만족될 때까지 연결된 노드들을 반복 실행합니다.
+
+    Attributes:
+        max_iterations: 최대 반복 횟수 (무한 루프 방지)
+        loop_condition: 반복 조건 (예: 'output contains "완료"')
+        loop_condition_type: 조건 타입 ('contains', 'regex', 'custom')
+    """
+    max_iterations: int = Field(
+        default=5,
+        description="최대 반복 횟수 (기본값: 5)"
+    )
+    loop_condition: str = Field(
+        ...,
+        description="반복 조건 (예: 'output contains \"완료\"')"
+    )
+    loop_condition_type: str = Field(
+        default="contains",
+        description="조건 타입 (contains, regex, custom)"
+    )
+
+
+class MergeNodeData(BaseModel):
+    """
+    병합 노드의 데이터
+
+    병합 노드는 여러 분기의 출력을 하나로 통합합니다.
+
+    Attributes:
+        merge_strategy: 병합 전략 ('concatenate', 'first', 'last', 'custom')
+        separator: 결합 시 사용할 구분자 (concatenate 전략 시)
+        custom_template: 커스텀 병합 템플릿 (옵션)
+    """
+    merge_strategy: str = Field(
+        default="concatenate",
+        description="병합 전략 (concatenate, first, last, custom)"
+    )
+    separator: str = Field(
+        default="\n\n---\n\n",
+        description="결합 시 사용할 구분자 (concatenate 전략 시)"
+    )
+    custom_template: Optional[str] = Field(
+        default=None,
+        description="커스텀 병합 템플릿 ({{branch_1}}, {{branch_2}} 등)"
+    )
+
+
+# Union 타입으로 모든 노드 타입 포함
+WorkflowNodeData = Union[
+    WorkerNodeData,
+    ManagerNodeData,
+    InputNodeData,
+    ConditionNodeData,
+    LoopNodeData,
+    MergeNodeData
+]
 
 
 class WorkflowNode(BaseModel):
@@ -94,18 +181,29 @@ class WorkflowNode(BaseModel):
 
     Attributes:
         id: 노드 고유 ID
-        type: 노드 타입 (worker, manager, input)
+        type: 노드 타입 (worker, manager, input, condition, loop, merge)
         position: 캔버스 상의 위치 {x, y}
-        data: 노드 데이터 (WorkerNodeData, ManagerNodeData, InputNodeData)
+        data: 노드 데이터 (WorkerNodeData, ManagerNodeData, InputNodeData, ConditionNodeData, LoopNodeData, MergeNodeData)
     """
     id: str = Field(..., description="노드 고유 ID")
-    type: str = Field(default="worker", description="노드 타입 (worker, manager, input)")
+    type: str = Field(
+        default="worker",
+        description="노드 타입 (worker, manager, input, condition, loop, merge)"
+    )
     position: Dict[str, float] = Field(
         ...,
         description="캔버스 상의 위치",
         example={"x": 100, "y": 100}
     )
-    data: Union[WorkerNodeData, ManagerNodeData, InputNodeData, Dict[str, Any]] = Field(
+    data: Union[
+        WorkerNodeData,
+        ManagerNodeData,
+        InputNodeData,
+        ConditionNodeData,
+        LoopNodeData,
+        MergeNodeData,
+        Dict[str, Any]
+    ] = Field(
         ...,
         description="노드 데이터 (타입에 따라 다름)"
     )

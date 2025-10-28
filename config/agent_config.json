@@ -35,7 +35,7 @@
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929",
+      "model": "claude-haiku-4-5-20251001",
       "thinking": false
     },
     {
@@ -48,7 +48,7 @@
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929",
+      "model": "claude-haiku-4-5-20251001",
       "thinking": false
     },
     {
@@ -61,7 +61,7 @@
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929",
+      "model": "claude-haiku-4-5-20251001",
       "thinking": false
     },
     {
@@ -98,7 +98,82 @@
         "glob",
         "grep"
       ],
+      "model": "claude-haiku-4-5-20251001",
+      "thinking": false
+    },
+    {
+      "name": "style_reviewer",
+      "role": "코딩 스타일 및 포맷팅 리뷰",
+      "system_prompt_file": "prompts/style_reviewer.txt",
+      "allowed_tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-haiku-4-5-20251001",
+      "thinking": false
+    },
+    {
+      "name": "security_reviewer",
+      "role": "보안 취약점 리뷰",
+      "system_prompt_file": "prompts/security_reviewer.txt",
+      "allowed_tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-haiku-4-5-20251001",
+      "thinking": false
+    },
+    {
+      "name": "summarizer",
+      "role": "텍스트 요약",
+      "system_prompt_file": "prompts/summarizer.txt",
+      "allowed_tools": [
+        "read",
+        "glob"
+      ],
+      "model": "claude-haiku-4-5-20251001",
+      "thinking": false
+    },
+    {
+      "name": "architecture_reviewer",
+      "role": "아키텍처 패턴 리뷰",
+      "system_prompt_file": "prompts/architecture_reviewer.txt",
+      "allowed_tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
       "model": "claude-sonnet-4-5-20250929",
+      "thinking": false
+    },
+    {
+      "name": "bug_fixer",
+      "role": "버그 수정",
+      "system_prompt_file": "prompts/bug_fixer.txt",
+      "allowed_tools": [
+        "read",
+        "write",
+        "edit",
+        "bash",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "log_analyzer",
+      "role": "로그 분석",
+      "system_prompt_file": "prompts/log_analyzer.txt",
+      "allowed_tools": [
+        "read",
+        "bash",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-haiku-4-5-20251001",
       "thinking": false
     }
   ]

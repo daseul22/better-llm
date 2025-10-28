@@ -139,170 +139,86 @@
 3. 에러 클릭 → 해당 노드로 포커스 이동 및 수정
 4. 템플릿 입력 시 프리뷰로 변수 치환 결과 확인
 
+### 기능 4: 조건부 분기 및 반복 노드 (완료 - 기본 구현)
+
+**완료 날짜**: 2025-10-28
+
+**구현 내용**:
+
+**백엔드**:
+- 새로운 노드 데이터 스키마 정의 (`schemas/workflow.py`)
+  - `ConditionNodeData`: 조건 분기 노드 (조건 타입, 조건 값, True/False 분기 경로)
+  - `LoopNodeData`: 반복 노드 (최대 반복 횟수, 종료 조건, 조건 타입)
+  - `MergeNodeData`: 병합 노드 (병합 전략, 구분자, 커스텀 템플릿)
+- `WorkflowNodeData` Union 타입에 새 노드 타입 추가
+- WorkflowExecutor 확장 (`services/workflow_executor.py`)
+  - `_evaluate_condition()`: 조건 평가 로직 (contains, regex, length, custom)
+  - `_execute_condition_node()`: 조건 분기 노드 실행 (True/False 경로 동적 결정)
+  - `_execute_loop_node()`: 반복 노드 실행 (최대 반복 횟수, 종료 조건 평가)
+  - `_execute_merge_node()`: 병합 노드 실행 (concatenate, first, last, custom 전략)
+- `execute_workflow()`에 새 노드 타입 처리 로직 통합
+
+**프론트엔드**:
+- 새 노드 컴포넌트 구현
+  - `ConditionNode.tsx`: 조건 분기 노드 (True/False 두 개의 출력 핸들)
+  - `LoopNode.tsx`: 반복 노드 (반복 횟수 및 종료 조건 표시)
+  - `MergeNode.tsx`: 병합 노드 (병합 전략 표시)
+- WorkflowCanvas에 새 노드 타입 등록
+- NodeConfigPanel에 기본 메시지 표시 (전용 설정 UI는 TODO)
+
+**파일 변경**:
+- `src/presentation/web/schemas/workflow.py`
+- `src/presentation/web/services/workflow_executor.py`
+- `src/presentation/web/frontend/src/components/ConditionNode.tsx` (신규)
+- `src/presentation/web/frontend/src/components/LoopNode.tsx` (신규)
+- `src/presentation/web/frontend/src/components/MergeNode.tsx` (신규)
+- `src/presentation/web/frontend/src/components/WorkflowCanvas.tsx`
+- `src/presentation/web/frontend/src/components/NodeConfigPanel.tsx`
+
+**제한사항 및 TODO**:
+- Condition 노드는 동적 분기를 지원하지만, 현재 위상 정렬 방식에서는 모든 경로가 실행됨 (추후 개선 필요)
+- Loop 노드는 현재 Worker 노드만 반복 실행 가능 (다른 노드 타입 지원은 TODO)
+- 노드별 전용 설정 UI 미구현 (NodeConfigPanel에서 JSON 직접 편집 필요)
+- App.tsx에 새 노드 추가 버튼 미추가 (수동 작업 필요)
+- 단위 테스트 및 통합 테스트 미작성
+- WorkflowValidator에 새 노드 타입 검증 로직 미추가
+
+**사용 방법**:
+1. 웹 UI에서 노드를 추가할 때 JSON으로 condition/loop/merge 타입 지정
+2. 각 노드의 data 필드에 필요한 속성 설정
+3. 워크플로우 실행 시 백엔드에서 자동으로 처리
+
 ---
 
 ## 📋 진행 예정 기능
 
-### 기능 4: 조건부 분기 및 반복 노드
+### 기능 4의 향후 개선사항
 
 **우선순위**: 중
-**난이도**: 상
+**난이도**: 중
 
-#### 목표
-- Condition 노드: 출력 기반 조건 분기
-- Loop 노드: 조건 만족 시까지 반복
-- Merge 노드: 여러 분기 결과 통합
+#### 개선 목표
+- 조건 분기의 동적 경로 실행 (현재는 모든 경로 실행)
+- Loop 노드의 다중 노드 반복 지원 (현재는 Worker 노드만)
+- 전용 설정 UI 구현 (ConditionNodeConfig, LoopNodeConfig, MergeNodeConfig)
+- App.tsx에 노드 추가 버튼 통합
+- WorkflowValidator에 새 노드 타입 검증 로직 추가
+- 단위 테스트 및 통합 테스트 작성
 
-#### 구현 계획
-
-##### 4-1. 백엔드: 새로운 노드 타입 추가
-**파일**: `src/presentation/web/schemas/workflow.py`
-
-```python
-class ConditionNodeData(BaseModel):
-    """조건 분기 노드"""
-    condition_type: str  # 'contains', 'regex', 'length', 'custom'
-    condition_value: str  # 조건 값
-    true_path: str  # True 경로 노드 ID
-    false_path: str  # False 경로 노드 ID
-
-class LoopNodeData(BaseModel):
-    """반복 노드"""
-    max_iterations: int = 5  # 최대 반복 횟수
-    loop_condition: str  # 반복 조건 (예: "output contains 'success'")
-    loop_body_nodes: List[str]  # 반복할 노드 ID 목록
-
-class MergeNodeData(BaseModel):
-    """병합 노드"""
-    merge_strategy: str  # 'concatenate', 'first', 'last', 'custom'
-```
+#### 개선 계획
 
 **태스크**:
-- [ ] 새로운 노드 데이터 스키마 정의
-- [ ] `WorkflowNodeData` Union 타입에 추가
+- [ ] 동적 분기 실행: 위상 정렬 대신 동적 실행 경로 구현
+- [ ] Loop 노드 개선: 여러 노드를 위상 정렬하여 순차 반복
+- [ ] ConditionNodeConfig 컴포넌트 구현 (조건 타입, 조건 값 입력)
+- [ ] LoopNodeConfig 컴포넌트 구현 (최대 반복, 종료 조건 입력)
+- [ ] MergeNodeConfig 컴포넌트 구현 (병합 전략, 구분자 입력)
+- [ ] App.tsx에 Condition/Loop/Merge 버튼 추가
+- [ ] WorkflowValidator 확장 (새 노드 타입 검증)
+- [ ] 단위 테스트 작성 (`test_workflow_executor_advanced_nodes.py`)
+- [ ] 통합 테스트 작성 (조건 분기 워크플로우 E2E)
 
-##### 4-2. 백엔드: WorkflowExecutor 확장
-**파일**: `src/presentation/web/services/workflow_executor.py`
-
-```python
-async def _execute_condition_node(
-    self, node: WorkflowNode, node_outputs: Dict[str, str], ...
-) -> AsyncIterator[WorkflowNodeExecutionEvent]:
-    """조건 노드 실행"""
-    node_data: ConditionNodeData = node.data
-
-    # 부모 노드 출력 가져오기
-    parent_output = node_outputs.get(parent_id, "")
-
-    # 조건 평가
-    result = self._evaluate_condition(node_data, parent_output)
-
-    # 분기 결정
-    next_node_id = node_data.true_path if result else node_data.false_path
-
-    # 다음 노드 실행 (재귀적으로)
-    # ...
-
-async def _execute_loop_node(
-    self, node: WorkflowNode, node_outputs: Dict[str, str], ...
-) -> AsyncIterator[WorkflowNodeExecutionEvent]:
-    """반복 노드 실행"""
-    node_data: LoopNodeData = node.data
-
-    iteration = 0
-    while iteration < node_data.max_iterations:
-        # 루프 본문 실행
-        for body_node_id in node_data.loop_body_nodes:
-            # 노드 실행
-            pass
-
-        # 조건 평가
-        if self._evaluate_condition(node_data.loop_condition, output):
-            break
-
-        iteration += 1
-
-    # ...
-```
-
-**태스크**:
-- [ ] `_execute_condition_node` 메서드 구현
-- [ ] `_execute_loop_node` 메서드 구현
-- [ ] `_execute_merge_node` 메서드 구현
-- [ ] 조건 평가 로직 (`_evaluate_condition`)
-- [ ] 무한 루프 방지 로직
-
-##### 4-3. 프론트엔드: 새로운 노드 컴포넌트
-**파일**:
-- `src/presentation/web/frontend/src/components/ConditionNode.tsx` (신규)
-- `src/presentation/web/frontend/src/components/LoopNode.tsx` (신규)
-- `src/presentation/web/frontend/src/components/MergeNode.tsx` (신규)
-
-```tsx
-// ConditionNode.tsx
-export const ConditionNode = memo(({ data }: NodeProps) => {
-  return (
-    <Card className="min-w-[250px] border-amber-400 bg-amber-50">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <GitBranch className="h-4 w-4" />
-          조건 분기
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {/* 조건 타입 선택 */}
-        {/* True/False 경로 표시 */}
-      </CardContent>
-
-      {/* 입력 핸들 (위) */}
-      <Handle type="target" position={Position.Top} />
-
-      {/* 출력 핸들 (왼쪽: True, 오른쪽: False) */}
-      <Handle type="source" position={Position.Left} id="true" />
-      <Handle type="source" position={Position.Right} id="false" />
-    </Card>
-  )
-})
-```
-
-**태스크**:
-- [ ] ConditionNode 컴포넌트 구현
-- [ ] LoopNode 컴포넌트 구현
-- [ ] MergeNode 컴포넌트 구현
-- [ ] WorkflowCanvas에 nodeTypes 등록
-
-##### 4-4. 프론트엔드: 노드 설정 패널
-**파일**: `src/presentation/web/frontend/src/components/NodeConfigPanel.tsx`
-
-```tsx
-function ConditionNodeConfig({ nodeId }: Props) {
-  return (
-    <div>
-      <Select label="조건 타입">
-        <option value="contains">텍스트 포함</option>
-        <option value="regex">정규표현식</option>
-        <option value="length">길이 비교</option>
-      </Select>
-
-      <Input label="조건 값" />
-
-      <Select label="True 경로">
-        {/* 다음 노드 선택 */}
-      </Select>
-
-      <Select label="False 경로">
-        {/* 다음 노드 선택 */}
-      </Select>
-    </div>
-  )
-}
-```
-
-**태스크**:
-- [ ] 각 노드 타입별 설정 UI 구현
-- [ ] NodeConfigPanel에 통합
-
-**예상 작업 시간**: 5-7일 (복잡도 높음)
+**예상 작업 시간**: 3-5일
 
 ---
 

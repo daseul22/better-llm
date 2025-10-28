@@ -24,6 +24,9 @@ from src.presentation.web.schemas.workflow import (
     WorkerNodeData,
     ManagerNodeData,
     InputNodeData,
+    ConditionNodeData,
+    LoopNodeData,
+    MergeNodeData,
     TokenUsage,
 )
 
@@ -243,6 +246,412 @@ class WorkflowExecutor:
                 result = result.replace("{{parent}}", node_outputs[parent_nodes[0]])
 
         return result
+
+    def _evaluate_condition(
+        self,
+        condition_type: str,
+        condition_value: str,
+        input_text: str
+    ) -> bool:
+        """
+        조건 평가
+
+        Args:
+            condition_type: 조건 타입 ('contains', 'regex', 'length', 'custom')
+            condition_value: 조건 값
+            input_text: 평가할 텍스트
+
+        Returns:
+            bool: 조건이 True인지 여부
+        """
+        import re
+
+        if condition_type == "contains":
+            # 텍스트 포함 검사
+            return condition_value in input_text
+
+        elif condition_type == "regex":
+            # 정규표현식 매칭
+            try:
+                pattern = re.compile(condition_value)
+                return bool(pattern.search(input_text))
+            except re.error as e:
+                logger.error(f"정규표현식 오류: {e}")
+                return False
+
+        elif condition_type == "length":
+            # 길이 비교 (예: ">100", "<=500", "==0")
+            try:
+                text_length = len(input_text)
+                # condition_value를 파싱하여 비교
+                if condition_value.startswith(">="):
+                    threshold = int(condition_value[2:].strip())
+                    return text_length >= threshold
+                elif condition_value.startswith("<="):
+                    threshold = int(condition_value[2:].strip())
+                    return text_length <= threshold
+                elif condition_value.startswith(">"):
+                    threshold = int(condition_value[1:].strip())
+                    return text_length > threshold
+                elif condition_value.startswith("<"):
+                    threshold = int(condition_value[1:].strip())
+                    return text_length < threshold
+                elif condition_value.startswith("=="):
+                    threshold = int(condition_value[2:].strip())
+                    return text_length == threshold
+                else:
+                    # 숫자만 있는 경우 == 로 간주
+                    threshold = int(condition_value.strip())
+                    return text_length == threshold
+            except (ValueError, IndexError) as e:
+                logger.error(f"길이 조건 파싱 오류: {e}")
+                return False
+
+        elif condition_type == "custom":
+            # 커스텀 Python 표현식 평가
+            try:
+                # 안전한 평가를 위해 제한된 네임스페이스 사용
+                namespace = {
+                    "output": input_text,
+                    "len": len,
+                    "str": str,
+                    "int": int,
+                    "float": float,
+                }
+                result = eval(condition_value, {"__builtins__": {}}, namespace)
+                return bool(result)
+            except Exception as e:
+                logger.error(f"커스텀 조건 평가 오류: {e}")
+                return False
+
+        else:
+            logger.warning(f"알 수 없는 조건 타입: {condition_type}")
+            return False
+
+    async def _execute_condition_node(
+        self,
+        node: WorkflowNode,
+        node_outputs: Dict[str, str],
+        edges: List[WorkflowEdge],
+        session_id: str,
+    ) -> tuple[str, str]:
+        """
+        조건 분기 노드 실행
+
+        Args:
+            node: 조건 노드
+            node_outputs: 이전 노드 출력들
+            edges: 엣지 목록 (분기 경로 확인용)
+            session_id: 세션 ID
+
+        Returns:
+            tuple[str, str]: (다음 실행할 노드 ID, 조건 평가 결과 텍스트)
+
+        Raises:
+            ValueError: 부모 노드가 없거나 분기 경로가 없는 경우
+        """
+        node_id = node.id
+        node_data: ConditionNodeData = node.data  # type: ignore
+
+        logger.info(
+            f"[{session_id}] 조건 노드 실행: {node_id} "
+            f"(타입: {node_data.condition_type}, 값: {node_data.condition_value})"
+        )
+
+        # 부모 노드 출력 가져오기
+        parent_nodes = self._get_parent_nodes(node_id, edges)
+        if not parent_nodes:
+            raise ValueError(f"조건 노드 {node_id}에 부모 노드가 없습니다")
+
+        # 첫 번째 부모 노드의 출력 사용
+        parent_id = parent_nodes[0]
+        parent_output = node_outputs.get(parent_id, "")
+
+        # 조건 평가
+        condition_result = self._evaluate_condition(
+            node_data.condition_type,
+            node_data.condition_value,
+            parent_output
+        )
+
+        logger.info(
+            f"[{session_id}] 조건 평가 결과: {condition_result} "
+            f"(입력 길이: {len(parent_output)})"
+        )
+
+        # 분기 경로 결정 (엣지의 sourceHandle을 사용)
+        # sourceHandle이 "true"인 엣지 → True 경로
+        # sourceHandle이 "false"인 엣지 → False 경로
+        next_node_id = None
+        for edge in edges:
+            if edge.source == node_id:
+                if condition_result and edge.sourceHandle == "true":
+                    next_node_id = edge.target
+                    break
+                elif not condition_result and edge.sourceHandle == "false":
+                    next_node_id = edge.target
+                    break
+
+        if next_node_id is None:
+            branch_type = "true" if condition_result else "false"
+            raise ValueError(
+                f"조건 노드 {node_id}의 {branch_type} 분기 경로가 없습니다. "
+                f"sourceHandle이 '{branch_type}'인 엣지를 추가해주세요."
+            )
+
+        # 조건 결과를 텍스트로 변환
+        result_text = f"조건 평가 결과: {condition_result}\n분기: {next_node_id}"
+
+        return next_node_id, result_text
+
+    async def _execute_loop_node(
+        self,
+        node: WorkflowNode,
+        node_outputs: Dict[str, str],
+        edges: List[WorkflowEdge],
+        nodes: List[WorkflowNode],
+        initial_input: str,
+        session_id: str,
+    ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
+        """
+        반복 노드 실행
+
+        Args:
+            node: 반복 노드
+            node_outputs: 이전 노드 출력들
+            edges: 엣지 목록
+            nodes: 노드 목록
+            initial_input: 초기 입력
+            session_id: 세션 ID
+
+        Yields:
+            WorkflowNodeExecutionEvent: 노드 실행 이벤트
+        """
+        node_id = node.id
+        node_data: LoopNodeData = node.data  # type: ignore
+
+        logger.info(
+            f"[{session_id}] 반복 노드 시작: {node_id} "
+            f"(최대 반복: {node_data.max_iterations}, 조건: {node_data.loop_condition})"
+        )
+
+        # 노드 시작 시간 기록
+        start_time = time.time()
+
+        # 노드 시작 이벤트
+        yield WorkflowNodeExecutionEvent(
+            event_type="node_start",
+            node_id=node_id,
+            data={
+                "node_type": "loop",
+                "max_iterations": node_data.max_iterations,
+            },
+            timestamp=datetime.now().isoformat(),
+        )
+
+        try:
+            # 루프 본문 노드 찾기 (loop 노드의 자식 노드들)
+            loop_body_node_ids = [
+                edge.target for edge in edges if edge.source == node_id
+            ]
+
+            if not loop_body_node_ids:
+                raise ValueError(f"반복 노드 {node_id}에 자식 노드가 없습니다")
+
+            iteration = 0
+            loop_output_history = []
+
+            while iteration < node_data.max_iterations:
+                iteration += 1
+
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_output",
+                    node_id=node_id,
+                    data={"chunk": f"\n\n--- 반복 {iteration}회차 시작 ---\n\n"},
+                )
+
+                logger.info(f"[{session_id}] 반복 노드 {node_id}: {iteration}회차 실행")
+
+                # 루프 본문 노드 실행 (첫 번째 자식 노드만)
+                # TODO: 여러 노드를 순서대로 실행하려면 위상 정렬 필요
+                body_node_id = loop_body_node_ids[0]
+                body_node = next((n for n in nodes if n.id == body_node_id), None)
+
+                if body_node is None:
+                    raise ValueError(f"루프 본문 노드 {body_node_id}를 찾을 수 없습니다")
+
+                # 루프 본문이 Worker 노드인 경우만 지원 (현재 구현)
+                if body_node.type != "worker":
+                    raise ValueError(
+                        f"반복 노드는 현재 Worker 노드만 지원합니다 (노드: {body_node_id}, 타입: {body_node.type})"
+                    )
+
+                # Worker 노드 실행 (간소화된 버전)
+                body_node_data: WorkerNodeData = body_node.data  # type: ignore
+                agent_name = body_node_data.agent_name
+                task_template = body_node_data.task_template
+
+                # 작업 설명 렌더링 (이전 반복 결과 포함)
+                task_description = self._render_task_template(
+                    template=task_template,
+                    node_id=body_node_id,
+                    node_outputs=node_outputs,
+                    initial_input=initial_input,
+                )
+
+                # Worker Agent 실행
+                agent_config = self._get_agent_config(agent_name)
+                worker = WorkerAgent(config=agent_config)
+                body_output_chunks = []
+
+                async for chunk in worker.execute_task(task_description):
+                    body_output_chunks.append(chunk)
+                    yield WorkflowNodeExecutionEvent(
+                        event_type="node_output",
+                        node_id=node_id,
+                        data={"chunk": chunk},
+                    )
+
+                body_output = "".join(body_output_chunks)
+                loop_output_history.append(body_output)
+
+                # 루프 본문 출력을 node_outputs에 저장 (다음 반복에서 사용)
+                node_outputs[body_node_id] = body_output
+
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_output",
+                    node_id=node_id,
+                    data={"chunk": f"\n\n--- 반복 {iteration}회차 완료 ---\n\n"},
+                )
+
+                # 조건 평가 (종료 조건 확인)
+                condition_met = self._evaluate_condition(
+                    node_data.loop_condition_type,
+                    node_data.loop_condition,
+                    body_output
+                )
+
+                logger.info(
+                    f"[{session_id}] 반복 노드 {node_id}: 조건 평가 결과 = {condition_met}"
+                )
+
+                if condition_met:
+                    logger.info(
+                        f"[{session_id}] 반복 노드 {node_id}: 조건 만족, 루프 종료"
+                    )
+                    break
+
+            # 실행 시간 계산
+            elapsed_time = time.time() - start_time
+
+            # 통합 출력 (모든 반복 결과 결합)
+            integrated_output = "\n\n---\n\n".join(loop_output_history)
+
+            # 노드 완료 이벤트
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_complete",
+                node_id=node_id,
+                data={
+                    "node_type": "loop",
+                    "iterations": iteration,
+                    "output": integrated_output,
+                },
+                timestamp=datetime.now().isoformat(),
+                elapsed_time=elapsed_time,
+            )
+
+            logger.info(
+                f"[{session_id}] 반복 노드 완료: {node_id} ({iteration}회 반복)"
+            )
+
+        except Exception as e:
+            error_msg = f"반복 노드 실행 실패: {str(e)}"
+            logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+
+            elapsed_time = time.time() - start_time
+
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_error",
+                node_id=node_id,
+                data={"error": error_msg},
+                timestamp=datetime.now().isoformat(),
+                elapsed_time=elapsed_time,
+            )
+
+            raise
+
+    async def _execute_merge_node(
+        self,
+        node: WorkflowNode,
+        node_outputs: Dict[str, str],
+        edges: List[WorkflowEdge],
+        session_id: str,
+    ) -> str:
+        """
+        병합 노드 실행
+
+        Args:
+            node: 병합 노드
+            node_outputs: 이전 노드 출력들
+            edges: 엣지 목록
+            session_id: 세션 ID
+
+        Returns:
+            str: 병합된 출력
+        """
+        node_id = node.id
+        node_data: MergeNodeData = node.data  # type: ignore
+
+        logger.info(
+            f"[{session_id}] 병합 노드 실행: {node_id} "
+            f"(전략: {node_data.merge_strategy})"
+        )
+
+        # 부모 노드 출력들 수집
+        parent_nodes = self._get_parent_nodes(node_id, edges)
+        if not parent_nodes:
+            raise ValueError(f"병합 노드 {node_id}에 부모 노드가 없습니다")
+
+        parent_outputs = [
+            node_outputs.get(pid, "") for pid in parent_nodes
+        ]
+
+        # 병합 전략에 따라 출력 생성
+        if node_data.merge_strategy == "concatenate":
+            # 모든 출력을 구분자로 결합
+            merged_output = node_data.separator.join(parent_outputs)
+
+        elif node_data.merge_strategy == "first":
+            # 첫 번째 출력만 사용
+            merged_output = parent_outputs[0] if parent_outputs else ""
+
+        elif node_data.merge_strategy == "last":
+            # 마지막 출력만 사용
+            merged_output = parent_outputs[-1] if parent_outputs else ""
+
+        elif node_data.merge_strategy == "custom":
+            # 커스텀 템플릿 사용
+            if node_data.custom_template:
+                merged_output = node_data.custom_template
+                for i, output in enumerate(parent_outputs):
+                    merged_output = merged_output.replace(f"{{{{branch_{i+1}}}}}", output)
+            else:
+                # 템플릿이 없으면 concatenate로 폴백
+                merged_output = node_data.separator.join(parent_outputs)
+
+        else:
+            logger.warning(
+                f"알 수 없는 병합 전략: {node_data.merge_strategy}, "
+                "concatenate로 폴백합니다"
+            )
+            merged_output = node_data.separator.join(parent_outputs)
+
+        logger.info(
+            f"[{session_id}] 병합 노드 완료: {node_id} "
+            f"(입력: {len(parent_outputs)}개, 출력 길이: {len(merged_output)})"
+        )
+
+        return merged_output
 
     async def _execute_manager_node(
         self,
@@ -482,7 +891,7 @@ class WorkflowExecutor:
                     )
                     continue  # 다음 노드로
 
-                # Manager 노드 vs Worker 노드 구분
+                # Manager 노드 vs Worker 노드 vs 조건/반복/병합 노드 구분
                 elif node.type == "manager":
                     # Manager 노드 실행
                     async for event in self._execute_manager_node(
@@ -492,6 +901,130 @@ class WorkflowExecutor:
                             # 통합 결과 저장
                             node_outputs[node_id] = event.data.get("output", "")
                         yield event
+
+                elif node.type == "condition":
+                    # 조건 분기 노드 실행
+                    start_time = time.time()
+
+                    # 시작 이벤트
+                    yield WorkflowNodeExecutionEvent(
+                        event_type="node_start",
+                        node_id=node_id,
+                        data={"node_type": "condition"},
+                        timestamp=datetime.now().isoformat(),
+                    )
+
+                    try:
+                        next_node_id, result_text = await self._execute_condition_node(
+                            node, node_outputs, workflow.edges, session_id
+                        )
+
+                        # 조건 결과 저장
+                        node_outputs[node_id] = result_text
+
+                        # 실행 시간 계산
+                        elapsed_time = time.time() - start_time
+
+                        # 완료 이벤트
+                        yield WorkflowNodeExecutionEvent(
+                            event_type="node_complete",
+                            node_id=node_id,
+                            data={
+                                "node_type": "condition",
+                                "next_node": next_node_id,
+                                "output": result_text,
+                            },
+                            timestamp=datetime.now().isoformat(),
+                            elapsed_time=elapsed_time,
+                        )
+
+                        logger.info(
+                            f"[{session_id}] 조건 노드 완료: {node_id} → {next_node_id}"
+                        )
+
+                    except Exception as e:
+                        error_msg = f"조건 노드 실행 실패: {str(e)}"
+                        logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+
+                        elapsed_time = time.time() - start_time
+
+                        yield WorkflowNodeExecutionEvent(
+                            event_type="node_error",
+                            node_id=node_id,
+                            data={"error": error_msg},
+                            timestamp=datetime.now().isoformat(),
+                            elapsed_time=elapsed_time,
+                        )
+
+                        raise
+
+                elif node.type == "loop":
+                    # 반복 노드 실행
+                    async for event in self._execute_loop_node(
+                        node, node_outputs, workflow.edges, workflow.nodes,
+                        initial_input, session_id
+                    ):
+                        if event.event_type == "node_complete":
+                            # 통합 결과 저장
+                            node_outputs[node_id] = event.data.get("output", "")
+                        yield event
+
+                elif node.type == "merge":
+                    # 병합 노드 실행
+                    start_time = time.time()
+
+                    # 시작 이벤트
+                    yield WorkflowNodeExecutionEvent(
+                        event_type="node_start",
+                        node_id=node_id,
+                        data={"node_type": "merge"},
+                        timestamp=datetime.now().isoformat(),
+                    )
+
+                    try:
+                        merged_output = await self._execute_merge_node(
+                            node, node_outputs, workflow.edges, session_id
+                        )
+
+                        # 병합 결과 저장
+                        node_outputs[node_id] = merged_output
+
+                        # 실행 시간 계산
+                        elapsed_time = time.time() - start_time
+
+                        # 완료 이벤트
+                        yield WorkflowNodeExecutionEvent(
+                            event_type="node_complete",
+                            node_id=node_id,
+                            data={
+                                "node_type": "merge",
+                                "output_length": len(merged_output),
+                                "output": merged_output,
+                            },
+                            timestamp=datetime.now().isoformat(),
+                            elapsed_time=elapsed_time,
+                        )
+
+                        logger.info(
+                            f"[{session_id}] 병합 노드 완료: {node_id} "
+                            f"(출력 길이: {len(merged_output)})"
+                        )
+
+                    except Exception as e:
+                        error_msg = f"병합 노드 실행 실패: {str(e)}"
+                        logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
+
+                        elapsed_time = time.time() - start_time
+
+                        yield WorkflowNodeExecutionEvent(
+                            event_type="node_error",
+                            node_id=node_id,
+                            data={"error": error_msg},
+                            timestamp=datetime.now().isoformat(),
+                            elapsed_time=elapsed_time,
+                        )
+
+                        raise
 
                 else:
                     # Worker 노드 실행 (기존 로직)
