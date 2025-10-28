@@ -698,7 +698,7 @@ export const NodeConfigPanel: React.FC = () => {
     )
   }
 
-  // Manager 노드 설정 UI
+  // Manager 노드 설정 UI (탭 기반)
   if (selectedNode.type === 'manager') {
     return (
       <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
@@ -712,132 +712,254 @@ export const NodeConfigPanel: React.FC = () => {
           </div>
         </CardHeader>
 
-        <CardContent className="flex-1 overflow-y-auto space-y-4">
-          {/* 작업 설명 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">작업 설명</label>
-              <span title="이 작업 설명이 등록된 모든 워커에게 동일하게 전달됩니다">
-                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
-            </div>
-            <textarea
-              className="w-full p-2 border rounded-md text-sm"
-              rows={6}
-              value={managerTaskDescription}
-              onChange={(e) => setManagerTaskDescription(e.target.value)}
-              placeholder="Manager가 수행할 작업을 설명하세요..."
-            />
-            {errors.task_description && (
-              <div className="text-xs text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                {errors.task_description}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+          {/* 탭 헤더 */}
+          <TabsList className="flex w-full mx-2 mt-4 gap-1">
+            <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">기본</TabsTrigger>
+            <TabsTrigger value="workers" className="text-xs flex-1 min-w-0">워커</TabsTrigger>
+            <TabsTrigger value="info" className="text-xs flex-1 min-w-0">정보</TabsTrigger>
+          </TabsList>
+
+          {/* 탭 컨텐츠 */}
+          <div className="flex-1 overflow-hidden">
+            {/* 기본 설정 탭 */}
+            <TabsContent value="basic" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
+              {/* 작업 설명 */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">작업 설명</label>
+                  <span title="이 작업 설명이 등록된 모든 워커에게 동일하게 전달됩니다">
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </span>
+                </div>
+                <textarea
+                  className="w-full p-3 border rounded-md text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  rows={8}
+                  value={managerTaskDescription}
+                  onChange={(e) => setManagerTaskDescription(e.target.value)}
+                  placeholder="Manager가 수행할 작업을 설명하세요...&#10;예시:&#10;- 웹 애플리케이션의 로그인 기능 구현&#10;- API 문서화 및 테스트 작성&#10;- 코드 리뷰 및 리팩토링"
+                />
+                {errors.task_description && (
+                  <div className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.task_description}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* 사용 가능한 워커 선택 */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">사용 가능한 워커</label>
-                <span title="Manager가 병렬로 실행할 워커들을 선택하세요">
-                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                </span>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {managerAvailableWorkers.length}개 선택됨
-              </span>
-            </div>
-
-            {/* 검색 바 */}
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="워커 검색... (이름 또는 역할)"
-                className="w-full pl-8 p-2 border rounded-md text-sm"
-                value={workerSearchQuery}
-                onChange={(e) => setWorkerSearchQuery(e.target.value)}
-              />
-            </div>
-
-            {/* 빠른 선택 버튼 */}
-            <div className="flex gap-2 flex-wrap">
-              <Button size="sm" variant="outline" onClick={selectAllWorkers}>
-                모두 선택
-              </Button>
-              <Button size="sm" variant="outline" onClick={selectNoWorkers}>
-                모두 해제
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('full-dev')}>
-                풀스택 개발
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('quick-code')}>
-                빠른 코드
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('planning')}>
-                기획
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('creative')}>
-                창의적
-              </Button>
-            </div>
-
-            {/* 워커 목록 */}
-            <div className="border rounded-md p-3 space-y-2 max-h-80 overflow-y-auto">
-              {agents.length === 0 ? (
-                <div className="text-sm text-muted-foreground">워커 로딩 중...</div>
-              ) : filteredAgents.length === 0 ? (
-                <div className="text-sm text-muted-foreground">검색 결과가 없습니다</div>
-              ) : (
-                filteredAgents.map((agent) => (
-                  <label
-                    key={agent.name}
-                    className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={managerAvailableWorkers.includes(agent.name)}
-                      onChange={() => handleToggleWorker(agent.name)}
-                      className="w-4 h-4"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{agent.name}</span>
-                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
-                          {agent.allowed_tools.length}개 도구
-                        </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{agent.role}</div>
-                    </div>
-                  </label>
-                ))
+              {/* 미리보기 */}
+              {managerTaskDescription.trim() && (
+                <div className="bg-purple-50 border border-purple-200 rounded-md p-3">
+                  <div className="text-xs font-medium text-purple-900 mb-2">
+                    작업 설명 미리보기
+                  </div>
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap bg-white p-3 rounded border">
+                    {managerTaskDescription}
+                  </div>
+                </div>
               )}
-            </div>
 
-            {errors.workers && (
-              <div className="text-xs text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                {errors.workers}
+              {/* 선택된 워커 요약 */}
+              <div className="bg-gray-50 border rounded-md p-3">
+                <div className="text-xs font-medium mb-2">등록된 워커 ({managerAvailableWorkers.length}개)</div>
+                {managerAvailableWorkers.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">워커 탭에서 워커를 선택하세요 (최소 1개 필수)</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {managerAvailableWorkers.map((workerName) => {
+                      const agent = agents.find((a) => a.name === workerName)
+                      return (
+                        <span
+                          key={workerName}
+                          className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded"
+                        >
+                          {workerName}
+                          {agent && ` (${agent.role})`}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </TabsContent>
 
-          {/* 노드 정보 */}
-          <div className="border-t pt-4 space-y-2">
-            <div className="text-xs text-muted-foreground">
-              <div className="font-medium mb-1">노드 정보</div>
-              <div>ID: {selectedNode.id}</div>
-              <div>타입: Manager (오케스트레이터)</div>
-              <div>
-                위치: ({Math.round(selectedNode.position.x)},{' '}
-                {Math.round(selectedNode.position.y)})
+            {/* 워커 선택 탭 */}
+            <TabsContent value="workers" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium">사용 가능한 워커</label>
+                    <span title="Manager가 병렬로 실행할 워커들을 선택하세요">
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {managerAvailableWorkers.length}개 선택됨
+                  </span>
+                </div>
+
+                {/* 검색 바 */}
+                <div className="relative">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="워커 검색... (이름 또는 역할)"
+                    className="w-full pl-8 p-2 border rounded-md text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={workerSearchQuery}
+                    onChange={(e) => setWorkerSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                {/* 빠른 선택 버튼 */}
+                <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" variant="outline" onClick={selectAllWorkers}>
+                    모두 선택
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={selectNoWorkers}>
+                    모두 해제
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('full-dev')}>
+                    풀스택 개발
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('quick-code')}>
+                    빠른 코드
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('planning')}>
+                    기획
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => selectWorkerPreset('creative')}>
+                    창의적
+                  </Button>
+                </div>
+
+                {/* 워커 목록 */}
+                <div className="border rounded-md p-3 space-y-2 max-h-80 overflow-y-auto">
+                  {agents.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">워커 로딩 중...</div>
+                  ) : filteredAgents.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">검색 결과가 없습니다</div>
+                  ) : (
+                    filteredAgents.map((agent) => (
+                      <label
+                        key={agent.name}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={managerAvailableWorkers.includes(agent.name)}
+                          onChange={() => handleToggleWorker(agent.name)}
+                          className="w-4 h-4"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{agent.name}</span>
+                            <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+                              {agent.allowed_tools.length}개 도구
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{agent.role}</div>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+
+                {errors.workers && (
+                  <div className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.workers}
+                  </div>
+                )}
               </div>
-            </div>
+            </TabsContent>
+
+            {/* 정보 탭 */}
+            <TabsContent value="info" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
+              {/* 노드 정보 */}
+              <div className="space-y-3">
+                <div className="text-sm font-semibold border-b pb-2">노드 정보</div>
+
+                <div>
+                  <span className="font-medium">노드 ID:</span>
+                  <div className="mt-0.5 break-all text-sm text-muted-foreground">
+                    {selectedNode.id}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-medium">타입:</span>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    Manager (오케스트레이터)
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-medium">위치:</span>
+                  <div className="mt-0.5 text-sm text-muted-foreground">
+                    ({Math.round(selectedNode.position.x)}, {Math.round(selectedNode.position.y)})
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-medium">등록된 워커:</span>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    {managerAvailableWorkers.length === 0 ? (
+                      <span className="text-red-600">없음 (최소 1개 선택 필요)</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {managerAvailableWorkers.map((workerName) => {
+                          const agent = agents.find((a) => a.name === workerName)
+                          return (
+                            <div key={workerName} className="flex items-center gap-2">
+                              <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                              <span>{workerName}</span>
+                              {agent && (
+                                <span className="text-xs text-gray-500">({agent.role})</span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 사용 가이드 */}
+              <div className="space-y-3">
+                <div className="text-sm font-semibold border-b pb-2">사용 가이드</div>
+
+                <div className="text-xs text-muted-foreground space-y-2">
+                  <div>
+                    <div className="font-medium text-purple-700 mb-1">Manager 노드란?</div>
+                    <div>등록된 워커들을 병렬로 실행하여 복잡한 작업을 처리하는 오케스트레이터입니다.</div>
+                  </div>
+
+                  <div>
+                    <div className="font-medium text-purple-700 mb-1">실행 방식</div>
+                    <div>모든 워커에게 동일한 작업 설명이 전달되며, 각 워커는 독립적으로 작업을 수행합니다.</div>
+                  </div>
+
+                  <div>
+                    <div className="font-medium text-purple-700 mb-1">결과 통합</div>
+                    <div>모든 워커의 결과가 Markdown 형식으로 통합되어 다음 노드로 전달됩니다.</div>
+                  </div>
+
+                  <div>
+                    <div className="font-medium text-purple-700 mb-1">권장 사용법</div>
+                    <ul className="list-disc list-inside space-y-1 mt-1">
+                      <li>플래닝 단계: planner만 선택</li>
+                      <li>빠른 코딩: coder만 선택</li>
+                      <li>풀스택 개발: planner + coder + reviewer + tester 선택</li>
+                      <li>아이디어 생성: ideator + product_manager 선택</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
           </div>
-        </CardContent>
+        </Tabs>
 
         {/* 저장/초기화 버튼 */}
         <div className="border-t p-4 space-y-2">
