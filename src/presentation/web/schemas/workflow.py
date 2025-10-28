@@ -18,6 +18,7 @@ class WorkerNodeData(BaseModel):
         agent_name: Worker Agent 이름 (planner, coder, reviewer 등)
         task_template: 작업 설명 템플릿 ({{input}} 등의 변수 지원)
         allowed_tools: 사용 가능한 도구 목록 (옵션, 미지정 시 기본 설정 사용)
+        thinking: Thinking 모드 활성화 여부 (ultrathink 프롬프트 추가, 옵션)
         config: 추가 설정 (옵션)
     """
     agent_name: str = Field(..., description="Worker Agent 이름")
@@ -28,6 +29,10 @@ class WorkerNodeData(BaseModel):
     allowed_tools: Optional[List[str]] = Field(
         default=None,
         description="사용 가능한 도구 목록 (옵션, 미지정 시 agent_config.json의 기본값 사용)"
+    )
+    thinking: Optional[bool] = Field(
+        default=None,
+        description="Thinking 모드 활성화 여부 (ultrathink 프롬프트 추가, 옵션)"
     )
     config: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -164,6 +169,7 @@ class WorkflowExecuteRequest(BaseModel):
         workflow: 실행할 워크플로우
         initial_input: 초기 입력 데이터
         session_id: 세션 ID (옵션)
+        last_event_index: 마지막 수신 이벤트 인덱스 (재접속 시 중복 방지용, 옵션)
     """
     workflow: Workflow = Field(..., description="실행할 워크플로우")
     initial_input: str = Field(
@@ -173,6 +179,10 @@ class WorkflowExecuteRequest(BaseModel):
     session_id: Optional[str] = Field(
         default=None,
         description="세션 ID (비워두면 자동 생성)"
+    )
+    last_event_index: Optional[int] = Field(
+        default=None,
+        description="마지막 수신 이벤트 인덱스 (재접속 시 중복 방지용, 0부터 시작)"
     )
 
 

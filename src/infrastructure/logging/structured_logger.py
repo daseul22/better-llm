@@ -93,23 +93,25 @@ def configure_structlog(
     # 메인 로그: 10MB (모든 레벨의 로그)
     # 에러 로그: 5MB (ERROR 이상만 필터링되므로 용량 적음)
     # 디버그 로그: 20MB (상세 정보가 많아 용량 증가)
-    # 터미널 출력 제거: 파일에만 로그 기록
+    # 터미널 출력 추가: 파일 + 콘솔에 로그 기록
     logging.basicConfig(
         format="%(message)s",
         level=getattr(logging, log_level.upper()),
         handlers=[
             logging.handlers.RotatingFileHandler(
-                log_path / "better-llm.log",
+                str(log_path / "better-llm.log"),
                 maxBytes=10 * 1024 * 1024,  # 10MB
                 backupCount=5,
                 encoding="utf-8"
             ),
+            logging.StreamHandler(),  # 콘솔 출력 추가
         ],
+        force=True  # 기존 설정 덮어쓰기
     )
 
     # 에러 로그 전용 핸들러 추가
     error_handler = logging.handlers.RotatingFileHandler(
-        log_path / "better-llm-error.log",
+        str(log_path / "better-llm-error.log"),
         maxBytes=5 * 1024 * 1024,  # 5MB
         backupCount=3,
         encoding="utf-8"
@@ -120,7 +122,7 @@ def configure_structlog(
     # DEBUG 레벨이 활성화된 경우 디버그 로그 파일 추가
     if log_level.upper() == "DEBUG":
         debug_handler = logging.handlers.RotatingFileHandler(
-            log_path / "better-llm-debug.log",
+            str(log_path / "better-llm-debug.log"),
             maxBytes=20 * 1024 * 1024,  # 20MB
             backupCount=3,
             encoding="utf-8"
@@ -156,6 +158,141 @@ def get_logger(name: str, **context: JSONSerializable) -> structlog.stdlib.Bound
     if context:
         logger = logger.bind(**context)
     return logger
+
+
+class LevelFilter(logging.Filter):
+    """
+    특정 로그 레벨만 통과시키는 필터
+
+    Args:
+        level: 허용할 로그 레벨 (logging.INFO, logging.ERROR 등)
+        exact_match: True면 정확히 일치하는 레벨만, False면 해당 레벨 이상
+    """
+    def __init__(self, level: int, exact_match: bool = False):
+        super().__init__()
+        self.level = level
+        self.exact_match = exact_match
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self.exact_match:
+            return record.levelno == self.level
+        else:
+            return record.levelno >= self.level
+
+
+def add_session_file_handlers(
+    session_id: str,
+    project_path: Optional[str] = None,
+) -> None:
+    """
+    세션별 파일 핸들러를 추가합니다.
+
+    워크플로우 실행 시 각 세션의 로그를 별도 디렉토리에 파일로 기록합니다.
+    로그 파일 구조:
+    - logs/system.log: 모든 세션의 로그 (DEBUG 이상)
+    - logs/{session_id}/debug.log: DEBUG 레벨만
+    - logs/{session_id}/info.log: INFO, WARNING 레벨만
+    - logs/{session_id}/error.log: ERROR, CRITICAL 레벨만
+
+    Args:
+        session_id: 세션 ID (디렉토리명에 사용)
+        project_path: 프로젝트 디렉토리 경로 (None이면 기본 로그 디렉토리 사용)
+
+    Example:
+        >>> add_session_file_handlers("session-123", "/path/to/project")
+        >>> logger = get_logger(__name__)
+        >>> logger.debug("Debug info")    # logs/system.log, logs/session-123/debug.log
+        >>> logger.info("Task started")   # logs/system.log, logs/session-123/info.log
+        >>> logger.error("Task failed")   # logs/system.log, logs/session-123/error.log
+    """
+    # 로그 디렉토리 설정
+    if project_path:
+        base_log_dir = Path(project_path) / ".better-llm" / "logs"
+    else:
+        base_log_dir = Path(_get_default_log_dir())
+
+    base_log_dir.mkdir(parents=True, exist_ok=True)
+
+    # 세션별 로그 디렉토리 생성
+    session_log_dir = base_log_dir / session_id
+    session_log_dir.mkdir(parents=True, exist_ok=True)
+
+    # 루트 로거 가져오기
+    root_logger = logging.getLogger()
+
+    # system.log 핸들러 추가 (모든 레벨 - DEBUG 이상)
+    system_handler = logging.handlers.RotatingFileHandler(
+        str(base_log_dir / "system.log"),
+        maxBytes=20 * 1024 * 1024,  # 20MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    system_handler.setLevel(logging.DEBUG)
+    system_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger.addHandler(system_handler)
+
+    # {session_id}/debug.log 핸들러 추가 (DEBUG 레벨만)
+    debug_handler = logging.handlers.RotatingFileHandler(
+        str(session_log_dir / "debug.log"),
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=3,
+        encoding="utf-8",
+    )
+    debug_handler.setLevel(logging.DEBUG)
+    debug_handler.addFilter(LevelFilter(logging.DEBUG, exact_match=True))
+    debug_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger.addHandler(debug_handler)
+
+    # {session_id}/info.log 핸들러 추가 (INFO, WARNING만)
+    info_handler = logging.handlers.RotatingFileHandler(
+        str(session_log_dir / "info.log"),
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=3,
+        encoding="utf-8",
+    )
+    info_handler.setLevel(logging.INFO)
+    # INFO와 WARNING만 통과 (ERROR는 차단)
+    info_handler.addFilter(lambda record: record.levelno < logging.ERROR)
+    info_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger.addHandler(info_handler)
+
+    # {session_id}/error.log 핸들러 추가 (ERROR, CRITICAL만)
+    error_handler = logging.handlers.RotatingFileHandler(
+        str(session_log_dir / "error.log"),
+        maxBytes=5 * 1024 * 1024,  # 5MB
+        backupCount=3,
+        encoding="utf-8",
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger.addHandler(error_handler)
+
+
+def remove_session_file_handlers(session_id: str) -> None:
+    """
+    세션별 파일 핸들러를 제거합니다.
+
+    워크플로우 실행 완료 후 메모리 누수를 방지하기 위해 사용합니다.
+
+    Args:
+        session_id: 세션 ID
+
+    Example:
+        >>> remove_session_file_handlers("session-123")
+    """
+    root_logger = logging.getLogger()
+
+    # 세션 ID와 관련된 핸들러만 제거
+    handlers_to_remove = []
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.handlers.RotatingFileHandler):
+            # 파일 경로에 세션 ID가 포함되어 있으면 제거 대상
+            if session_id in str(handler.baseFilename):
+                handlers_to_remove.append(handler)
+
+    for handler in handlers_to_remove:
+        handler.close()
+        root_logger.removeHandler(handler)
 
 
 def log_exception_silently(

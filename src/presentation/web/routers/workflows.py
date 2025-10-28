@@ -7,6 +7,7 @@
 import asyncio
 import json
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 from functools import lru_cache
@@ -28,6 +29,14 @@ from src.presentation.web.schemas.workflow import (
 )
 from src.presentation.web.services.workflow_executor import WorkflowExecutor
 from src.presentation.web.services.workflow_validator import WorkflowValidator
+from src.presentation.web.services.workflow_session_store import (
+    get_session_store,
+    WorkflowSessionStore,
+)
+from src.presentation.web.services.background_workflow_manager import (
+    get_background_workflow_manager,
+    BackgroundWorkflowManager,
+)
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -65,17 +74,35 @@ def get_workflow_executor(
     return WorkflowExecutor(config_loader)
 
 
+def get_background_manager(
+    executor: WorkflowExecutor = Depends(get_workflow_executor)
+) -> BackgroundWorkflowManager:
+    """
+    BackgroundWorkflowManager 싱글톤 인스턴스 반환 (FastAPI Depends)
+
+    Args:
+        executor: WorkflowExecutor 의존성 주입
+
+    Returns:
+        BackgroundWorkflowManager: 백그라운드 워크플로우 관리자
+    """
+    return get_background_workflow_manager(executor)
+
+
 @router.post("/execute")
 async def execute_workflow(
     request: WorkflowExecuteRequest,
-    executor: WorkflowExecutor = Depends(get_workflow_executor),
+    bg_manager: BackgroundWorkflowManager = Depends(get_background_manager),
 ):
     """
-    워크플로우 실행 (Server-Sent Events)
+    워크플로우 실행 (Server-Sent Events + 백그라운드 실행)
+
+    워크플로우를 백그라운드 Task로 실행하므로, SSE 연결이 끊어져도 계속 실행됩니다.
+    새로고침 후 동일한 session_id로 재접속하면 진행 상황을 이어받을 수 있습니다.
 
     Args:
         request: 워크플로우 실행 요청
-        executor: WorkflowExecutor 의존성 주입
+        bg_manager: BackgroundWorkflowManager 의존성 주입
 
     Returns:
         EventSourceResponse: SSE 스트리밍 응답
@@ -115,15 +142,86 @@ async def execute_workflow(
             detail="워크플로우에 노드가 없습니다"
         )
 
+    # 현재 프로젝트 경로 가져오기
+    from src.presentation.web.routers.projects import _current_project_path
+
+    # 세션 저장소 가져오기 (현재 프로젝트 경로 기반)
+    session_store = get_session_store(project_path=_current_project_path)
+
+    # 기존 세션 확인 (재접속인 경우)
+    existing_session = await session_store.get_session(session_id)
+
+    if existing_session is None:
+        # 새 세션 생성 (프로젝트 경로 포함)
+        await session_store.create_session(
+            session_id=session_id,
+            workflow=request.workflow,
+            initial_input=request.initial_input,
+            project_path=_current_project_path,
+        )
+
+        # 백그라운드 워크플로우 시작 (프로젝트 경로 전달)
+        try:
+            await bg_manager.start_workflow(
+                session_id=session_id,
+                workflow=request.workflow,
+                initial_input=request.initial_input,
+                project_path=_current_project_path,
+            )
+            logger.info(f"[{session_id}] 백그라운드 워크플로우 시작 완료")
+        except ValueError as e:
+            # 이미 실행 중인 경우 (정상적인 재접속)
+            logger.info(f"[{session_id}] 기존 워크플로우에 재접속: {e}")
+    elif existing_session.status in ["completed", "error", "cancelled"]:
+        # 완료된 세션은 삭제하고 새 세션 생성
+        logger.info(
+            f"[{session_id}] 완료된 세션 삭제 후 재생성 "
+            f"(이전 상태: {existing_session.status})"
+        )
+        await session_store.delete_session(session_id)
+
+        # 새 세션 생성
+        await session_store.create_session(
+            session_id=session_id,
+            workflow=request.workflow,
+            initial_input=request.initial_input,
+            project_path=_current_project_path,
+        )
+
+        # 백그라운드 워크플로우 시작 (프로젝트 경로 전달)
+        await bg_manager.start_workflow(
+            session_id=session_id,
+            workflow=request.workflow,
+            initial_input=request.initial_input,
+            project_path=_current_project_path,
+        )
+        logger.info(f"[{session_id}] 새 워크플로우 시작 완료")
+    else:
+        # 실행 중인 세션에 재접속
+        logger.info(
+            f"[{session_id}] 실행 중인 세션에 재접속 "
+            f"(상태: {existing_session.status})"
+        )
+
     # SSE 스트리밍 함수
     async def event_generator():
         try:
+            # 시작 인덱스 결정 (재접속 시 중복 방지)
+            start_from_index = 0
+            if request.last_event_index is not None:
+                start_from_index = request.last_event_index + 1  # 다음 이벤트부터
+
+            logger.info(
+                f"[{session_id}] SSE 스트리밍 시작 "
+                f"(start_from_index={start_from_index})"
+            )
+
             event_count = 0
 
-            async for event in executor.execute_workflow(
-                workflow=request.workflow,
-                initial_input=request.initial_input,
-                session_id=session_id,
+            # 백그라운드 Task에서 이벤트 스트리밍 (start_from_index 전달)
+            async for event in bg_manager.stream_events(
+                session_id,
+                start_from_index=start_from_index
             ):
                 event_count += 1
 
@@ -131,7 +229,7 @@ async def execute_workflow(
                 event_data = event.model_dump()
 
                 logger.info(
-                    f"[{session_id}] 📤 SSE Event #{event_count}: "
+                    f"[{session_id}] 📤 SSE Event #{start_from_index + event_count}: "
                     f"{event.event_type} (node: {event.node_id})"
                 )
                 logger.debug(f"[{session_id}] Event data: {event_data}")
@@ -146,13 +244,21 @@ async def execute_workflow(
                 yield sse_message
 
             # 완료 시그널
-            logger.info(f"[{session_id}] ✅ SSE 스트림 완료 (총 {event_count}개 이벤트)")
+            logger.info(
+                f"[{session_id}] ✅ SSE 스트림 완료 "
+                f"(전송: {event_count}개, 총 누적: {start_from_index + event_count}개)"
+            )
             logger.info(f"[{session_id}] 📤 [DONE] 시그널 전송")
             yield {"data": "[DONE]"}
 
         except asyncio.CancelledError:
             # 클라이언트가 연결을 끊은 경우 (정상적인 중단)
-            logger.info(f"[{session_id}] ⏹️ 클라이언트가 연결을 끊었습니다 (워크플로우 중단)")
+            # 백그라운드 Task는 계속 실행됨!
+            logger.info(
+                f"[{session_id}] ⏹️ 클라이언트가 연결을 끊었습니다 "
+                f"(워크플로우는 백그라운드에서 계속 실행 중)"
+            )
+
             # [DONE] 시그널을 보내지 않음 (이미 연결이 끊어짐)
             raise  # CancelledError는 재발생시켜 정리 작업이 이루어지도록 함
 
@@ -170,6 +276,7 @@ async def execute_workflow(
         headers={
             "X-Accel-Buffering": "no",
             "Cache-Control": "no-cache",
+            "X-Session-ID": session_id,  # 세션 ID를 헤더로 전달
         }
     )
 
@@ -454,4 +561,147 @@ async def validate_workflow(
         logger.error(f"워크플로우 검증 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"워크플로우 검증 실패: {str(e)}"
+        )
+
+
+@router.get("/sessions/{session_id}")
+async def get_session(session_id: str) -> Dict[str, Any]:
+    """
+    워크플로우 실행 세션 조회
+
+    새로고침 후 세션 복원을 위해 사용합니다.
+
+    Args:
+        session_id: 세션 ID
+
+    Returns:
+        Dict[str, Any]: 세션 정보
+            - session_id: 세션 ID
+            - workflow: 워크플로우 정의
+            - initial_input: 초기 입력
+            - status: 실행 상태 (running, completed, error, cancelled)
+            - current_node_id: 현재 실행 중인 노드 ID
+            - node_outputs: 노드별 출력
+            - logs: 실행 로그 (이벤트 목록)
+            - start_time: 시작 시각
+            - end_time: 종료 시각 (완료/에러 시)
+            - error: 에러 메시지 (에러 발생 시)
+
+    Example:
+        GET /api/workflows/sessions/abc-123
+
+        Response:
+        {
+            "session_id": "abc-123",
+            "workflow": { "name": "...", "nodes": [...], "edges": [...] },
+            "initial_input": "작업 설명",
+            "status": "running",
+            "current_node_id": "node-2",
+            "node_outputs": {
+                "node-1": "첫 번째 노드 출력..."
+            },
+            "logs": [
+                {"event_type": "node_start", "node_id": "node-1", ...},
+                {"event_type": "node_complete", "node_id": "node-1", ...},
+                {"event_type": "node_start", "node_id": "node-2", ...}
+            ],
+            "start_time": "2025-01-27T12:00:00",
+            "end_time": null,
+            "error": null
+        }
+    """
+    try:
+        # 먼저 현재 프로젝트 경로로 시도
+        from src.presentation.web.routers.projects import _current_project_path
+
+        session_store = get_session_store(project_path=_current_project_path)
+        session = await session_store.get_session(session_id)
+
+        # 현재 프로젝트에서 세션을 찾지 못하면, fallback 경로에서 시도
+        if not session:
+            logger.info(f"현재 프로젝트에서 세션 {session_id}를 찾을 수 없음. Fallback 경로에서 시도...")
+            fallback_store = get_session_store(project_path=None)
+            session = await fallback_store.get_session(session_id)
+
+            if session:
+                # Fallback 경로에서 찾은 경우, 세션에 저장된 project_path 사용
+                logger.info(f"Fallback 경로에서 세션 발견. project_path: {session.project_path}")
+
+        if not session:
+            raise HTTPException(
+                status_code=404,
+                detail=f"세션을 찾을 수 없습니다: {session_id}"
+            )
+
+        logger.info(f"세션 조회: {session_id} (상태: {session.status}, 프로젝트: {session.project_path})")
+
+        return session.to_dict()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"세션 조회 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"세션 조회 실패: {str(e)}"
+        )
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str) -> Dict[str, str]:
+    """
+    워크플로우 실행 세션 삭제
+
+    완료된 세션을 정리할 때 사용합니다.
+
+    Args:
+        session_id: 세션 ID
+
+    Returns:
+        Dict[str, str]: 응답 메시지
+
+    Example:
+        DELETE /api/workflows/sessions/abc-123
+
+        Response:
+        {
+            "message": "세션이 삭제되었습니다"
+        }
+    """
+    try:
+        # 현재 프로젝트 경로 가져오기 (get_session과 동일)
+        from src.presentation.web.routers.projects import _current_project_path
+
+        # 프로젝트별 세션 저장소 사용
+        session_store = get_session_store(project_path=_current_project_path)
+
+        # 세션 존재 여부 확인
+        session = await session_store.get_session(session_id)
+        if not session:
+            # Fallback 경로에서 시도
+            logger.info(f"현재 프로젝트에서 세션 {session_id}를 찾을 수 없음. Fallback 경로에서 시도...")
+            fallback_store = get_session_store(project_path=None)
+            session = await fallback_store.get_session(session_id)
+
+            if session:
+                await fallback_store.delete_session(session_id)
+                logger.info(f"Fallback 경로에서 세션 삭제: {session_id}")
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"세션을 찾을 수 없습니다: {session_id}"
+                )
+        else:
+            await session_store.delete_session(session_id)
+            logger.info(f"세션 삭제: {session_id}")
+
+        return {"message": "세션이 삭제되었습니다"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"세션 삭제 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"세션 삭제 실패: {str(e)}"
         )

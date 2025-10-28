@@ -565,6 +565,29 @@ export CLAUDE_CLI_PATH='/path/to/claude'
 
 자세한 내용은 `CHANGELOG.md` 참조.
 
+### v4.2.2 (2025-10-28)
+- **버그 수정**: 워크플로우 새로고침 후 실시간 스트림 자동 복구
+  - **문제**: 새로고침 시 세션 저장소에서 기존 이벤트를 불러오지만 실시간 스트림이 재개되지 않음
+  - **해결**:
+    - 세션 저장소 기반 스트리밍으로 전환 (메모리 큐 → 파일 기반)
+    - `session.status === 'running'`이면 **자동으로** SSE 재접속 (수동 버튼 클릭 불필요)
+    - 백엔드: 기존 세션이 있으면 SDK를 다시 실행하지 않고 스트림만 재개
+    - 프론트엔드: `App.tsx`에서 세션 복원 후 자동 reconnect
+  - **백엔드 변경**:
+    - `background_workflow_manager.py:197-286`: `stream_events` 메서드에 `start_from_index` 파라미터 추가
+    - `workflows.py:209-252`: SSE 스트리밍 함수에서 `last_event_index` 처리
+    - `workflow.py:183-186`: `WorkflowExecuteRequest` 스키마에 `last_event_index` 필드 추가
+  - **프론트엔드 변경**:
+    - `api.ts:135-144, 179, 249-284`: `executeWorkflow`에 `sessionId`/`lastEventIndex` 파라미터 추가
+    - `InputNode.tsx:75-87, 159-162`: localStorage에서 세션 ID 확인 (수동 재실행 시)
+    - `App.tsx:109-197`: **자동 재접속 로직 추가** (`status === 'running'`이면 자동으로 `executeWorkflow` 호출)
+
+### v4.2.1 (2025-10-28)
+- **버그 수정**: ThinkingBlock JSON 노출 방지
+  - ThinkingBlock이 JSON 형태로 사용자에게 노출되는 버그 수정
+  - 내부 사고 과정은 DEBUG 로그에만 기록하고 사용자 출력에서 제외
+  - 영향 파일: `sdk_executor.py:132-140` (extract_text_from_response 메서드)
+
 ### v4.2 (2025-10-27)
 - **Web UI Manager 노드**: 병렬 워커 실행을 위한 오케스트레이터 노드 추가
   - 등록된 워커들을 병렬로 실행 (TUI는 순차 실행)

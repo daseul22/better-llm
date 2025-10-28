@@ -16,6 +16,7 @@ export interface Agent {
   system_prompt: string  // 시스템 프롬프트 원본
   allowed_tools: string[]  // 기본 도구 목록
   model?: string  // 모델 정보 (옵셔널)
+  thinking?: boolean  // Thinking 모드 기본값 (옵셔널)
 }
 
 /**
@@ -120,6 +121,16 @@ export async function getAgents(): Promise<Agent[]> {
 
 /**
  * 워크플로우 실행 (SSE 스트리밍)
+ *
+ * @param workflow 워크플로우 정의
+ * @param initialInput 초기 입력 데이터
+ * @param onEvent 이벤트 콜백
+ * @param onComplete 완료 콜백
+ * @param onError 에러 콜백
+ * @param signal AbortSignal (연결 중단용)
+ * @param sessionId 세션 ID (재접속 시 사용, optional)
+ * @param lastEventIndex 마지막 수신 이벤트 인덱스 (재접속 시 중복 방지, optional)
+ * @returns 세션 ID (X-Session-ID 헤더에서 추출)
  */
 export async function executeWorkflow(
   workflow: Workflow,
@@ -127,24 +138,46 @@ export async function executeWorkflow(
   onEvent: (event: WorkflowExecutionEvent) => void,
   onComplete: () => void,
   onError: (error: string) => void,
-  signal?: AbortSignal
-): Promise<void> {
+  signal?: AbortSignal,
+  sessionId?: string,
+  lastEventIndex?: number
+): Promise<string | null> {
+  const requestBody: any = {
+    workflow,
+    initial_input: initialInput,
+  }
+
+  // 재접속 시 세션 ID 및 마지막 이벤트 인덱스 전달
+  if (sessionId) {
+    requestBody.session_id = sessionId
+  }
+  if (lastEventIndex !== undefined) {
+    requestBody.last_event_index = lastEventIndex
+  }
+
+  console.log('[executeWorkflow] 요청:', {
+    sessionId,
+    lastEventIndex,
+    isReconnect: !!sessionId
+  })
+
   const response = await fetch(`${API_BASE}/workflows/execute`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream',
     },
-    body: JSON.stringify({
-      workflow,
-      initial_input: initialInput,
-    }),
+    body: JSON.stringify(requestBody),
     signal,
   })
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`)
   }
+
+  // 세션 ID 추출 (X-Session-ID 헤더)
+  const returnedSessionId = response.headers.get('X-Session-ID')
+  console.log('[executeWorkflow] 반환된 세션 ID:', returnedSessionId)
 
   const reader = response.body?.getReader()
   if (!reader) {
@@ -213,7 +246,7 @@ export async function executeWorkflow(
         if (dataContent === '[DONE]') {
           console.log('[SSE] [DONE] 시그널 수신')
           onComplete()
-          return
+          return returnedSessionId
         }
 
         // ERROR 시그널
@@ -221,7 +254,7 @@ export async function executeWorkflow(
           const errorMsg = dataContent.substring(7)
           console.error('[SSE] ERROR 시그널:', errorMsg)
           onError(errorMsg)
-          return
+          return returnedSessionId
         }
 
         // 이벤트 파싱 (JSON)
@@ -239,13 +272,16 @@ export async function executeWorkflow(
     if (error instanceof Error && error.name === 'AbortError') {
       console.log('[SSE] 사용자가 실행을 중단했습니다')
       onComplete()
-      return
+      return returnedSessionId
     }
     const errorMsg = error instanceof Error ? error.message : String(error)
     onError(errorMsg)
+    return returnedSessionId
   } finally {
     reader.releaseLock()
   }
+
+  return returnedSessionId
 }
 
 /**
@@ -632,3 +668,89 @@ export async function validateWorkflow(workflow: Workflow): Promise<WorkflowVali
 
   return await response.json()
 }
+
+/**
+ * 워크플로우 세션 정보
+ */
+export interface WorkflowSession {
+  session_id: string
+  workflow: Workflow
+  initial_input: string
+  project_path: string | null  // 프로젝트 경로 (세션 복원용)
+  status: "running" | "completed" | "error" | "cancelled"
+  current_node_id: string | null
+  node_outputs: Record<string, string>
+  logs: WorkflowExecutionEvent[]
+  start_time: string
+  end_time: string | null
+  error: string | null
+}
+
+/**
+ * 워크플로우 세션 조회
+ */
+export async function getWorkflowSession(sessionId: string): Promise<WorkflowSession> {
+  const response = await fetch(`${API_BASE}/workflows/sessions/${sessionId}`)
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 워크플로우 세션 삭제
+ */
+export async function deleteWorkflowSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/workflows/sessions/${sessionId}`, {
+    method: "DELETE",
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+}
+
+/**
+ * 프로젝트 세션 데이터 비우기
+ */
+export async function clearProjectSessions(): Promise<{
+  message: string
+  deleted_files: number
+  freed_space_mb: number
+}> {
+  const response = await fetch(`${API_BASE}/projects/sessions`, {
+    method: "DELETE",
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 프로젝트 로그 파일 비우기
+ */
+export async function clearProjectLogs(): Promise<{
+  message: string
+  deleted_files: number
+  freed_space_mb: number
+}> {
+  const response = await fetch(`${API_BASE}/projects/logs`, {
+    method: "DELETE",
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+

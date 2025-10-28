@@ -121,8 +121,8 @@ async def list_agents(
 
             # allowed_tools 안전하게 처리
             allowed_tools = []
-            if hasattr(config, 'tools') and config.tools:
-                allowed_tools = list(config.tools)
+            if hasattr(config, 'allowed_tools') and config.allowed_tools:
+                allowed_tools = list(config.allowed_tools)
 
             # model 정보 안전하게 처리
             model = None

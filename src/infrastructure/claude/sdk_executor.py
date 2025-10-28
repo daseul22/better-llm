@@ -121,17 +121,100 @@ class SDKResponseHandler(ABC):
                 return None
 
             # content blocks 순회 (여러 블록이 있을 수 있음)
+            text_parts = []
             for i, content_block in enumerate(response.content):
                 # TextBlock: 일반 텍스트 응답
                 if isinstance(content_block, TextBlock):
                     logger.debug(f"Extracted text from TextBlock #{i}")
-                    return content_block.text
+                    text_parts.append(content_block.text)
 
                 # ThinkingBlock: Extended Thinking 모드의 사고 과정
+                # JSON 형식으로 직렬화하여 프론트엔드에서 파싱 가능하도록 전달
                 elif isinstance(content_block, ThinkingBlock):
-                    if hasattr(content_block, 'text') and content_block.text:
-                        logger.debug(f"Extracted text from ThinkingBlock #{i}")
-                        return content_block.text
+                    if hasattr(content_block, 'thinking') and content_block.thinking:
+                        logger.debug(
+                            f"🧠 ThinkingBlock detected (#{i})",
+                            length=len(content_block.thinking),
+                            preview=content_block.thinking[:100] + "..." if len(content_block.thinking) > 100 else content_block.thinking
+                        )
+                        # JSON 형식으로 직렬화하여 프론트엔드로 전달
+                        import json
+                        thinking_json = json.dumps({
+                            "role": "assistant",
+                            "content": [{
+                                "type": "thinking",
+                                "thinking": content_block.thinking
+                            }]
+                        }, ensure_ascii=False)
+                        text_parts.append(thinking_json)
+
+                # ToolUseBlock: 도구 호출 정보 (JSON 형식)
+                elif isinstance(content_block, ToolUseBlock):
+                    logger.debug(f"Found ToolUseBlock #{i}: {content_block.name}")
+                    # JSON 형식으로 직렬화하여 프론트엔드에서 파싱 가능하도록
+                    import json
+
+                    # tool_input 안전하게 추출
+                    tool_input = {}
+                    if hasattr(content_block, 'input'):
+                        try:
+                            # Pydantic 모델인 경우
+                            if hasattr(content_block.input, 'model_dump'):
+                                tool_input = content_block.input.model_dump()
+                            elif hasattr(content_block.input, 'dict'):
+                                tool_input = content_block.input.dict()
+                            elif isinstance(content_block.input, dict):
+                                tool_input = content_block.input
+                            else:
+                                tool_input = {"value": str(content_block.input)}
+                        except Exception:
+                            tool_input = {"value": str(content_block.input)}
+
+                    tool_json = json.dumps({
+                        "role": "assistant",
+                        "content": [{
+                            "type": "tool_use",
+                            "id": content_block.id,
+                            "name": content_block.name,
+                            "input": tool_input
+                        }]
+                    }, ensure_ascii=False)
+                    text_parts.append(tool_json)
+
+                # 폴백: hasattr로 type='tool_use' 체크 (하위 호환성)
+                elif hasattr(content_block, 'type') and content_block.type == 'tool_use':
+                    logger.debug(f"Found tool_use block (fallback) #{i}")
+                    import json
+
+                    # tool_input 안전하게 추출
+                    tool_input = {}
+                    raw_input = getattr(content_block, 'input', {})
+                    try:
+                        if hasattr(raw_input, 'model_dump'):
+                            tool_input = raw_input.model_dump()
+                        elif hasattr(raw_input, 'dict'):
+                            tool_input = raw_input.dict()
+                        elif isinstance(raw_input, dict):
+                            tool_input = raw_input
+                        else:
+                            tool_input = {"value": str(raw_input)}
+                    except Exception:
+                        tool_input = {"value": str(raw_input)}
+
+                    tool_json = json.dumps({
+                        "role": "assistant",
+                        "content": [{
+                            "type": "tool_use",
+                            "id": getattr(content_block, 'id', 'unknown'),
+                            "name": getattr(content_block, 'name', 'unknown'),
+                            "input": tool_input
+                        }]
+                    }, ensure_ascii=False)
+                    text_parts.append(tool_json)
+
+            # 텍스트 파트들을 결합하여 반환
+            if text_parts:
+                return '\n'.join(text_parts)
 
             # content blocks는 있지만 텍스트가 없는 경우
             logger.debug(
@@ -146,7 +229,33 @@ class SDKResponseHandler(ABC):
             logger.debug("ResultMessage (no text content)")
             return None
 
-        # [3단계] SystemMessage 처리
+        # [3단계] UserMessage 처리
+        # 사용자 입력 메시지 (대화 히스토리에 포함될 수 있음)
+        elif isinstance(response, UserMessage):
+            if not response.content:
+                logger.debug("UserMessage has no content")
+                return None
+
+            # content가 문자열인 경우
+            if isinstance(response.content, str):
+                logger.debug("Extracted text from UserMessage (string content)")
+                return response.content
+
+            # content가 리스트인 경우 (blocks)
+            if isinstance(response.content, list):
+                text_parts = []
+                for i, content_block in enumerate(response.content):
+                    if isinstance(content_block, TextBlock):
+                        logger.debug(f"Extracted text from UserMessage TextBlock #{i}")
+                        text_parts.append(content_block.text)
+
+                if text_parts:
+                    return '\n'.join(text_parts)
+
+            logger.debug("UserMessage has no extractable text content")
+            return None
+
+        # [4단계] SystemMessage 처리
         # 시스템 메타데이터 메시지 (SDK 내부 상태 정보 등)
         elif isinstance(response, SystemMessage):
             # SystemMessage는 content를 가질 수 있음 (텍스트 또는 리스트)
@@ -166,7 +275,7 @@ class SDKResponseHandler(ABC):
             logger.debug("SystemMessage has no extractable text content")
             return None
 
-        # [4단계] 폴백 처리 (하위 호환성)
+        # [5단계] 폴백 처리 (하위 호환성)
         # 알 수 없는 응답 타입이거나 SDK 버전 변경 시 대비
         logger.debug(f"Unknown response type: {type(response).__name__}, trying fallback")
 
@@ -247,7 +356,7 @@ class SDKResponseHandler(ABC):
             logger.debug(f"[{context}] Usage extracted: {usage_dict}")
             return usage_dict
         else:
-            logger.warning(f"[{context}] Failed to extract usage from: {type(usage_obj)}")
+            logger.info(f"⚠️  [{context}] Failed to extract usage from: {type(usage_obj)}")
             return None
 
 
@@ -317,7 +426,26 @@ class ManagerResponseHandler(SDKResponseHandler):
             return
 
         # ====================================================================
-        # [3단계] SystemMessage 처리 (시스템 메타데이터)
+        # [3단계] UserMessage 처리 (사용자 입력 메시지)
+        # ====================================================================
+        if isinstance(response, UserMessage):
+            logger.debug("[Manager] Processing UserMessage")
+
+            # UserMessage는 usage 정보가 없을 수 있으므로 확인 후 처리
+            if hasattr(response, 'usage') and response.usage and self.usage_callback:
+                usage_dict = self.extract_usage_info(response.usage, context="Manager")
+                if usage_dict:
+                    logger.info(f"[Manager] Token usage (UserMessage): {usage_dict}")
+                    self.usage_callback(usage_dict)
+
+            # 텍스트 추출 및 yield
+            text = self.extract_text_from_response(response)
+            if text:
+                yield text
+            return
+
+        # ====================================================================
+        # [4단계] SystemMessage 처리 (시스템 메타데이터)
         # ====================================================================
         if isinstance(response, SystemMessage):
             logger.debug("[Manager] Processing SystemMessage")
@@ -336,9 +464,9 @@ class ManagerResponseHandler(SDKResponseHandler):
             return
 
         # ====================================================================
-        # [4단계] 폴백 처리 (알 수 없는 응답 타입)
+        # [5단계] 폴백 처리 (알 수 없는 응답 타입)
         # ====================================================================
-        logger.warning(f"[Manager] Unknown response type: {type(response).__name__}")
+        logger.info(f"⚠️  [Manager] Unknown response type: {type(response).__name__}")
 
         # (3-1) usage 정보 추출 시도
         if hasattr(response, 'usage') and response.usage and self.usage_callback:
@@ -419,7 +547,26 @@ class WorkerResponseHandler(SDKResponseHandler):
             return
 
         # ====================================================================
-        # [3단계] SystemMessage 처리 (시스템 메타데이터)
+        # [3단계] UserMessage 처리 (사용자 입력 메시지)
+        # ====================================================================
+        if isinstance(response, UserMessage):
+            logger.debug("[Worker] Processing UserMessage")
+
+            # UserMessage는 usage 정보가 없을 수 있으므로 확인 후 처리
+            if hasattr(response, 'usage') and response.usage and self.usage_callback:
+                usage_dict = self.extract_usage_info(response.usage, context="Worker")
+                if usage_dict:
+                    logger.info(f"[Worker] Token usage (UserMessage): {usage_dict}")
+                    self.usage_callback(usage_dict)
+
+            # 텍스트 추출 및 yield
+            text = self.extract_text_from_response(response)
+            if text:
+                yield text
+            return
+
+        # ====================================================================
+        # [4단계] SystemMessage 처리 (시스템 메타데이터)
         # ====================================================================
         if isinstance(response, SystemMessage):
             logger.debug("[Worker] Processing SystemMessage")
@@ -438,9 +585,9 @@ class WorkerResponseHandler(SDKResponseHandler):
             return
 
         # ====================================================================
-        # [4단계] 폴백 처리 (알 수 없는 응답 타입)
+        # [5단계] 폴백 처리 (알 수 없는 응답 타입)
         # ====================================================================
-        logger.warning(f"[Worker] Unknown response type: {type(response).__name__}")
+        logger.info(f"⚠️  [Worker] Unknown response type: {type(response).__name__}")
 
         # (3-1) usage 정보 추출 시도
         if hasattr(response, 'usage') and response.usage and self.usage_callback:
@@ -786,7 +933,7 @@ class WorkerSDKExecutor:
                     async for _ in self.response_handler.process_response(last_response):
                         pass  # 텍스트는 무시하고 usage만 수집
                 else:
-                    self.logger.warning(f"[{self.worker_name}] Last response has no usage information")
+                    self.logger.info(f"⚠️  [{self.worker_name}] Last response has no usage information")
 
         except Exception as e:
             from src.infrastructure.logging import log_exception_silently

@@ -4,94 +4,102 @@
       "name": "planner",
       "role": "계획 수립",
       "system_prompt_file": "prompts/planner.txt",
-      "tools": [
+      "allowed_tools": [
         "read",
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929"
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
     },
     {
       "name": "coder",
       "role": "코드 작성",
       "system_prompt_file": "prompts/coder.txt",
-      "tools": [
+      "allowed_tools": [
         "read",
         "write",
         "edit",
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929"
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
     },
     {
       "name": "reviewer",
       "role": "코드 리뷰",
       "system_prompt_file": "prompts/reviewer.txt",
-      "tools": [
+      "allowed_tools": [
         "read",
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929"
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": false
     },
     {
       "name": "tester",
       "role": "테스트 및 검증",
       "system_prompt_file": "prompts/tester.txt",
-      "tools": [
+      "allowed_tools": [
         "read",
         "bash",
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929"
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": false
     },
     {
       "name": "committer",
       "role": "Git 커밋",
       "system_prompt_file": "prompts/committer.txt",
-      "tools": [
+      "allowed_tools": [
         "bash",
         "read",
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929"
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": false
     },
     {
       "name": "ideator",
       "role": "아이디어 생성",
       "system_prompt_file": "prompts/ideator.txt",
-      "tools": [
+      "allowed_tools": [
         "read",
         "glob"
       ],
-      "model": "claude-sonnet-4-5-20250929"
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
     },
     {
       "name": "product_manager",
       "role": "제품 기획",
       "system_prompt_file": "prompts/product_manager.txt",
-      "tools": [
+      "allowed_tools": [
         "read",
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929"
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
     },
     {
       "name": "documenter",
       "role": "문서 생성 및 업데이트",
       "system_prompt_file": "prompts/documenter.txt",
-      "tools": [
+      "allowed_tools": [
         "read",
         "write",
         "edit",
         "glob",
         "grep"
       ],
-      "model": "claude-sonnet-4-5-20250929"
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": false
     }
   ]
 }

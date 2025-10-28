@@ -102,6 +102,24 @@ class WorkerAgent:
             prompt_text = f"{prompt_text}\n\n{context_text}"
             logger.info(f"✅ 프로젝트 컨텍스트 추가: {self.project_context.project_name}")
 
+        # Thinking 모드 활성화 시 ultrathink 프롬프트 추가
+        if self.config.thinking:
+            ultrathink_text = """
+
+# ULTRATHINK MODE
+
+Before responding, engage in deep analysis and reasoning:
+
+1. **Problem Analysis**: Break down the task into core components
+2. **Solution Exploration**: Consider multiple approaches and their trade-offs
+3. **Implementation Planning**: Think through step-by-step execution
+4. **Quality Verification**: Anticipate edge cases and potential issues
+
+Use your thinking process liberally throughout your response to show your reasoning.
+"""
+            prompt_text = f"{prompt_text}\n{ultrathink_text}"
+            logger.info(f"✅ Thinking 모드 활성화: ultrathink 프롬프트 추가")
+
         return prompt_text
 
     def _generate_debug_info(self, task_description: str) -> str:
@@ -122,7 +140,7 @@ class WorkerAgent:
         # 1. 기본 정보
         lines.append(f"\n📋 Worker: {self.config.name} ({self.config.role})")
         lines.append(f"🤖 Model: {self.config.model}")
-        lines.append(f"🛠️  Tools: {', '.join(self.config.tools) if self.config.tools else 'None'}")
+        lines.append(f"🛠️  Tools: {', '.join(self.config.allowed_tools) if self.config.allowed_tools else 'None'}")
 
         # 2. 시스템 프롬프트 정보 (전체 내용 표시)
         lines.append(f"\n📄 System Prompt:")
@@ -198,7 +216,8 @@ class WorkerAgent:
         logger.info(f"[{self.config.name}] Working Directory: {os.getcwd()}")
         logger.info(f"[{self.config.name}] Prompt 길이: {len(full_prompt)} characters")
         logger.info(f"[{self.config.name}] Model: {self.config.model}")
-        logger.info(f"[{self.config.name}] Tools: {self.config.tools}")
+        logger.info(f"[{self.config.name}] Tools: {self.config.allowed_tools}")
+        logger.info(f"[{self.config.name}] Thinking Mode: {self.config.thinking}")
         logger.info(f"[{self.config.name}] CLI Path: {get_claude_cli_path()}")
 
         # SDK 실행 설정
@@ -214,7 +233,7 @@ class WorkerAgent:
         # Executor 생성
         executor = WorkerSDKExecutor(
             config=config,
-            allowed_tools=self.config.tools if self.config.tools else [],
+            allowed_tools=self.config.allowed_tools if self.config.allowed_tools else [],
             response_handler=response_handler,
             worker_name=self.config.name
         )

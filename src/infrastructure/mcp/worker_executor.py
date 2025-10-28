@@ -698,12 +698,31 @@ class WorkerExecutor:
             }
 
         # 일반 에러 처리 (복잡도: 1)
+        import traceback
+        error_traceback = traceback.format_exc()
+
         log_exception_silently(
             worker_logger,
             error,
             f"Worker Tool ({context.worker_name}) execution failed",
             worker_name=context.worker_name,
-            task_description=context.task_description[:100]
+            task_description=context.task_description[:100],
+            error_type=type(error).__name__,
+            error_details=str(error),
+            traceback=error_traceback
+        )
+
+        # 콘솔에도 상세 에러 출력 (디버깅용)
+        worker_logger.error(
+            f"\n{'='*70}\n"
+            f"❌ [{context.worker_name.upper()}] Worker execution failed\n"
+            f"{'='*70}\n"
+            f"Error Type: {type(error).__name__}\n"
+            f"Error Message: {str(error)}\n"
+            f"Task (first 100 chars): {context.task_description[:100]}\n"
+            f"{'='*70}\n"
+            f"Traceback:\n{error_traceback}\n"
+            f"{'='*70}"
         )
 
         return {
@@ -711,10 +730,14 @@ class WorkerExecutor:
                 {
                     "type": "text",
                     "text": (
-                        f"❌ {context.worker_name.capitalize()} 실행 실패\n\n"
-                        f"에러: {error}\n\n"
-                        f"스택 트레이스는 에러 로그 "
-                        f"(~/.better-llm/{{project}}/logs/better-llm-error.log)를 확인하세요."
+                        f"\n[시스템 오류] {context.worker_name} Worker 실행 중 예상하지 못한 오류가 발생했습니다: {type(error).__name__}\n"
+                        f"{'='*70}\n"
+                        f"에러 타입: {type(error).__name__}\n"
+                        f"에러 메시지: {str(error)}\n\n"
+                        f"상세 로그:\n"
+                        f"- 전체 로그: {{project-dir}}/.better-llm/logs/system.log\n"
+                        f"- 세션 로그: {{project-dir}}/.better-llm/logs/{context.session_id or 'session'}/error.log\n"
+                        f"{'='*70}\n"
                     )
                 }
             ]

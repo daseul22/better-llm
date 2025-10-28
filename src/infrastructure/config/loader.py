@@ -118,7 +118,7 @@ class JsonConfigLoader(IConfigLoader):
             agent_configs = []
             for agent_data in agents_data:
                 # 필수 필드 검증
-                required_fields = ["name", "role", "system_prompt_file", "tools", "model"]
+                required_fields = ["name", "role", "system_prompt_file", "allowed_tools", "model"]
                 for field in required_fields:
                     if field not in agent_data:
                         raise ValueError(f"에이전트 설정에 필수 필드 '{field}'가 없습니다: {agent_data}")

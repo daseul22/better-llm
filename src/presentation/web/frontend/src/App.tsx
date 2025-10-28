@@ -4,7 +4,7 @@
  * 메인 레이아웃 및 컴포넌트 조합
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ReactFlowProvider } from 'reactflow'
 import { WorkflowCanvas } from './components/WorkflowCanvas'
 import { NodePanel } from './components/NodePanel'
@@ -16,16 +16,20 @@ import {
   selectProject,
   saveProjectWorkflow,
   loadProjectWorkflow,
+  getWorkflowSession,
+  clearProjectSessions,
+  clearProjectLogs,
 } from './lib/api'
-import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate } from 'lucide-react'
+import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate, Settings, Trash2, FileText } from 'lucide-react'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
 import { ToastContainer, ToastType } from './components/Toast'
 import { TemplateGallery } from './components/TemplateGallery'
 
 const STORAGE_KEY_PROJECT_PATH = 'better-llm-last-project-path'
+const STORAGE_KEY_SESSION_ID = 'better-llm-workflow-session-id'
 
 function App() {
-  const { getWorkflow: getCurrentWorkflow, loadWorkflow, workflowName, setWorkflowName, nodes, edges } = useWorkflowStore()
+  const { getWorkflow: getCurrentWorkflow, loadWorkflow, workflowName, setWorkflowName, nodes, edges, restoreFromSession } = useWorkflowStore()
 
   // 프로젝트 관련 상태
   const [currentProjectPath, setCurrentProjectPath] = useState<string | null>(null)
@@ -35,6 +39,9 @@ function App() {
 
   // 템플릿 갤러리 상태
   const [showTemplateGallery, setShowTemplateGallery] = useState(false)
+
+  // 프로젝트 관리 메뉴 상태
+  const [showProjectMenu, setShowProjectMenu] = useState(false)
 
   // 사이드바 토글 상태
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
@@ -52,34 +59,172 @@ function App() {
   }>>([])
 
 
-  // 토스트 추가 함수
-  const addToast = (type: ToastType, message: string, duration = 3000) => {
+  // 토스트 추가 함수 (useCallback으로 메모이제이션)
+  const addToast = useCallback((type: ToastType, message: string, duration = 3000) => {
     const id = `toast-${Date.now()}`
     setToasts((prev) => [...prev, { id, type, message, duration }])
-  }
+  }, [])
 
   // 토스트 제거 함수
-  const removeToast = (id: string) => {
+  const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
-  }
+  }, [])
 
-  // 앱 시작 시 프로젝트 자동 로드
+  // 초기 로드 완료 플래그
+  const initialLoadDone = useRef(false)
+
+  // 앱 시작 시 프로젝트 자동 로드 및 세션 복원 (한 번만 실행)
   useEffect(() => {
-    const loadLastProject = async () => {
-      // localStorage에서 마지막 프로젝트 경로 가져오기
-      const lastProjectPath = localStorage.getItem(STORAGE_KEY_PROJECT_PATH)
+    // 이미 로드되었으면 스킵
+    if (initialLoadDone.current) return
+    initialLoadDone.current = true
 
+    const loadLastProject = async () => {
+      // 1. 세션 복원 시도 (우선순위 높음 - 세션에 프로젝트 경로 포함)
+      const lastSessionId = localStorage.getItem(STORAGE_KEY_SESSION_ID)
+      if (lastSessionId) {
+        try {
+          console.log('🔄 세션 복원 시도:', lastSessionId)
+          const session = await getWorkflowSession(lastSessionId)
+
+          // 세션이 아직 실행 중이거나 최근 완료된 경우 복원
+          if (session.status === 'running' || session.status === 'completed') {
+            // 1️⃣ 세션에서 프로젝트 경로 복원 (세션에 저장된 project_path 사용)
+            if (session.project_path) {
+              try {
+                const result = await selectProject(session.project_path)
+                setCurrentProjectPath(result.project_path)
+                console.log(`✅ 세션에서 프로젝트 경로 복원: ${session.project_path}`)
+              } catch (err) {
+                console.warn('세션 프로젝트 경로 복원 실패:', err)
+              }
+            } else {
+              console.warn('⚠️  세션에 프로젝트 경로 정보 없음')
+            }
+
+            // 2️⃣ 워크플로우 세션 복원 (기존 로그 복원)
+            restoreFromSession(session)
+            console.log('✅ 세션 복원 완료:', session.session_id)
+
+            // 3️⃣ 실행 중인 세션이면 자동으로 스트림 재접속
+            if (session.status === 'running') {
+              console.log('🔌 실행 중인 세션 감지 - 스트림 자동 재접속 시작')
+
+              // 현재 로그 개수 확인 (중복 방지용)
+              const lastEventIndex = session.logs.length > 0 ? session.logs.length - 1 : undefined
+
+              // 동적으로 executeWorkflow import 및 호출
+              import('./lib/api').then(({ executeWorkflow }) => {
+                const abortController = new AbortController()
+
+                executeWorkflow(
+                  session.workflow,
+                  session.initial_input,
+                  // onEvent
+                  (event) => {
+                    // Zustand store에 이벤트 전달 (restoreFromSession과 동일한 로직)
+                    const { event_type, node_id, data: eventData, timestamp, elapsed_time, token_usage } = event
+                    const store = useWorkflowStore.getState()
+
+                    switch (event_type) {
+                      case 'node_start':
+                        store.setCurrentNode(node_id)
+                        if (timestamp) {
+                          store.setNodeStartTime(node_id, new Date(timestamp).getTime())
+                        }
+                        store.addLog(node_id, 'start', `▶️  ${eventData.agent_name || eventData.node_type || 'Unknown'} 실행 시작`)
+                        break
+
+                      case 'node_output':
+                        store.addNodeOutput(node_id, eventData.chunk)
+                        if (eventData.chunk && eventData.chunk.trim().length > 0) {
+                          store.addLog(node_id, 'output', eventData.chunk)
+                        }
+                        break
+
+                      case 'node_complete':
+                        if (elapsed_time !== undefined) {
+                          store.setNodeCompleted(node_id, elapsed_time, token_usage)
+                        }
+                        let completeMsg = `✅ ${eventData.agent_name || eventData.node_type || 'Unknown'} 완료`
+                        if (elapsed_time !== undefined) {
+                          completeMsg += ` (${elapsed_time.toFixed(1)}초)`
+                        }
+                        if (token_usage && token_usage.total_tokens > 0) {
+                          completeMsg += ` [${token_usage.total_tokens.toLocaleString()} tokens]`
+                        }
+                        store.addLog(node_id, 'complete', completeMsg)
+                        break
+
+                      case 'node_error':
+                        if (eventData.error) {
+                          store.setNodeError(node_id, eventData.error)
+                        }
+                        store.addLog(node_id, 'error', `❌ ${eventData.error || 'Unknown error'}`)
+                        break
+
+                      case 'workflow_complete':
+                        store.addLog('', 'complete', eventData.message || '🎉 워크플로우 실행 완료')
+                        store.setCurrentNode(null)
+                        store.stopExecution()
+                        break
+                    }
+                  },
+                  // onComplete
+                  () => {
+                    console.log('✅ 스트림 재접속 완료 - 워크플로우 실행 완료')
+                    useWorkflowStore.getState().stopExecution()
+                  },
+                  // onError
+                  (error) => {
+                    console.error('❌ 스트림 재접속 실패:', error)
+                    useWorkflowStore.getState().stopExecution()
+                    addToast('error', `스트림 재접속 실패: ${error}`)
+                  },
+                  // signal
+                  abortController.signal,
+                  // sessionId (재접속용)
+                  lastSessionId,
+                  // lastEventIndex (중복 방지용)
+                  lastEventIndex
+                ).then((returnedSessionId) => {
+                  console.log('✅ 스트림 재접속 성공:', returnedSessionId)
+                  addToast('success', '실시간 스트림이 재개되었습니다')
+                }).catch((err) => {
+                  console.error('❌ 스트림 재접속 중 에러:', err)
+                  addToast('error', `스트림 재접속 실패: ${err.message}`)
+                })
+              })
+            } else {
+              // completed 상태면 토스트만 표시
+              addToast('success', '이전 워크플로우 세션이 복원되었습니다')
+            }
+
+            return // 세션 복원 성공 시 워크플로우 로드 스킵
+          } else {
+            // 세션이 에러 또는 취소된 경우 localStorage 정리
+            localStorage.removeItem(STORAGE_KEY_SESSION_ID)
+          }
+        } catch (err) {
+          console.warn('세션 복원 실패 (세션 삭제됨 또는 만료):', err)
+          localStorage.removeItem(STORAGE_KEY_SESSION_ID)
+        }
+      }
+
+      // 2. 세션 복원 실패 시 localStorage에서 프로젝트 경로 복원
+      const lastProjectPath = localStorage.getItem(STORAGE_KEY_PROJECT_PATH)
       if (lastProjectPath) {
         try {
           // 백엔드에 프로젝트 선택
           const result = await selectProject(lastProjectPath)
           setCurrentProjectPath(result.project_path)
+          console.log(`✅ localStorage에서 프로젝트 경로 복원: ${lastProjectPath}`)
 
           // 기존 설정이 있으면 자동 로드
           if (result.has_existing_config) {
             const data = await loadProjectWorkflow()
             loadWorkflow(data.workflow)
-            console.log(`✅ 프로젝트 자동 로드: ${lastProjectPath}`)
+            console.log(`✅ 프로젝트 워크플로우 자동 로드: ${lastProjectPath}`)
           }
         } catch (err) {
           console.warn('프로젝트 자동 로드 실패:', err)
@@ -90,7 +235,7 @@ function App() {
     }
 
     loadLastProject()
-  }, [loadWorkflow])
+  }, [loadWorkflow, restoreFromSession, addToast])
 
   // ESC 키 핸들링: 프로젝트 선택 다이얼로그
   useEffect(() => {
@@ -106,6 +251,23 @@ function App() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [showProjectDialog])
+
+  // 프로젝트 관리 메뉴 외부 클릭 감지
+  useEffect(() => {
+    if (!showProjectMenu) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // 메뉴 버튼이나 메뉴 내부를 클릭한 경우 무시
+      if (target.closest('.project-menu-container')) {
+        return
+      }
+      setShowProjectMenu(false)
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showProjectMenu])
 
   // 전역 키보드 단축키 핸들링
   useEffect(() => {
@@ -153,7 +315,14 @@ function App() {
 
   // 노드/엣지 변경 시 자동 저장 (debounce)
   useEffect(() => {
-    if (!currentProjectPath || nodes.length === 0) return
+    // 프로젝트 선택되지 않았거나 노드가 없으면 스킵
+    if (!currentProjectPath || nodes.length === 0) {
+      // 노드가 있는데 프로젝트가 선택되지 않았으면 경고
+      if (nodes.length > 0 && !currentProjectPath) {
+        console.warn('⚠️  프로젝트가 선택되지 않았습니다. 자동 저장을 건너뜁니다.')
+      }
+      return
+    }
 
     // 저장 대기 상태
     setSaveStatus('saving')
@@ -164,6 +333,7 @@ function App() {
         nodes: workflow.nodes.length,
         edges: workflow.edges.length,
         name: workflow.name,
+        projectPath: currentProjectPath,
       })
 
       saveProjectWorkflow(workflow)
@@ -177,12 +347,13 @@ function App() {
         .catch((err) => {
           console.error('❌ 자동 저장 실패:', err)
           setSaveStatus('idle')
-          addToast('error', `자동 저장 실패: ${err}`)
+          const errorMsg = err instanceof Error ? err.message : String(err)
+          addToast('error', `자동 저장 실패: ${errorMsg}`)
         })
     }, 2000) // 2초 debounce
 
     return () => clearTimeout(timer)
-  }, [nodes, edges, workflowName, currentProjectPath, getCurrentWorkflow])
+  }, [nodes, edges, workflowName, currentProjectPath, getCurrentWorkflow, addToast])
 
   // 프로젝트 선택 핸들러 (브라우저 또는 텍스트 입력)
   const handleSelectProjectPath = async (path: string) => {
@@ -216,6 +387,57 @@ function App() {
     }
 
     await handleSelectProjectPath(projectPathInput.trim())
+  }
+
+  // 세션 비우기 핸들러
+  const handleClearSessions = async () => {
+    if (!currentProjectPath) {
+      addToast('warning', '프로젝트가 선택되지 않았습니다')
+      return
+    }
+
+    if (!confirm('모든 세션 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+      return
+    }
+
+    try {
+      const result = await clearProjectSessions()
+      addToast(
+        'success',
+        `${result.message} (${result.deleted_files}개 파일, ${result.freed_space_mb} MB 확보)`
+      )
+      setShowProjectMenu(false)
+
+      // localStorage의 세션 ID도 삭제
+      localStorage.removeItem(STORAGE_KEY_SESSION_ID)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      addToast('error', `세션 삭제 실패: ${errorMsg}`)
+    }
+  }
+
+  // 로그 비우기 핸들러
+  const handleClearLogs = async () => {
+    if (!currentProjectPath) {
+      addToast('warning', '프로젝트가 선택되지 않았습니다')
+      return
+    }
+
+    if (!confirm('모든 로그 파일을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+      return
+    }
+
+    try {
+      const result = await clearProjectLogs()
+      addToast(
+        'success',
+        `${result.message} (${result.deleted_files}개 파일, ${result.freed_space_mb} MB 확보)`
+      )
+      setShowProjectMenu(false)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      addToast('error', `로그 삭제 실패: ${errorMsg}`)
+    }
   }
 
   return (
@@ -270,9 +492,65 @@ function App() {
                 <Folder className="mr-2 h-4 w-4" />
                 프로젝트 선택
               </Button>
+
+              {/* 프로젝트 관리 메뉴 */}
+              <div className="relative project-menu-container">
+                <Button
+                  onClick={() => setShowProjectMenu(!showProjectMenu)}
+                  variant="outline"
+                  disabled={!currentProjectPath}
+                  title="프로젝트 관리"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+
+                {/* 드롭다운 메뉴 */}
+                {showProjectMenu && currentProjectPath && (
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-white border rounded-lg shadow-lg z-50">
+                    <div className="py-1">
+                      <button
+                        onClick={handleClearSessions}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4 text-orange-600" />
+                        <span>세션 비우기</span>
+                      </button>
+                      <button
+                        onClick={handleClearLogs}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 transition-colors"
+                      >
+                        <FileText className="h-4 w-4 text-blue-600" />
+                        <span>로그 비우기</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
+
+        {/* 프로젝트 미선택 경고 배너 */}
+        {!currentProjectPath && (
+          <div className="bg-yellow-100 border-b border-yellow-300 px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="text-yellow-800 font-medium">
+                ⚠️ 프로젝트가 선택되지 않았습니다
+              </div>
+              <div className="text-yellow-700 text-sm">
+                워크플로우를 저장하려면 먼저 프로젝트를 선택하세요.
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setShowProjectDialog(true)}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white"
+            >
+              <Folder className="mr-2 h-4 w-4" />
+              프로젝트 선택
+            </Button>
+          </div>
+        )}
 
         {/* 메인 레이아웃 */}
         <div className="flex-1 flex overflow-hidden">

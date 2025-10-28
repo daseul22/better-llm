@@ -72,7 +72,21 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
       const abortController = new AbortController()
       abortControllerRef.current = abortController
 
-      await executeWorkflow(
+      // 재접속 로직: localStorage에서 세션 ID 확인
+      const STORAGE_KEY_SESSION_ID = 'better-llm-workflow-session-id'
+      const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION_ID)
+
+      // Zustand store에서 현재 로그 개수 확인 (중복 방지용)
+      const currentLogs = useWorkflowStore.getState().execution.logs
+      const lastEventIndex = currentLogs.length > 0 ? currentLogs.length - 1 : undefined
+
+      console.log('[InputNode] 재접속 체크:', {
+        savedSessionId,
+        lastEventIndex,
+        isReconnect: !!savedSessionId && lastEventIndex !== undefined
+      })
+
+      const sessionId = await executeWorkflow(
         workflow,
         initial_input,
         // onEvent
@@ -123,7 +137,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
             case 'workflow_complete':
               addLog('', 'complete', '🎉 워크플로우 실행 완료')
               setCurrentNode(null)
-              updateNode(id, { isCompleted: true })
+              updateNode(id, { isCompleted: true, isExecuting: false })
               break
           }
         },
@@ -141,8 +155,18 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
           addLog('', 'error', `실행 실패: ${error}`)
         },
         // signal
-        abortController.signal
+        abortController.signal,
+        // sessionId (재접속용)
+        savedSessionId || undefined,
+        // lastEventIndex (중복 방지용)
+        lastEventIndex
       )
+
+      // 세션 ID를 localStorage에 저장 (새로고침 후 복원용)
+      if (sessionId) {
+        localStorage.setItem('better-llm-workflow-session-id', sessionId)
+        console.log('[InputNode] 세션 ID 저장:', sessionId)
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       setLocalIsRunning(false)

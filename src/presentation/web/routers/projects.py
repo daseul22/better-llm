@@ -5,6 +5,7 @@
 """
 
 import json
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -180,10 +181,18 @@ async def save_project_workflow(
     # 프로젝트 경로 결정 (요청에 포함되지 않으면 현재 프로젝트 사용)
     project_path = request.project_path or _current_project_path
 
-    if not project_path:
+    # 명시적 검증: project_path가 None이거나 빈 문자열이면 에러
+    if not project_path or project_path.strip() == "":
+        logger.error(
+            f"워크플로우 저장 실패: 프로젝트 경로 없음 "
+            f"(request.project_path={request.project_path}, _current_project_path={_current_project_path})"
+        )
         raise HTTPException(
             status_code=400,
-            detail="프로젝트가 선택되지 않았습니다. 먼저 /api/projects/select를 호출하세요."
+            detail=(
+                "프로젝트가 선택되지 않았습니다. "
+                "먼저 '프로젝트 선택' 버튼을 클릭하여 프로젝트 디렉토리를 선택하세요."
+            )
         )
 
     # 경로 검증
@@ -299,4 +308,174 @@ async def load_project_workflow(
         raise HTTPException(
             status_code=500,
             detail=f"워크플로우 로드 실패: {str(e)}"
+        )
+
+
+@router.delete("/sessions")
+async def clear_sessions() -> Dict[str, Any]:
+    """
+    현재 프로젝트의 웹 워크플로우 세션 데이터 비우기
+
+    {project_path}/.better-llm/web-sessions/ 디렉토리의 모든 세션 파일을 삭제합니다.
+
+    Returns:
+        Dict[str, Any]: 삭제 결과 (삭제된 파일 수, 확보된 용량)
+
+    Example:
+        DELETE /api/projects/sessions
+
+        Response: {
+            "message": "세션 데이터가 삭제되었습니다",
+            "deleted_files": 5,
+            "freed_space_mb": 12.3
+        }
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    # 웹 세션 디렉토리 경로: {project_path}/.better-llm/web-sessions/
+    project_dir = Path(_current_project_path)
+    web_sessions_dir = project_dir / ".better-llm" / "web-sessions"
+
+    if not web_sessions_dir.exists():
+        logger.info(f"웹 세션 디렉토리가 존재하지 않습니다: {web_sessions_dir}")
+        return {
+            "message": "삭제할 세션 데이터가 없습니다",
+            "deleted_files": 0,
+            "freed_space_mb": 0.0
+        }
+
+    try:
+        # 디렉토리 크기 및 파일 개수 계산
+        total_size = 0
+        file_count = 0
+
+        for file_path in web_sessions_dir.rglob("*"):
+            if file_path.is_file():
+                total_size += file_path.stat().st_size
+                file_count += 1
+
+        # 디렉토리 삭제 및 재생성 (빈 디렉토리 유지)
+        shutil.rmtree(web_sessions_dir)
+        web_sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        freed_space_mb = total_size / (1024 * 1024)
+
+        logger.info(
+            f"웹 세션 데이터 삭제 완료: {web_sessions_dir} "
+            f"(파일: {file_count}개, 용량: {freed_space_mb:.2f} MB)"
+        )
+
+        return {
+            "message": "세션 데이터가 삭제되었습니다",
+            "deleted_files": file_count,
+            "freed_space_mb": round(freed_space_mb, 2)
+        }
+
+    except Exception as e:
+        logger.error(f"웹 세션 데이터 삭제 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"세션 데이터 삭제 실패: {str(e)}"
+        )
+
+
+@router.delete("/logs")
+async def clear_logs() -> Dict[str, Any]:
+    """
+    현재 프로젝트의 로그 파일 비우기
+
+    다음 위치의 로그 파일을 모두 삭제합니다:
+    1. {project_path}/.better-llm/logs/ (프로젝트 내 로그)
+    2. ~/.better-llm/{project-name}/logs/ (홈 디렉토리 로그)
+
+    Returns:
+        Dict[str, Any]: 삭제 결과 (삭제된 파일 수, 확보된 용량)
+
+    Example:
+        DELETE /api/projects/logs
+
+        Response: {
+            "message": "로그 파일이 삭제되었습니다",
+            "deleted_files": 8,
+            "freed_space_mb": 45.6
+        }
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    project_dir = Path(_current_project_path)
+    project_name = project_dir.name
+    home_dir = Path.home()
+
+    # 로그 디렉토리 목록
+    log_dirs = [
+        project_dir / ".better-llm" / "logs",  # 프로젝트 내 로그
+        home_dir / ".better-llm" / project_name / "logs",  # 홈 디렉토리 로그
+    ]
+
+    total_size = 0
+    total_file_count = 0
+    deleted_dirs = []
+
+    try:
+        for logs_dir in log_dirs:
+            if not logs_dir.exists():
+                logger.debug(f"로그 디렉토리가 존재하지 않습니다: {logs_dir}")
+                continue
+
+            # 디렉토리 크기 및 파일 개수 계산
+            dir_size = 0
+            dir_file_count = 0
+
+            for file_path in logs_dir.rglob("*"):
+                if file_path.is_file():
+                    dir_size += file_path.stat().st_size
+                    dir_file_count += 1
+
+            # 디렉토리 삭제 및 재생성 (빈 디렉토리 유지)
+            shutil.rmtree(logs_dir)
+            logs_dir.mkdir(parents=True, exist_ok=True)
+
+            total_size += dir_size
+            total_file_count += dir_file_count
+            deleted_dirs.append(str(logs_dir))
+
+            logger.info(
+                f"로그 파일 삭제: {logs_dir} "
+                f"(파일: {dir_file_count}개, 용량: {dir_size / (1024 * 1024):.2f} MB)"
+            )
+
+        freed_space_mb = total_size / (1024 * 1024)
+
+        if total_file_count == 0:
+            return {
+                "message": "삭제할 로그 파일이 없습니다",
+                "deleted_files": 0,
+                "freed_space_mb": 0.0
+            }
+
+        logger.info(
+            f"로그 파일 삭제 완료 (총 {len(deleted_dirs)}개 위치): "
+            f"{', '.join(deleted_dirs)} "
+            f"(파일: {total_file_count}개, 용량: {freed_space_mb:.2f} MB)"
+        )
+
+        return {
+            "message": "로그 파일이 삭제되었습니다",
+            "deleted_files": total_file_count,
+            "freed_space_mb": round(freed_space_mb, 2)
+        }
+
+    except Exception as e:
+        logger.error(f"로그 파일 삭제 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"로그 파일 삭제 실패: {str(e)}"
         )

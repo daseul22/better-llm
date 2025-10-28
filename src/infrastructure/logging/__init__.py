@@ -4,13 +4,21 @@
 structlog 기반 로깅 시스템
 """
 
-from .structured_logger import configure_structlog, get_logger, log_exception_silently
+from .structured_logger import (
+    configure_structlog,
+    get_logger,
+    log_exception_silently,
+    add_session_file_handlers,
+    remove_session_file_handlers,
+)
 from .error_tracker import track_error, get_error_stats
 
 __all__ = [
     "configure_structlog",
     "get_logger",
     "log_exception_silently",
+    "add_session_file_handlers",
+    "remove_session_file_handlers",
     "track_error",
     "get_error_stats",
 ]

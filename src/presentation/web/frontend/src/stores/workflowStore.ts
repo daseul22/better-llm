@@ -99,6 +99,9 @@ interface WorkflowStore {
   setIsValidating: (isValidating: boolean) => void
   clearValidationErrors: () => void
   getValidationErrorsForNode: (nodeId: string) => WorkflowValidationError[]
+
+  // 세션 복원
+  restoreFromSession: (session: any) => void
 }
 
 const initialExecutionState: WorkflowExecutionState = {
@@ -408,5 +411,138 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   getValidationErrorsForNode: (nodeId) => {
     const state = get()
     return state.validationErrors.filter((error) => error.node_id === nodeId)
+  },
+
+  // 세션 복원
+  restoreFromSession: (session) => {
+    console.log('[workflowStore] 세션 복원 시작:', session.session_id)
+
+    // 워크플로우 정의 복원
+    set({
+      workflowName: session.workflow.name,
+      workflowDescription: session.workflow.description || '',
+      nodes: session.workflow.nodes,
+      edges: session.workflow.edges,
+    })
+
+    // workflow_complete 이벤트 확인 (실제 완료 여부 판단)
+    const hasWorkflowComplete = session.logs.some((log: any) => log.event_type === 'workflow_complete')
+    const hasWorkflowError = session.logs.some((log: any) => log.event_type === 'workflow_error' || log.event_type === 'node_error')
+
+    // 실행 상태 결정
+    // 1. workflow_complete 이벤트가 있으면 무조건 완료
+    // 2. error 이벤트가 있으면 에러 상태
+    // 3. 그 외에는 세션 상태 따름
+    const isStillRunning = !hasWorkflowComplete && !hasWorkflowError && session.status === 'running'
+
+    console.log('[workflowStore] 실행 상태 판단:', {
+      hasWorkflowComplete,
+      hasWorkflowError,
+      sessionStatus: session.status,
+      isStillRunning,
+    })
+
+    // 실행 상태 복원
+    const nodeMeta: Record<string, NodeExecutionMeta> = {}
+
+    // 로그를 바탕으로 노드별 실행 상태 재구성
+    for (const log of session.logs) {
+      const nodeId = log.node_id
+
+      if (log.event_type === 'node_start') {
+        nodeMeta[nodeId] = {
+          status: isStillRunning && session.current_node_id === nodeId ? 'running' : 'completed',
+          startTime: new Date(log.timestamp || Date.now()).getTime(),
+        }
+      } else if (log.event_type === 'node_complete') {
+        if (nodeMeta[nodeId]) {
+          nodeMeta[nodeId].status = 'completed'
+          nodeMeta[nodeId].endTime = new Date(log.timestamp || Date.now()).getTime()
+          nodeMeta[nodeId].elapsedTime = log.elapsed_time
+          nodeMeta[nodeId].tokenUsage = log.token_usage
+        }
+      } else if (log.event_type === 'node_error') {
+        if (nodeMeta[nodeId]) {
+          nodeMeta[nodeId].status = 'error'
+          nodeMeta[nodeId].error = log.data.error
+        }
+      }
+    }
+
+    // 실행 상태 복원
+    const execution: WorkflowExecutionState = {
+      isExecuting: isStillRunning,
+      currentNodeId: isStillRunning ? session.current_node_id : null,
+      nodeOutputs: session.node_outputs,
+      nodeMeta,
+      logs: session.logs.map((log: any) => {
+        // 이벤트 타입별로 메시지 재구성 (InputNode.tsx의 로직과 동일)
+        let message = ''
+        const eventType = log.event_type
+        const eventData = log.data
+
+        switch (eventType) {
+          case 'node_start':
+            message = `▶️  ${eventData.agent_name || eventData.node_type || 'Unknown'} 실행 시작`
+            break
+
+          case 'node_output':
+            message = eventData.chunk || ''
+            break
+
+          case 'node_complete':
+            message = `✅ ${eventData.agent_name || eventData.node_type || 'Unknown'} 완료`
+            if (log.elapsed_time !== undefined) {
+              message += ` (${log.elapsed_time.toFixed(1)}초)`
+            }
+            if (log.token_usage && log.token_usage.total_tokens > 0) {
+              message += ` [${log.token_usage.total_tokens.toLocaleString()} tokens]`
+            }
+            break
+
+          case 'node_error':
+            message = `❌ ${eventData.error || 'Unknown error'}`
+            break
+
+          case 'workflow_complete':
+            message = eventData.message || '🎉 워크플로우 실행 완료'
+            break
+
+          default:
+            // 기본값: chunk 또는 message 필드 사용
+            message = eventData.chunk || eventData.message || ''
+        }
+
+        return {
+          nodeId: log.node_id,
+          type: eventType.replace('node_', '').replace('workflow_', ''),
+          message,
+          timestamp: new Date(log.timestamp || Date.now()).getTime(),
+        }
+      }),
+      totalTokenUsage: {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+      },
+    }
+
+    // 전체 토큰 사용량 계산
+    Object.values(nodeMeta).forEach((meta) => {
+      if (meta.tokenUsage) {
+        execution.totalTokenUsage.input_tokens += meta.tokenUsage.input_tokens
+        execution.totalTokenUsage.output_tokens += meta.tokenUsage.output_tokens
+        execution.totalTokenUsage.total_tokens += meta.tokenUsage.total_tokens
+      }
+    })
+
+    set({ execution })
+
+    console.log('[workflowStore] 세션 복원 완료:', {
+      status: session.status,
+      currentNodeId: session.current_node_id,
+      logsCount: session.logs.length,
+      nodeOutputsCount: Object.keys(session.node_outputs).length,
+    })
   },
 }))

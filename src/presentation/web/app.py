@@ -7,11 +7,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from src.infrastructure.logging import get_logger
+from src.infrastructure.logging import configure_structlog, get_logger
 from src.presentation.web.routers import agents_router, health_router, workflows_router, projects_router, filesystem_router, templates_router
 
 # .env 파일 로드 (프로젝트 루트)
 load_dotenv()
+
+# 로그 시스템 초기화 (웹 앱 시작 시 필수)
+configure_structlog(
+    log_dir=None,  # 기본 디렉토리 사용
+    log_level=os.getenv("LOG_LEVEL", "INFO"),
+    enable_json=False  # 콘솔 로그는 읽기 쉬운 형식 사용
+)
 
 logger = get_logger(__name__)
 

@@ -23,6 +23,7 @@ interface WorkerNodeConfigProps {
 interface WorkerNodeData {
   task_template: string
   allowed_tools?: string[]
+  thinking?: boolean
   config?: {
     output_format?: string
     custom_prompt?: string
@@ -58,6 +59,7 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   const initialData: WorkerNodeData = {
     task_template: node.data.task_template || '',
     allowed_tools: node.data.allowed_tools || [],
+    thinking: node.data.thinking,
     config: {
       output_format: node.data.config?.output_format || 'plain_text',
       custom_prompt: node.data.config?.custom_prompt || '',
@@ -360,6 +362,41 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 </div>
               </div>
             )}
+
+            {/* Thinking 모드 */}
+            <div className="space-y-2 border-t pt-4 mt-4">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Thinking 모드</label>
+                <span title="Thinking 모드를 활성화하면 Worker의 시스템 프롬프트에 ultrathink가 추가되어 복잡한 작업 시 사고 과정을 더 상세히 출력합니다. 토큰 사용량이 증가할 수 있습니다.">
+                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                </span>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={data.thinking ?? currentAgent?.thinking ?? false}
+                  onChange={(e) => {
+                    setData({ ...data, thinking: e.target.checked })
+                  }}
+                  className="w-4 h-4"
+                />
+                <span>
+                  Thinking 모드 활성화
+                  {data.thinking === undefined && (
+                    <span className="ml-2 text-muted-foreground">
+                      (기본값: {currentAgent?.thinking ? 'ON' : 'OFF'})
+                    </span>
+                  )}
+                </span>
+              </label>
+
+              <p className="text-xs text-muted-foreground">
+                {data.thinking
+                  ? '✅ Worker의 시스템 프롬프트에 ultrathink가 추가되어 사고 과정을 상세히 출력합니다'
+                  : '⚪ 기본 시스템 프롬프트만 사용합니다'}
+              </p>
+            </div>
           </div>
         </TabsContent>
 
