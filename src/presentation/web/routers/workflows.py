@@ -649,6 +649,57 @@ async def get_session(session_id: str) -> Dict[str, Any]:
         )
 
 
+@router.post("/sessions/{session_id}/cancel")
+async def cancel_workflow_session(
+    session_id: str,
+    bg_manager: BackgroundWorkflowManager = Depends(get_background_manager),
+) -> Dict[str, str]:
+    """
+    워크플로우 실행 취소
+
+    실행 중인 워크플로우를 중단합니다.
+
+    Args:
+        session_id: 세션 ID
+        bg_manager: 백그라운드 워크플로우 관리자
+
+    Returns:
+        Dict[str, str]: 응답 메시지
+
+    Example:
+        POST /api/workflows/sessions/abc-123/cancel
+
+        Response:
+        {
+            "message": "워크플로우가 취소되었습니다",
+            "session_id": "abc-123"
+        }
+    """
+    try:
+        logger.info(f"워크플로우 취소 요청: {session_id}")
+
+        # BackgroundWorkflowManager를 통해 워크플로우 취소
+        await bg_manager.cancel_workflow(session_id)
+
+        return {
+            "message": "워크플로우가 취소되었습니다",
+            "session_id": session_id,
+        }
+
+    except ValueError as e:
+        logger.warning(f"워크플로우 취소 실패: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"워크플로우 취소 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"워크플로우 취소 실패: {str(e)}",
+        )
+
+
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str) -> Dict[str, str]:
     """

@@ -331,12 +331,21 @@ class WorkflowExecutor:
 
         # {{parent}} 치환 (부모가 1개인 경우만 지원)
         if "{{parent}}" in result:
-            parent_nodes = [
-                nid for nid in node_outputs.keys()
-                if nid in result  # 임시: 더 정교한 로직 필요
-            ]
-            if len(parent_nodes) == 1:
-                result = result.replace("{{parent}}", node_outputs[parent_nodes[0]])
+            parent_node_ids = list(node_outputs.keys())
+            if len(parent_node_ids) == 1:
+                # 부모가 1개인 경우, 해당 노드의 출력 사용
+                result = result.replace("{{parent}}", node_outputs[parent_node_ids[0]])
+            elif len(parent_node_ids) == 0:
+                # 부모가 없으면 빈 문자열로 치환
+                result = result.replace("{{parent}}", "")
+            else:
+                # 부모가 여러 개인 경우, 경고 로그 및 첫 번째 부모 출력 사용
+                logger.warning(
+                    f"노드에 부모가 {len(parent_node_ids)}개 있습니다. "
+                    f"{{{{parent}}}} 변수는 부모가 1개인 경우만 지원합니다. "
+                    f"첫 번째 부모의 출력을 사용합니다: {parent_node_ids[0]}"
+                )
+                result = result.replace("{{parent}}", node_outputs[parent_node_ids[0]])
 
         return result
 
@@ -1215,7 +1224,7 @@ class WorkflowExecutor:
 
                 raise
 
-    async def _execute_node_and_collect_events(
+    async def _execute_node_and_queue_events(
         self,
         node: WorkflowNode,
         node_outputs: Dict[str, str],
@@ -1223,10 +1232,11 @@ class WorkflowExecutor:
         session_id: str,
         edges: List[WorkflowEdge],
         all_nodes: List[WorkflowNode],
+        event_queue: asyncio.Queue,
         project_path: Optional[str] = None,
-    ) -> List[WorkflowNodeExecutionEvent]:
+    ) -> None:
         """
-        단일 노드를 실행하고 모든 이벤트를 수집
+        단일 노드를 실행하고 모든 이벤트를 큐에 전송
 
         Args:
             node: 실행할 노드
@@ -1235,18 +1245,22 @@ class WorkflowExecutor:
             session_id: 세션 ID
             edges: 엣지 목록
             all_nodes: 모든 노드 목록
+            event_queue: 이벤트를 전송할 큐
             project_path: 프로젝트 경로
-
-        Returns:
-            List[WorkflowNodeExecutionEvent]: 수집된 이벤트 목록
         """
-        events = []
-        async for event in self._execute_single_node(
-            node, node_outputs, initial_input, session_id,
-            edges, all_nodes, project_path
-        ):
-            events.append(event)
-        return events
+        try:
+            async for event in self._execute_single_node(
+                node, node_outputs, initial_input, session_id,
+                edges, all_nodes, project_path
+            ):
+                await event_queue.put(event)
+        except Exception as e:
+            # 에러 발생 시 에러를 큐에 전달
+            logger.error(
+                f"[{session_id}] 노드 {node.id} 실행 중 에러: {str(e)}",
+                exc_info=True
+            )
+            await event_queue.put(e)  # 예외를 큐에 넣음
 
     async def execute_workflow(
         self,
@@ -1273,6 +1287,9 @@ class WorkflowExecutor:
         """
         # 세션별 파일 핸들러 추가
         add_session_file_handlers(session_id, project_path)
+
+        # 실행 중인 병렬 태스크 추적 (취소 시 정리용)
+        running_tasks: List[asyncio.Task] = []
 
         try:
             logger.info(
@@ -1322,49 +1339,88 @@ class WorkflowExecutor:
                         yield event
 
                 else:
-                    # 병렬 실행
+                    # 병렬 실행 (실시간 이벤트 스트리밍)
                     logger.info(
                         f"[{session_id}] 그룹 {group_idx + 1}/{len(execution_groups)}: "
                         f"{len(group)}개 노드 병렬 실행 ({group_node_ids})"
                     )
 
+                    # 이벤트 큐 생성
+                    event_queue: asyncio.Queue = asyncio.Queue()
+
                     # 병렬 실행 태스크 생성
                     tasks = [
-                        self._execute_node_and_collect_events(
-                            node, node_outputs, initial_input, session_id,
-                            workflow.edges, workflow.nodes, project_path
+                        asyncio.create_task(
+                            self._execute_node_and_queue_events(
+                                node, node_outputs, initial_input, session_id,
+                                workflow.edges, workflow.nodes, event_queue, project_path
+                            )
                         )
                         for node in group
                     ]
 
-                    # 병렬 실행 및 결과 수집
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    # 실행 중인 태스크 추적에 추가
+                    running_tasks.extend(tasks)
 
-                    # 에러 체크
-                    for i, result in enumerate(results):
-                        if isinstance(result, Exception):
-                            error_msg = f"병렬 실행 중 노드 {group[i].id} 실패: {str(result)}"
-                            logger.error(f"[{session_id}] {error_msg}", exc_info=result)
+                    # 완료된 노드 수 추적
+                    completed_nodes = 0
+                    total_nodes = len(group)
 
-                            # 에러 이벤트 생성
-                            yield WorkflowNodeExecutionEvent(
-                                event_type="node_error",
-                                node_id=group[i].id,
-                                data={"error": error_msg},
-                                timestamp=datetime.now().isoformat(),
+                    # 실시간으로 이벤트를 스트리밍
+                    while completed_nodes < total_nodes:
+                        # 큐에서 이벤트 가져오기 (타임아웃 1초)
+                        try:
+                            event_or_exception = await asyncio.wait_for(
+                                event_queue.get(), timeout=1.0
                             )
 
-                            raise result
+                            # 예외인 경우
+                            if isinstance(event_or_exception, Exception):
+                                error_msg = f"병렬 실행 중 노드 실패: {str(event_or_exception)}"
+                                logger.error(f"[{session_id}] {error_msg}", exc_info=event_or_exception)
 
-                    # 모든 이벤트를 순서대로 yield
-                    # (각 노드의 이벤트를 노드별로 묶어서 yield)
-                    for node_idx, events in enumerate(results):
-                        logger.info(
-                            f"[{session_id}] 병렬 노드 {group[node_idx].id}: "
-                            f"{len(events)}개 이벤트 스트리밍"
-                        )
-                        for event in events:
+                                # 에러 이벤트 생성
+                                yield WorkflowNodeExecutionEvent(
+                                    event_type="node_error",
+                                    node_id="unknown",
+                                    data={"error": error_msg},
+                                    timestamp=datetime.now().isoformat(),
+                                )
+
+                                # 모든 태스크 취소
+                                for task in tasks:
+                                    task.cancel()
+
+                                raise event_or_exception
+
+                            # 정상 이벤트인 경우
+                            event = event_or_exception
                             yield event
+
+                            # 노드 완료/에러 이벤트 카운팅
+                            if event.event_type in ["node_complete", "node_error"]:
+                                completed_nodes += 1
+                                logger.info(
+                                    f"[{session_id}] 병렬 노드 완료: {event.node_id} "
+                                    f"({completed_nodes}/{total_nodes})"
+                                )
+
+                        except asyncio.TimeoutError:
+                            # 타임아웃 시 태스크 상태 확인
+                            done_tasks = [t for t in tasks if t.done()]
+                            if done_tasks:
+                                # 완료된 태스크가 있으면 다시 시도
+                                continue
+                            else:
+                                # 모든 태스크가 아직 실행 중
+                                continue
+
+                    # 모든 태스크 완료 대기 (정리 작업)
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+                    logger.info(
+                        f"[{session_id}] 병렬 그룹 완료: {group_node_ids}"
+                    )
 
             logger.info(f"[{session_id}] 워크플로우 실행 완료: {workflow.name}")
 
@@ -1377,6 +1433,36 @@ class WorkflowExecutor:
             )
             logger.info(f"[{session_id}] 🎉 이벤트 생성: workflow_complete")
             yield workflow_complete_event
+
+        except asyncio.CancelledError:
+            # 워크플로우 취소 요청 시
+            logger.warning(
+                f"[{session_id}] 워크플로우 취소 요청 받음. "
+                f"실행 중인 태스크 {len(running_tasks)}개 정리 중..."
+            )
+
+            # 모든 실행 중인 병렬 태스크 취소
+            for task in running_tasks:
+                if not task.done():
+                    task.cancel()
+
+            # 취소된 태스크 대기 (정리)
+            if running_tasks:
+                await asyncio.gather(*running_tasks, return_exceptions=True)
+
+            logger.info(f"[{session_id}] 모든 태스크 정리 완료")
+
+            # 취소 이벤트 생성
+            cancel_event = WorkflowNodeExecutionEvent(
+                event_type="workflow_cancelled",
+                node_id="",
+                data={"message": "워크플로우가 취소되었습니다"},
+                timestamp=datetime.now().isoformat(),
+            )
+            yield cancel_event
+
+            # CancelledError 재발생 (상위 호출자에게 전파)
+            raise
 
         finally:
             # 세션별 파일 핸들러 제거 (메모리 누수 방지)

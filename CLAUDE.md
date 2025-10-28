@@ -401,28 +401,46 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
-### 커스텀 워커 지원
+### 병렬 실행 버그 수정 (완료)
+- **문제 1**: 노드 상태가 "진행중"으로 안바뀌는 문제
+  - **원인**: 병렬 실행 시 모든 이벤트를 수집한 후 일괄 전송
+  - **해결**: `asyncio.Queue`로 실시간 이벤트 스트리밍 구현
+  - **파일**: `workflow_executor.py:1218-1254, 1342-1408`
+
+- **문제 2**: Input 노드 로그에 병렬 노드 로그가 안찍히는 문제
+  - **원인**: 동일 (이벤트 지연 전송)
+  - **해결**: 실시간 스트리밍으로 해결
+
+- **문제 3**: 중단 시 병렬 워커가 멈추지 않는 문제
+  - **원인**: 취소 API 부재, CancelledError 처리 미흡
+  - **해결**:
+    - 취소 API 추가: `POST /api/workflows/sessions/{session_id}/cancel` (`workflows.py:652-700`)
+    - `CancelledError` 처리 구현 (`workflow_executor.py:1428-1456`)
+    - 모든 병렬 태스크 정리 및 취소 이벤트 생성
+
+### 노드 좌표 영속성 저장 버그 수정
+- **문제**: 노드 이동 후 저장/로드 시 위치가 초기화됨
+- **원인**: React Flow의 position 변경이 Zustand 스토어에 반영되지 않음
+- **해결**:
+  - `updateNodePosition` 함수 추가 (`workflowStore.ts:147-154`)
+  - position 변경 시 명시적 업데이트 (`WorkflowCanvas.tsx:194-196`)
+- **파일**: `workflowStore.ts`, `WorkflowCanvas.tsx`
+
+### {{parent}} 템플릿 변수 버그 수정
+- **문제**: 병합 노드 → 다음 노드 연결 시, 다음 노드 입력에 Input 노드 값이 들어감
+- **원인**: `_render_task_template`에서 부모 노드를 잘못 찾음 (노드 ID가 템플릿에 포함되어 있는지 확인)
+- **해결**: 부모 노드 출력을 올바르게 치환하도록 수정
+- **파일**: `workflow_executor.py:332-348`
+
+### 병렬 실행 체크박스 영속성 저장 버그 수정 (이전)
+- **문제**: `parallel_execution` 체크박스 상태가 저장/로드 시 유지되지 않음
+- **원인**: Pydantic `model_dump()`가 기본값(False) 필드를 생략
+- **해결**: `model_dump(mode='json', exclude_none=False)` 사용
+- **파일**: `projects.py:235`
+
+### 커스텀 워커 지원 (이전)
 - **문제**: 커스텀 워커 노드 실행 시 "Agent를 찾을 수 없습니다" 에러
 - **해결**: WorkflowExecutor에서 프로젝트 경로 기반 커스텀 워커 자동 로드
-  - `CustomWorkerRepository`를 통해 `.better-llm/worker-config.json` 로드
-  - `workflows.py`에서 현재 프로젝트 경로를 `WorkflowExecutor`에 전달
 - **파일**: `workflow_executor.py`, `workflows.py`
-
-### 워크플로우 검증 개선
-- **커스텀 워커 검증 제거**: "알려지지 않은 Worker" 경고 제거
-- **파일**: `workflow_validator.py:331, 414`
-
-### 병렬 실행 옵션 추가 (준비 단계)
-- **스키마 추가**: 모든 노드 타입에 `parallel_execution` 필드 추가 (기본값: false)
-  - WorkerNodeData, ManagerNodeData, InputNodeData, ConditionNodeData, LoopNodeData, MergeNodeData
-- **백엔드 준비**:
-  - `_get_child_nodes()`: 자식 노드 ID 목록 조회
-  - `_check_parallel_execution()`: parallel_execution 플래그 확인
-  - `_compute_execution_groups()`: 병렬 실행 그룹 계산 (미래 구현 준비)
-- **파일**: `workflow.py`, `workflow_executor.py`
-
-**TODO (별도 구현 필요)**:
-- [ ] 병렬 실행 엔진 (asyncio.gather + 이벤트 스트리밍 통합)
-- [ ] 프론트엔드 UI 체크박스 추가 (노드 설정에서 `parallel_execution` 토글)
 
 ---

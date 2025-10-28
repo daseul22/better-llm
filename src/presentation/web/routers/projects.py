@@ -232,9 +232,20 @@ async def save_project_workflow(
 
     # JSON 저장
     try:
+        workflow_dict = project_config.model_dump(mode='json', exclude_none=False)
+
+        # 디버그: parallel_execution 필드 확인
+        for node in request.workflow.nodes:
+            node_data = node.data if hasattr(node, 'data') else node.get('data', {})
+            if isinstance(node_data, dict):
+                parallel_exec = node_data.get('parallel_execution')
+                logger.info(
+                    f"[저장] 노드 {node.id}: parallel_execution = {parallel_exec}"
+                )
+
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(
-                project_config.model_dump(),
+                workflow_dict,
                 f,
                 ensure_ascii=False,
                 indent=2,
@@ -314,6 +325,17 @@ async def load_project_workflow(
         logger.info(
             f"워크플로우 로드: {project_config.workflow.name} ← {config_path}"
         )
+
+        # 디버그: parallel_execution 필드 확인
+        for node in project_config.workflow.nodes:
+            node_data = node.data if hasattr(node, 'data') else {}
+            if isinstance(node_data, dict):
+                parallel_exec = node_data.get('parallel_execution')
+            else:
+                parallel_exec = getattr(node_data, 'parallel_execution', None)
+            logger.info(
+                f"[로드] 노드 {node.id}: parallel_execution = {parallel_exec}"
+            )
 
         return ProjectWorkflowLoadResponse(
             project_path=target_path,

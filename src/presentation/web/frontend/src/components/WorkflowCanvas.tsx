@@ -48,6 +48,7 @@ export const WorkflowCanvas: React.FC = () => {
     setEdges,
     addNode,
     addEdge: addStoreEdge,
+    updateNodePosition,
     deleteNode,
     deleteEdge,
     execution,
@@ -185,20 +186,18 @@ export const WorkflowCanvas: React.FC = () => {
     (changes) => {
       onNodesChange(changes)
 
-      // 삭제된 노드를 Zustand에 반영
+      // 노드 변경 처리
       changes.forEach((change) => {
         if (change.type === 'remove') {
+          // 삭제된 노드를 Zustand에 반영
           deleteNode(change.id)
+        } else if (change.type === 'position' && change.dragging === false && change.position) {
+          // 드래그 완료 시 position을 Zustand에 반영
+          updateNodePosition(change.id, change.position)
         }
       })
-
-      // 위치 변경을 Zustand에 반영
-      setLocalNodes((nds) => {
-        setNodes(nds as WorkflowNode[])
-        return nds
-      })
     },
-    [onNodesChange, deleteNode, setNodes, setLocalNodes]
+    [onNodesChange, deleteNode, updateNodePosition]
   )
 
   // 엣지 변경 핸들러 (삭제 포함)
