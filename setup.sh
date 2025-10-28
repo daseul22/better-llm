@@ -294,17 +294,17 @@ print_completion() {
     echo ""
     print_info "사용 방법:"
     echo ""
-    echo "  ${CYAN}# TUI 모드 (권장)${NC}"
+    echo -e "  ${CYAN}# TUI 모드 (권장)${NC}"
     echo "  better-llm"
     echo ""
-    echo "  ${CYAN}# Web UI 모드 (워크플로우 에디터)${NC}"
+    echo -e "  ${CYAN}# Web UI 모드 (워크플로우 에디터)${NC}"
     echo "  better-llm-web"
     echo "  # → http://localhost:5173 접속"
     echo ""
-    echo "  ${CYAN}# CLI 모드${NC}"
+    echo -e "  ${CYAN}# CLI 모드${NC}"
     echo "  better-llm-cli \"작업 설명\""
     echo ""
-    echo "  ${CYAN}# 도움말${NC}"
+    echo -e "  ${CYAN}# 도움말${NC}"
     echo "  better-llm --help"
     echo ""
 
@@ -315,7 +315,7 @@ print_completion() {
         echo ""
     fi
 
-    print_info "상세 문서: ${CYAN}README.md${NC} 또는 ${CYAN}docs/index.md${NC}"
+    echo -e "  ${CYAN}상세 문서:${NC} README.md 또는 docs/index.md"
     echo ""
 }
 
