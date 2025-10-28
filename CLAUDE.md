@@ -395,4 +395,34 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 **상세 히스토리**: `CHANGELOG.md` 참조
 
-**최종 업데이트**: 2025-10-28 (v4.3.0 - Web 워크플로우 중심 개편)
+**최종 업데이트**: 2025-10-29
+
+---
+
+## 최근 작업 (2025-10-29)
+
+### 커스텀 워커 지원
+- **문제**: 커스텀 워커 노드 실행 시 "Agent를 찾을 수 없습니다" 에러
+- **해결**: WorkflowExecutor에서 프로젝트 경로 기반 커스텀 워커 자동 로드
+  - `CustomWorkerRepository`를 통해 `.better-llm/worker-config.json` 로드
+  - `workflows.py`에서 현재 프로젝트 경로를 `WorkflowExecutor`에 전달
+- **파일**: `workflow_executor.py`, `workflows.py`
+
+### 워크플로우 검증 개선
+- **커스텀 워커 검증 제거**: "알려지지 않은 Worker" 경고 제거
+- **파일**: `workflow_validator.py:331, 414`
+
+### 병렬 실행 옵션 추가 (준비 단계)
+- **스키마 추가**: 모든 노드 타입에 `parallel_execution` 필드 추가 (기본값: false)
+  - WorkerNodeData, ManagerNodeData, InputNodeData, ConditionNodeData, LoopNodeData, MergeNodeData
+- **백엔드 준비**:
+  - `_get_child_nodes()`: 자식 노드 ID 목록 조회
+  - `_check_parallel_execution()`: parallel_execution 플래그 확인
+  - `_compute_execution_groups()`: 병렬 실행 그룹 계산 (미래 구현 준비)
+- **파일**: `workflow.py`, `workflow_executor.py`
+
+**TODO (별도 구현 필요)**:
+- [ ] 병렬 실행 엔진 (asyncio.gather + 이벤트 스트리밍 통합)
+- [ ] 프론트엔드 UI 체크박스 추가 (노드 설정에서 `parallel_execution` 토글)
+
+---
