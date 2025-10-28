@@ -4,12 +4,12 @@
  * 워크플로우 시작점인 Input 노드의 설정을 관리합니다.
  */
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { Terminal, HelpCircle, CheckCircle2, Save, ScrollText, ChevronDown, ChevronRight, Brain } from 'lucide-react'
+import { Terminal, HelpCircle, CheckCircle2, Save, ScrollText, ChevronDown, ChevronRight, Brain, ArrowDown } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -253,7 +253,7 @@ const LogItem: React.FC<{ log: any; index: number; toolNameMap: Map<string, stri
 }
 
 /**
- * 실행 로그 패널 컴포넌트
+ * 실행 로그 패널 컴포넌트 (자동 스크롤 기능 포함)
  */
 const ExecutionLogsPanel: React.FC = () => {
   const execution = useWorkflowStore((state) => state.execution)
@@ -262,19 +262,53 @@ const ExecutionLogsPanel: React.FC = () => {
   // tool_use_id -> tool_name 매핑 테이블 생성
   const toolNameMap = useMemo(() => buildToolNameMap(logs), [logs])
 
+  // 자동 스크롤 관련 상태 및 ref
+  const logsContainerRef = useRef<HTMLDivElement>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
+
+  // 자동 스크롤 (로그가 업데이트될 때만)
+  useEffect(() => {
+    if (autoScroll && logsContainerRef.current) {
+      // scrollIntoView 대신 scrollTop 직접 조작 (부모 스크롤 방지)
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight
+    }
+  }, [logs, autoScroll])
+
+  // 스크롤 이벤트 핸들러 (수동 스크롤 감지)
+  const handleScroll = () => {
+    if (!logsContainerRef.current) return
+
+    const { scrollTop, scrollHeight, clientHeight } = logsContainerRef.current
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50 // 50px 여유
+
+    // 맨 아래에 있으면 자동 스크롤 활성화, 아니면 비활성화
+    setAutoScroll(isAtBottom)
+  }
+
+  // 맨 아래로 스크롤 버튼
+  const scrollToBottom = () => {
+    if (logsContainerRef.current) {
+      logsContainerRef.current.scrollTo({
+        top: logsContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      })
+      setAutoScroll(true)
+    }
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* 실행 상태 */}
-      <div className="bg-gray-50 border rounded-md p-3">
-        <div className="flex items-center justify-between mb-2">
+      <div className="bg-gray-50 border rounded-md p-2">
+        <div className="flex items-center justify-between">
           <div className="text-xs font-medium">실행 상태</div>
           {isExecuting ? (
-            <div className="flex items-center gap-2 text-yellow-600">
+            <div className="flex items-center gap-1.5 text-yellow-600">
               <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
               <span className="text-xs">실행 중...</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-gray-600">
+            <div className="flex items-center gap-1.5 text-gray-600">
               <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
               <span className="text-xs">대기 중</span>
             </div>
@@ -283,16 +317,16 @@ const ExecutionLogsPanel: React.FC = () => {
 
         {/* 토큰 사용량 */}
         {totalTokenUsage.total_tokens > 0 && (
-          <div className="text-xs text-muted-foreground space-y-1">
-            <div className="flex justify-between">
+          <div className="text-xs text-muted-foreground space-y-0.5 mt-1.5">
+            <div className="flex items-center justify-between">
               <span>입력 토큰:</span>
               <span className="font-mono">{totalTokenUsage.input_tokens.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex items-center justify-between">
               <span>출력 토큰:</span>
               <span className="font-mono">{totalTokenUsage.output_tokens.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between font-medium text-gray-900 border-t pt-1">
+            <div className="flex items-center justify-between font-medium text-gray-900 border-t pt-0.5 mt-0.5">
               <span>총합:</span>
               <span className="font-mono">{totalTokenUsage.total_tokens.toLocaleString()}</span>
             </div>
@@ -301,10 +335,23 @@ const ExecutionLogsPanel: React.FC = () => {
       </div>
 
       {/* 로그 목록 */}
-      <div className="space-y-2">
+      <div className="space-y-2 relative pt-1">
         <div className="flex items-center justify-between">
           <div className="text-xs font-medium">실행 로그</div>
-          <div className="text-xs text-muted-foreground">{logs.length}개</div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-muted-foreground">{logs.length}개</div>
+            {!autoScroll && logs.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={scrollToBottom}
+                className="h-6 px-2 text-xs"
+              >
+                <ArrowDown className="h-3 w-3 mr-1" />
+                맨 아래로
+              </Button>
+            )}
+          </div>
         </div>
 
         {logs.length === 0 ? (
@@ -313,7 +360,20 @@ const ExecutionLogsPanel: React.FC = () => {
             <div className="text-sm text-muted-foreground">워크플로우를 실행하면 로그가 표시됩니다</div>
           </div>
         ) : (
-          <div className="space-y-2 max-h-[500px] overflow-y-auto">
+          <div
+            ref={logsContainerRef}
+            onScroll={handleScroll}
+            className="space-y-2 max-h-[500px] overflow-y-auto scroll-smooth relative"
+          >
+            {/* 자동 스크롤 비활성화 알림 (스크롤 컨테이너 내부 상단에 sticky) */}
+            {!autoScroll && (
+              <div className="sticky top-0 z-10 flex justify-center mb-2">
+                <div className="bg-gray-800 text-white text-xs px-3 py-1.5 rounded-full shadow-lg">
+                  자동 스크롤 일시 중지됨
+                </div>
+              </div>
+            )}
+
             {logs.map((log, index) => (
               <LogItem key={index} log={log} index={index} toolNameMap={toolNameMap} />
             ))}
@@ -444,7 +504,7 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
           </TabsContent>
 
           {/* 실행 로그 탭 */}
-          <TabsContent value="logs" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
+          <TabsContent value="logs" className="h-full overflow-y-auto px-4 pb-20 mt-4">
             <ExecutionLogsPanel />
           </TabsContent>
 

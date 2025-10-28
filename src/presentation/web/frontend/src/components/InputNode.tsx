@@ -111,6 +111,12 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
 
             case 'node_complete':
               // 노드 완료: 실행 시간 및 토큰 사용량 업데이트
+              console.log('[InputNode] node_complete 이벤트:', {
+                node_id,
+                elapsed_time,
+                token_usage,
+              })
+
               if (elapsed_time !== undefined) {
                 setNodeCompleted(node_id, elapsed_time, token_usage)
               }
@@ -119,7 +125,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
               if (elapsed_time !== undefined) {
                 completeMsg += ` (${elapsed_time.toFixed(1)}초)`
               }
-              if (token_usage) {
+              if (token_usage && token_usage.total_tokens > 0) {
                 completeMsg += ` [${token_usage.total_tokens.toLocaleString()} tokens]`
               }
               addLog(node_id, 'complete', completeMsg)

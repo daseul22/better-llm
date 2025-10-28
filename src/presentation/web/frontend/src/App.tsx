@@ -143,6 +143,12 @@ function App() {
                         break
 
                       case 'node_complete':
+                        console.log('[App] 스트림 재접속 - node_complete 이벤트:', {
+                          node_id,
+                          elapsed_time,
+                          token_usage,
+                        })
+
                         if (elapsed_time !== undefined) {
                           store.setNodeCompleted(node_id, elapsed_time, token_usage)
                         }

@@ -154,7 +154,7 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
           )}
 
           {/* 토큰 사용량 표시 */}
-          {tokenUsage && (
+          {tokenUsage && tokenUsage.total_tokens > 0 && (
             <div className="text-[10px] text-gray-600 bg-gray-100 rounded px-1.5 py-1">
               <span className="font-mono">{tokenUsage.total_tokens.toLocaleString()} tokens</span>
             </div>

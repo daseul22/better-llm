@@ -352,6 +352,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
   setNodeCompleted: (nodeId, elapsedTime, tokenUsage) =>
     set((state) => {
+      console.log('[workflowStore] setNodeCompleted 호출:', {
+        nodeId,
+        elapsedTime,
+        tokenUsage,
+      })
+
       const updatedMeta = {
         ...state.execution.nodeMeta,
         [nodeId]: {
@@ -370,6 +376,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         newTotalTokenUsage.output_tokens += tokenUsage.output_tokens
         newTotalTokenUsage.total_tokens += tokenUsage.total_tokens
       }
+
+      console.log('[workflowStore] 업데이트된 nodeMeta:', updatedMeta[nodeId])
 
       return {
         execution: {
@@ -417,14 +425,6 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   restoreFromSession: (session) => {
     console.log('[workflowStore] 세션 복원 시작:', session.session_id)
 
-    // 워크플로우 정의 복원
-    set({
-      workflowName: session.workflow.name,
-      workflowDescription: session.workflow.description || '',
-      nodes: session.workflow.nodes,
-      edges: session.workflow.edges,
-    })
-
     // workflow_complete 이벤트 확인 (실제 완료 여부 판단)
     const hasWorkflowComplete = session.logs.some((log: any) => log.event_type === 'workflow_complete')
     const hasWorkflowError = session.logs.some((log: any) => log.event_type === 'workflow_error' || log.event_type === 'node_error')
@@ -460,6 +460,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           nodeMeta[nodeId].endTime = new Date(log.timestamp || Date.now()).getTime()
           nodeMeta[nodeId].elapsedTime = log.elapsed_time
           nodeMeta[nodeId].tokenUsage = log.token_usage
+
+          console.log('[workflowStore] 세션 복원 - node_complete:', {
+            nodeId,
+            elapsed_time: log.elapsed_time,
+            token_usage: log.token_usage,
+          })
         }
       } else if (log.event_type === 'node_error') {
         if (nodeMeta[nodeId]) {
@@ -468,6 +474,30 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         }
       }
     }
+
+    // 각 노드의 data 속성도 업데이트 (UI 동기화)
+    const updatedNodes = session.workflow.nodes.map((node: WorkflowNode) => {
+      const meta = nodeMeta[node.id]
+      if (!meta) return node
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          isExecuting: meta.status === 'running',
+          isCompleted: meta.status === 'completed',
+          hasError: meta.status === 'error',
+        }
+      }
+    })
+
+    // 워크플로우 정의 복원 (업데이트된 노드 포함)
+    set({
+      workflowName: session.workflow.name,
+      workflowDescription: session.workflow.description || '',
+      nodes: updatedNodes,
+      edges: session.workflow.edges,
+    })
 
     // 실행 상태 복원
     const execution: WorkflowExecutionState = {

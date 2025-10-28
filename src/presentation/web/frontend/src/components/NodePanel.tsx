@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Agent, getAgents } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus, Target, Download, Search, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { Plus, Target, Zap, Search, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -168,34 +168,34 @@ export const NodePanel: React.FC = () => {
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto space-y-3">
         {/* Input 노드 섹션 */}
-        <div className="border rounded-lg overflow-hidden bg-blue-50/50">
+        <div className="border rounded-lg overflow-hidden bg-emerald-50/50">
           <button
             onClick={() => toggleSection('input')}
-            className="w-full flex items-center justify-between p-3 hover:bg-blue-100/50 transition-colors"
+            className="w-full flex items-center justify-between p-3 hover:bg-emerald-100/50 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <Download className="h-4 w-4 text-blue-600" />
-              <span className="font-semibold text-sm text-blue-700">Input 노드</span>
-              <span className="text-xs px-2 py-0.5 bg-blue-200 text-blue-700 rounded-full">1</span>
+              <Zap className="h-4 w-4 text-emerald-600" />
+              <span className="font-semibold text-sm text-emerald-700">Input 노드</span>
+              <span className="text-xs px-2 py-0.5 bg-emerald-200 text-emerald-700 rounded-full">1</span>
             </div>
             {expandedSections.has('input') ? (
-              <ChevronUp className="h-4 w-4 text-blue-600" />
+              <ChevronUp className="h-4 w-4 text-emerald-600" />
             ) : (
-              <ChevronDown className="h-4 w-4 text-blue-600" />
+              <ChevronDown className="h-4 w-4 text-emerald-600" />
             )}
           </button>
           {expandedSections.has('input') && (
             <div className="p-3 pt-0 space-y-2">
               <Button
                 variant="outline"
-                className="w-full justify-start text-left border-blue-300 hover:bg-blue-50 bg-white cursor-grab active:cursor-grabbing"
+                className="w-full justify-start text-left border-emerald-300 hover:bg-emerald-50 bg-white cursor-grab active:cursor-grabbing"
                 onClick={handleAddInput}
                 draggable
                 onDragStart={(e) => onDragStart(e, 'input', { initial_input: '초기 입력을 입력하세요' })}
               >
-                <Plus className="mr-2 h-4 w-4 text-blue-600" />
+                <Zap className="mr-2 h-4 w-4 text-emerald-600" />
                 <div className="flex flex-col items-start">
-                  <span className="font-medium text-blue-700">Input</span>
+                  <span className="font-medium text-emerald-700">Input</span>
                   <span className="text-xs text-muted-foreground">
                     워크플로우 시작점
                   </span>
