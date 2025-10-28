@@ -316,7 +316,7 @@ function App() {
           {rightSidebarOpen && (
             <aside className="w-[28rem] border-l bg-white flex flex-col overflow-hidden transition-transform duration-300 ease-out">
               {/* 패널 내용 */}
-              <div className="flex-1 overflow-hidden p-4">
+              <div className="flex-1 overflow-hidden px-2 py-4">
                 <NodeConfigPanel />
               </div>
             </aside>
