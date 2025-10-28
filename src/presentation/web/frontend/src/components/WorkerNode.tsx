@@ -11,20 +11,32 @@ import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { useWorkflowStore } from '@/stores/workflowStore'
 
 interface WorkerNodeData {
   agent_name: string
   task_template: string
   config?: Record<string, any>
-  // 실행 상태 (옵션)
+  // 실행 상태 (옵션 - 레거시, nodeMeta 우선)
   isExecuting?: boolean
   isCompleted?: boolean
   hasError?: boolean
 }
 
-export const WorkerNode = memo(({ data, selected }: NodeProps<WorkerNodeData>) => {
-  const { agent_name, isExecuting, isCompleted, hasError } = data
+export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData>) => {
+  const { agent_name } = data
+
+  // Store에서 노드 실행 메타데이터 가져오기
+  const nodeMeta = useWorkflowStore((state) => state.execution.nodeMeta[id])
+
+  // nodeMeta 우선, 없으면 data fallback
+  const status = nodeMeta?.status || 'idle'
+  const isExecuting = status === 'running' || data.isExecuting
+  const isCompleted = status === 'completed' || data.isCompleted
+  const hasError = status === 'error' || data.hasError
+  const elapsedTime = nodeMeta?.elapsedTime
+  const tokenUsage = nodeMeta?.tokenUsage
 
   // Agent별 색상 매핑
   const agentColors: Record<string, { border: string; bg: string; text: string }> = {
@@ -108,6 +120,24 @@ export const WorkerNode = memo(({ data, selected }: NodeProps<WorkerNodeData>) =
             {data.task_template?.substring(0, 60) || '작업 템플릿을 입력하세요...'}
             {(data.task_template?.length || 0) > 60 && '...'}
           </div>
+
+          {/* 실행 시간 표시 */}
+          {elapsedTime !== undefined && (
+            <div className="flex items-center gap-1 text-xs text-gray-600">
+              <Clock className="h-3 w-3" />
+              <span>{elapsedTime.toFixed(1)}초</span>
+            </div>
+          )}
+
+          {/* 토큰 사용량 표시 */}
+          {tokenUsage && (
+            <div className="text-xs text-gray-600 bg-gray-100 rounded px-2 py-1">
+              <span className="font-mono">{tokenUsage.total_tokens.toLocaleString()} tokens</span>
+              <span className="text-gray-400 ml-1">
+                ({tokenUsage.input_tokens.toLocaleString()} in / {tokenUsage.output_tokens.toLocaleString()} out)
+              </span>
+            </div>
+          )}
 
           {/* 진행 바 */}
           {isExecuting && (

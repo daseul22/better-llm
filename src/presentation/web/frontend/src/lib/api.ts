@@ -79,6 +79,13 @@ export interface WorkflowExecutionEvent {
   event_type: 'node_start' | 'node_output' | 'node_complete' | 'node_error' | 'workflow_complete'
   node_id: string
   data: Record<string, any>
+  timestamp?: string  // ISO 8601 형식
+  elapsed_time?: number  // 초 단위
+  token_usage?: {
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+  }
 }
 
 /**

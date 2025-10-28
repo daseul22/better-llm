@@ -5,6 +5,8 @@
 """
 
 import asyncio
+import time
+from datetime import datetime
 from typing import Dict, Any, AsyncIterator, Set, List
 from collections import deque
 from dataclasses import replace
@@ -21,6 +23,7 @@ from src.presentation.web.schemas.workflow import (
     WorkflowNodeExecutionEvent,
     WorkerNodeData,
     ManagerNodeData,
+    TokenUsage,
 )
 
 logger = get_logger(__name__)
@@ -206,6 +209,9 @@ class WorkflowExecutor:
             f"(워커: {available_workers})"
         )
 
+        # 노드 시작 시간 기록
+        start_time = time.time()
+
         # 노드 시작 이벤트
         start_event = WorkflowNodeExecutionEvent(
             event_type="node_start",
@@ -214,6 +220,7 @@ class WorkflowExecutor:
                 "node_type": "manager",
                 "available_workers": available_workers
             },
+            timestamp=datetime.now().isoformat(),
         )
         yield start_event
 
@@ -276,6 +283,9 @@ class WorkflowExecutor:
                 for worker_name, output in worker_results.items()
             )
 
+            # 실행 시간 계산
+            elapsed_time = time.time() - start_time
+
             # 노드 완료 이벤트 (output 포함)
             complete_event = WorkflowNodeExecutionEvent(
                 event_type="node_complete",
@@ -286,6 +296,8 @@ class WorkflowExecutor:
                     "output_length": len(integrated_output),
                     "output": integrated_output,  # 통합 결과 포함
                 },
+                timestamp=datetime.now().isoformat(),
+                elapsed_time=elapsed_time,
             )
             yield complete_event
 
@@ -298,11 +310,16 @@ class WorkflowExecutor:
             error_msg = f"Manager 노드 실행 실패: {str(e)}"
             logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
 
+            # 실행 시간 계산 (에러 발생까지의 시간)
+            elapsed_time = time.time() - start_time
+
             # 노드 에러 이벤트
             error_event = WorkflowNodeExecutionEvent(
                 event_type="node_error",
                 node_id=node_id,
                 data={"error": error_msg},
+                timestamp=datetime.now().isoformat(),
+                elapsed_time=elapsed_time,
             )
             yield error_event
 
@@ -365,9 +382,10 @@ class WorkflowExecutor:
                     event_type="node_start",
                     node_id=node_id,
                     data={"agent_name": "Input"},
+                    timestamp=datetime.now().isoformat(),
                 )
 
-                # 완료 이벤트
+                # 완료 이벤트 (Input 노드는 즉시 완료되므로 elapsed_time은 0에 가까움)
                 yield WorkflowNodeExecutionEvent(
                     event_type="node_complete",
                     node_id=node_id,
@@ -376,7 +394,9 @@ class WorkflowExecutor:
                         "agent_name": "Input",
                         "output_length": len(input_value),
                         "output": input_value,
-                    }
+                    },
+                    timestamp=datetime.now().isoformat(),
+                    elapsed_time=0.0,
                 )
 
                 logger.info(
@@ -402,11 +422,15 @@ class WorkflowExecutor:
                 agent_name = node_data.agent_name
                 task_template = node_data.task_template
 
+                # 노드 시작 시간 기록
+                start_time = time.time()
+
                 # 노드 시작 이벤트
                 start_event = WorkflowNodeExecutionEvent(
                     event_type="node_start",
                     node_id=node_id,
                     data={"agent_name": agent_name},
+                    timestamp=datetime.now().isoformat(),
                 )
                 logger.info(f"[{session_id}] 🟢 이벤트 생성: node_start (node: {node_id}, agent: {agent_name})")
                 yield start_event
@@ -446,7 +470,23 @@ class WorkflowExecutor:
                     worker = WorkerAgent(config=agent_config)
                     node_output_chunks = []
 
-                    async for chunk in worker.execute_task(task_description):
+                    # 토큰 사용량 수집을 위한 변수
+                    node_token_usage: Optional[TokenUsage] = None
+
+                    def usage_callback(usage_info: Dict[str, Any]):
+                        """토큰 사용량 콜백"""
+                        nonlocal node_token_usage
+                        node_token_usage = TokenUsage(
+                            input_tokens=usage_info.get("input_tokens", 0),
+                            output_tokens=usage_info.get("output_tokens", 0),
+                            total_tokens=usage_info.get("total_tokens", 0),
+                        )
+                        logger.debug(
+                            f"[{session_id}] 💰 토큰 사용량: {node_token_usage.total_tokens} "
+                            f"(입력: {node_token_usage.input_tokens}, 출력: {node_token_usage.output_tokens})"
+                        )
+
+                    async for chunk in worker.execute_task(task_description, usage_callback=usage_callback):
                         node_output_chunks.append(chunk)
 
                         # 노드 출력 이벤트 (스트리밍)
@@ -462,6 +502,9 @@ class WorkflowExecutor:
                     node_output = "".join(node_output_chunks)
                     node_outputs[node_id] = node_output
 
+                    # 실행 시간 계산
+                    elapsed_time = time.time() - start_time
+
                     # 노드 완료 이벤트
                     complete_event = WorkflowNodeExecutionEvent(
                         event_type="node_complete",
@@ -470,6 +513,9 @@ class WorkflowExecutor:
                             "agent_name": agent_name,
                             "output_length": len(node_output),
                         },
+                        timestamp=datetime.now().isoformat(),
+                        elapsed_time=elapsed_time,
+                        token_usage=node_token_usage,
                     )
                     logger.info(f"[{session_id}] ✅ 이벤트 생성: node_complete (node: {node_id}, agent: {agent_name})")
                     yield complete_event
@@ -483,11 +529,16 @@ class WorkflowExecutor:
                     error_msg = f"노드 실행 실패: {str(e)}"
                     logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
 
+                    # 실행 시간 계산 (에러 발생까지의 시간)
+                    elapsed_time = time.time() - start_time
+
                     # 노드 에러 이벤트
                     error_event = WorkflowNodeExecutionEvent(
                         event_type="node_error",
                         node_id=node_id,
                         data={"error": error_msg},
+                        timestamp=datetime.now().isoformat(),
+                        elapsed_time=elapsed_time,
                     )
                     logger.error(f"[{session_id}] 🔴 이벤트 생성: node_error (node: {node_id})")
                     yield error_event
@@ -502,6 +553,7 @@ class WorkflowExecutor:
             event_type="workflow_complete",
             node_id="",
             data={"message": "워크플로우 실행 완료"},
+            timestamp=datetime.now().isoformat(),
         )
         logger.info(f"[{session_id}] 🎉 이벤트 생성: workflow_complete")
         yield workflow_complete_event

@@ -35,7 +35,10 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
     setCurrentNode,
     addNodeOutput,
     addLog,
-    updateNode
+    updateNode,
+    setNodeStartTime,
+    setNodeCompleted,
+    setNodeError,
   } = useWorkflowStore()
 
   // 상태별 스타일 (WorkerNode 패턴과 동일)
@@ -73,11 +76,14 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
         initial_input,
         // onEvent
         (event) => {
-          const { event_type, node_id, data: eventData } = event
+          const { event_type, node_id, data: eventData, timestamp, elapsed_time, token_usage } = event
 
           switch (event_type) {
             case 'node_start':
               setCurrentNode(node_id)
+              if (timestamp) {
+                setNodeStartTime(node_id, new Date(timestamp).getTime())
+              }
               addLog(node_id, 'start', `▶️  ${eventData.agent_name} 실행 시작`)
               break
 
@@ -89,10 +95,26 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
               break
 
             case 'node_complete':
-              addLog(node_id, 'complete', `✅ ${eventData.agent_name} 완료 (출력: ${eventData.output_length}자)`)
+              // 노드 완료: 실행 시간 및 토큰 사용량 업데이트
+              if (elapsed_time !== undefined) {
+                setNodeCompleted(node_id, elapsed_time, token_usage)
+              }
+
+              let completeMsg = `✅ ${eventData.agent_name} 완료`
+              if (elapsed_time !== undefined) {
+                completeMsg += ` (${elapsed_time.toFixed(1)}초)`
+              }
+              if (token_usage) {
+                completeMsg += ` [${token_usage.total_tokens.toLocaleString()} tokens]`
+              }
+              addLog(node_id, 'complete', completeMsg)
               break
 
             case 'node_error':
+              // 노드 에러: elapsed_time 및 에러 메시지 저장
+              if (eventData.error) {
+                setNodeError(node_id, eventData.error)
+              }
               addLog(node_id, 'error', `❌ ${eventData.error}`)
               updateNode(id, { hasError: true })
               break

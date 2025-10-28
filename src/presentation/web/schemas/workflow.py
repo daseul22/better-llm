@@ -225,6 +225,20 @@ class WorkflowListResponse(BaseModel):
     )
 
 
+class TokenUsage(BaseModel):
+    """
+    토큰 사용량 정보
+
+    Attributes:
+        input_tokens: 입력 토큰 수
+        output_tokens: 출력 토큰 수
+        total_tokens: 전체 토큰 수
+    """
+    input_tokens: int = Field(default=0, description="입력 토큰 수")
+    output_tokens: int = Field(default=0, description="출력 토큰 수")
+    total_tokens: int = Field(default=0, description="전체 토큰 수")
+
+
 class WorkflowNodeExecutionEvent(BaseModel):
     """
     워크플로우 노드 실행 이벤트 (SSE)
@@ -233,6 +247,9 @@ class WorkflowNodeExecutionEvent(BaseModel):
         event_type: 이벤트 타입 (node_start, node_output, node_complete, node_error)
         node_id: 노드 ID
         data: 이벤트 데이터
+        timestamp: 이벤트 발생 시각 (ISO 8601)
+        elapsed_time: 노드 실행 경과 시간 (초)
+        token_usage: 토큰 사용량 정보
     """
     event_type: str = Field(
         ...,
@@ -241,6 +258,18 @@ class WorkflowNodeExecutionEvent(BaseModel):
     )
     node_id: str = Field(..., description="노드 ID")
     data: Dict[str, Any] = Field(..., description="이벤트 데이터")
+    timestamp: Optional[str] = Field(
+        default=None,
+        description="이벤트 발생 시각 (ISO 8601 형식)"
+    )
+    elapsed_time: Optional[float] = Field(
+        default=None,
+        description="노드 실행 경과 시간 (초)"
+    )
+    token_usage: Optional[TokenUsage] = Field(
+        default=None,
+        description="토큰 사용량 정보"
+    )
 
 
 # ==================== 프로젝트 설정 스키마 ====================

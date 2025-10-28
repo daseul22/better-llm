@@ -7,16 +7,37 @@
 import { create } from 'zustand'
 import { WorkflowNode, WorkflowEdge, Workflow } from '@/lib/api'
 
+export type NodeExecutionStatus = 'idle' | 'running' | 'completed' | 'error'
+
+export interface NodeExecutionMeta {
+  status: NodeExecutionStatus
+  startTime?: number
+  endTime?: number
+  elapsedTime?: number
+  tokenUsage?: {
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+  }
+  error?: string
+}
+
 interface WorkflowExecutionState {
   isExecuting: boolean
   currentNodeId: string | null
   nodeOutputs: Record<string, string>
+  nodeMeta: Record<string, NodeExecutionMeta>
   logs: Array<{
     nodeId: string
     type: 'start' | 'output' | 'complete' | 'error'
     message: string
     timestamp: number
   }>
+  totalTokenUsage: {
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+  }
 }
 
 interface WorkflowStore {
@@ -61,13 +82,26 @@ interface WorkflowStore {
   addNodeOutput: (nodeId: string, output: string) => void
   addLog: (nodeId: string, type: WorkflowExecutionState['logs'][0]['type'], message: string) => void
   clearExecution: () => void
+
+  // 노드별 실행 상태 관리
+  setNodeStatus: (nodeId: string, status: NodeExecutionStatus) => void
+  setNodeStartTime: (nodeId: string, timestamp: number) => void
+  setNodeCompleted: (nodeId: string, elapsedTime: number, tokenUsage?: NodeExecutionMeta['tokenUsage']) => void
+  setNodeError: (nodeId: string, error: string) => void
+  getNodeMeta: (nodeId: string) => NodeExecutionMeta | null
 }
 
 const initialExecutionState: WorkflowExecutionState = {
   isExecuting: false,
   currentNodeId: null,
   nodeOutputs: {},
+  nodeMeta: {},
   logs: [],
+  totalTokenUsage: {
+    input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+  },
 }
 
 export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
@@ -232,4 +266,85 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set((state) => ({
       execution: initialExecutionState,
     })),
+
+  // 노드별 실행 상태 관리 구현
+  setNodeStatus: (nodeId, status) =>
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        nodeMeta: {
+          ...state.execution.nodeMeta,
+          [nodeId]: {
+            ...(state.execution.nodeMeta[nodeId] || { status: 'idle' }),
+            status,
+          },
+        },
+      },
+    })),
+
+  setNodeStartTime: (nodeId, timestamp) =>
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        nodeMeta: {
+          ...state.execution.nodeMeta,
+          [nodeId]: {
+            ...(state.execution.nodeMeta[nodeId] || { status: 'idle' }),
+            status: 'running',
+            startTime: timestamp,
+          },
+        },
+      },
+    })),
+
+  setNodeCompleted: (nodeId, elapsedTime, tokenUsage) =>
+    set((state) => {
+      const updatedMeta = {
+        ...state.execution.nodeMeta,
+        [nodeId]: {
+          ...(state.execution.nodeMeta[nodeId] || { status: 'idle' }),
+          status: 'completed' as NodeExecutionStatus,
+          endTime: Date.now(),
+          elapsedTime,
+          tokenUsage,
+        },
+      }
+
+      // 전체 토큰 사용량 업데이트
+      const newTotalTokenUsage = { ...state.execution.totalTokenUsage }
+      if (tokenUsage) {
+        newTotalTokenUsage.input_tokens += tokenUsage.input_tokens
+        newTotalTokenUsage.output_tokens += tokenUsage.output_tokens
+        newTotalTokenUsage.total_tokens += tokenUsage.total_tokens
+      }
+
+      return {
+        execution: {
+          ...state.execution,
+          nodeMeta: updatedMeta,
+          totalTokenUsage: newTotalTokenUsage,
+        },
+      }
+    }),
+
+  setNodeError: (nodeId, error) =>
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        nodeMeta: {
+          ...state.execution.nodeMeta,
+          [nodeId]: {
+            ...(state.execution.nodeMeta[nodeId] || { status: 'idle' }),
+            status: 'error',
+            endTime: Date.now(),
+            error,
+          },
+        },
+      },
+    })),
+
+  getNodeMeta: (nodeId) => {
+    const state = get()
+    return state.execution.nodeMeta[nodeId] || null
+  },
 }))
