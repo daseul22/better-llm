@@ -327,14 +327,8 @@ class WorkflowValidator:
             # Worker 기본 도구 목록 가져오기
             default_tools = self.WORKER_TOOLS.get(agent_name, [])
 
+            # 커스텀 워커인 경우 (WORKER_TOOLS에 없음) 검증 스킵
             if not default_tools:
-                # 알려지지 않은 Worker
-                errors.append(ValidationError(
-                    severity="warning",
-                    node_id=node.id,
-                    message=f"알려지지 않은 Worker '{agent_name}'입니다.",
-                    suggestion=f"사용 가능한 Worker: {', '.join(self.WORKER_TOOLS.keys())}"
-                ))
                 continue
 
             # allowed_tools가 지정된 경우, 기본 도구 목록과 비교
@@ -417,15 +411,6 @@ class WorkflowValidator:
                     message="Manager 노드에 등록된 워커가 없습니다.",
                     suggestion="Manager 노드는 최소 1개의 워커가 필요합니다. 노드 설정에서 워커를 선택하세요."
                 ))
-            else:
-                # 등록된 워커가 유효한지 검사
-                invalid_workers = [w for w in available_workers if w not in self.WORKER_TOOLS]
-                if invalid_workers:
-                    errors.append(ValidationError(
-                        severity="warning",
-                        node_id=node.id,
-                        message=f"알려지지 않은 워커가 등록되어 있습니다: {', '.join(invalid_workers)}",
-                        suggestion=f"사용 가능한 워커: {', '.join(self.WORKER_TOOLS.keys())}"
-                    ))
+            # 커스텀 워커 지원을 위해 알려지지 않은 워커 검증 제거
 
         return errors
