@@ -60,7 +60,13 @@ export const NodePanel: React.FC = () => {
     loadAgents()
   }, [])
 
-  // Agent를 캔버스에 추가
+  // 드래그 시작 핸들러
+  const onDragStart = (event: React.DragEvent, nodeType: string, nodeData: any) => {
+    event.dataTransfer.setData('application/reactflow', JSON.stringify({ type: nodeType, data: nodeData }))
+    event.dataTransfer.effectAllowed = 'move'
+  }
+
+  // Agent를 캔버스에 추가 (클릭)
   const handleAddAgent = (agent: Agent) => {
     // 노드 위치 계산 (기존 노드 개수에 따라 오프셋)
     const x = 100 + (nodes.length % 3) * 300
@@ -183,8 +189,10 @@ export const NodePanel: React.FC = () => {
             <div className="p-3 pt-0 space-y-2">
               <Button
                 variant="outline"
-                className="w-full justify-start text-left border-blue-300 hover:bg-blue-50 bg-white"
+                className="w-full justify-start text-left border-blue-300 hover:bg-blue-50 bg-white cursor-grab active:cursor-grabbing"
                 onClick={handleAddInput}
+                draggable
+                onDragStart={(e) => onDragStart(e, 'input', { initial_input: '초기 입력을 입력하세요' })}
               >
                 <Plus className="mr-2 h-4 w-4 text-blue-600" />
                 <div className="flex flex-col items-start">
@@ -219,8 +227,10 @@ export const NodePanel: React.FC = () => {
             <div className="p-3 pt-0 space-y-2">
               <Button
                 variant="outline"
-                className="w-full justify-start text-left border-purple-300 hover:bg-purple-50 bg-white"
+                className="w-full justify-start text-left border-purple-300 hover:bg-purple-50 bg-white cursor-grab active:cursor-grabbing"
                 onClick={handleAddManager}
+                draggable
+                onDragStart={(e) => onDragStart(e, 'manager', { task_description: '작업 설명을 입력하세요', available_workers: [] })}
               >
                 <Plus className="mr-2 h-4 w-4 text-purple-600" />
                 <div className="flex flex-col items-start">
@@ -264,8 +274,10 @@ export const NodePanel: React.FC = () => {
                   <Button
                     key={agent.name}
                     variant="outline"
-                    className="w-full justify-start text-left hover:bg-gray-50 bg-white"
+                    className="w-full justify-start text-left hover:bg-gray-50 bg-white cursor-grab active:cursor-grabbing"
                     onClick={() => handleAddAgent(agent)}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{input}}을(를) ${agent.role} 해주세요.` })}
                   >
                     <Plus className="mr-2 h-4 w-4" />
                     <div className="flex flex-col items-start flex-1">
@@ -284,7 +296,7 @@ export const NodePanel: React.FC = () => {
         {/* 드래그 힌트 */}
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-xs text-blue-700">
-            <strong>💡 팁:</strong> 버튼을 클릭하여 캔버스에 노드를 추가하세요
+            <strong>💡 팁:</strong> 노드를 드래그하여 캔버스에 배치하거나 클릭하여 추가하세요
           </p>
         </div>
       </CardContent>

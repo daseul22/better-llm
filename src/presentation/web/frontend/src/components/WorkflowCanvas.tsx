@@ -4,7 +4,7 @@
  * 워커 노드를 드래그 앤 드롭으로 배치하고 연결합니다.
  */
 
-import React, { useCallback } from 'react'
+import React, { useCallback, useRef } from 'react'
 import ReactFlow, {
   Background,
   Controls,
@@ -17,6 +17,7 @@ import ReactFlow, {
   OnEdgesChange,
   OnConnect,
   NodeTypes,
+  useReactFlow,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -39,6 +40,7 @@ export const WorkflowCanvas: React.FC = () => {
     edges: storeEdges,
     setNodes,
     setEdges,
+    addNode,
     addEdge: addStoreEdge,
     deleteNode,
     deleteEdge,
@@ -49,6 +51,10 @@ export const WorkflowCanvas: React.FC = () => {
   // React Flow의 노드/엣지 상태 (로컬)
   const [nodes, setLocalNodes, onNodesChange] = useNodesState(storeNodes)
   const [edges, setLocalEdges, onEdgesChange] = useEdgesState(storeEdges)
+
+  // React Flow 인스턴스 (좌표 변환에 필요)
+  const { project } = useReactFlow()
+  const reactFlowWrapper = useRef<HTMLDivElement>(null)
 
   // Zustand 상태와 로컬 상태 동기화
   React.useEffect(() => {
@@ -202,8 +208,45 @@ export const WorkflowCanvas: React.FC = () => {
     setSelectedNodeId(null)
   }, [setSelectedNodeId])
 
+  // 드래그 오버 핸들러 (드롭 허용)
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }, [])
+
+  // 드롭 핸들러 (노드 추가)
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault()
+
+      const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect()
+      if (!reactFlowBounds) return
+
+      const data = event.dataTransfer.getData('application/reactflow')
+      if (!data) return
+
+      const { type, data: nodeData } = JSON.parse(data)
+
+      // 화면 좌표를 React Flow 좌표로 변환
+      const position = project({
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
+      })
+
+      const newNode: WorkflowNode = {
+        id: `${type}-${Date.now()}`,
+        type,
+        position,
+        data: nodeData,
+      }
+
+      addNode(newNode)
+    },
+    [project, addNode]
+  )
+
   return (
-    <div className="w-full h-full">
+    <div ref={reactFlowWrapper} className="w-full h-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -212,6 +255,8 @@ export const WorkflowCanvas: React.FC = () => {
         onConnect={handleConnect}
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         fitView
         className="bg-gray-50"
