@@ -17,11 +17,13 @@ import { useWorkflowStore } from '@/stores/workflowStore'
 import { getAgents, Agent, getTools, Tool } from '@/lib/api'
 import { Save, Settings, ListChecks, Terminal, Search, HelpCircle, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { parseClaudeMessage } from '@/lib/messageParser'
+import { generateTemplatePreview } from '@/lib/templateRenderer'
 
 export const NodeConfigPanel: React.FC = () => {
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId)
   const getSelectedNode = useWorkflowStore((state) => state.getSelectedNode)
   const updateNode = useWorkflowStore((state) => state.updateNode)
+  const nodes = useWorkflowStore((state) => state.nodes)
 
   const selectedNode = getSelectedNode()
 
@@ -1169,7 +1171,7 @@ export const NodeConfigPanel: React.FC = () => {
                   <span>미리보기 (예시 입력 적용)</span>
                 </div>
                 <div className="text-sm text-gray-700 font-mono bg-white p-2 rounded border">
-                  {taskTemplate.replace(/\{\{input\}\}/g, '이전 노드의 출력 예시...')}
+                  {generateTemplatePreview(taskTemplate, nodes, selectedNodeId || undefined)}
                 </div>
               </div>
             )}

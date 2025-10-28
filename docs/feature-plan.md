@@ -86,155 +86,62 @@
 
 **커밋**: `2383af5` - feat(web): 워크플로우 템플릿 갤러리 기능 추가
 
+### 기능 3: 노드 검증 및 에러 힌트 (완료)
+
+**구현 내용**:
+
+**백엔드**:
+- WorkflowValidator 클래스 구현 (`services/workflow_validator.py` - 신규)
+  - 순환 참조 검사 (DFS 알고리즘)
+  - 고아 노드 검사 (연결되지 않은 노드 탐지)
+  - 템플릿 변수 유효성 검사 ({{input}}, {{node_X}} 등)
+  - Worker별 필수 도구 권한 검사
+  - Input 노드 존재 여부 검사
+  - Manager 노드 검증 (최소 1개 워커 등록 확인)
+- ValidationError 데이터 클래스
+  - severity: 'error', 'warning', 'info'
+  - node_id, message, suggestion 필드
+- API 엔드포인트 (`routers/workflows.py`)
+  - `POST /api/workflows/validate` - 워크플로우 검증
+  - 응답: `{valid: boolean, errors: ValidationError[]}`
+
+**프론트엔드**:
+- 템플릿 렌더링 유틸리티 (`lib/templateRenderer.ts` - 신규)
+  - `renderTemplate()`: 템플릿 변수를 실제 값으로 치환
+  - `extractTemplateVariables()`: 템플릿에서 변수 목록 추출
+  - `validateTemplate()`: 템플릿 유효성 검사
+  - `generateTemplatePreview()`: 예시 값으로 프리뷰 생성
+- ValidationErrorsPanel 컴포넌트 (`components/ValidationErrorsPanel.tsx` - 신규)
+  - severity별 에러 그룹핑 (error, warning, info)
+  - 에러 클릭 시 해당 노드로 포커스 이동
+  - 각 에러에 해결 방법 제안 (suggestion) 표시
+  - 색상 구분 (빨강: error, 노랑: warning, 파랑: info)
+- WorkflowCanvas 통합
+  - 노드/엣지 변경 시 자동 검증 (debounce 1초)
+  - 에러가 있는 노드에 시각적 표시 (빨간 테두리)
+- NodeConfigPanel 통합
+  - 템플릿 프리뷰 표시
+  - 유효하지 않은 변수 하이라이트
+
+**파일 변경**:
+- `src/presentation/web/services/workflow_validator.py` (신규)
+- `src/presentation/web/routers/workflows.py`
+- `src/presentation/web/frontend/src/lib/templateRenderer.ts` (신규)
+- `src/presentation/web/frontend/src/components/ValidationErrorsPanel.tsx` (신규)
+- `src/presentation/web/frontend/src/components/WorkflowCanvas.tsx`
+- `src/presentation/web/frontend/src/components/NodeConfigPanel.tsx`
+- `src/presentation/web/frontend/src/lib/api.ts`
+- `tests/unit/test_workflow_validator.py` (신규)
+
+**사용 방법**:
+1. 워크플로우 편집 시 자동으로 검증 수행 (1초 debounce)
+2. 하단에 검증 결과 패널 표시 (에러가 있을 경우만)
+3. 에러 클릭 → 해당 노드로 포커스 이동 및 수정
+4. 템플릿 입력 시 프리뷰로 변수 치환 결과 확인
+
 ---
 
 ## 📋 진행 예정 기능
-
-### 기능 3: 노드 검증 및 에러 힌트
-
-**우선순위**: 중
-**난이도**: 중
-
-#### 목표
-- 워크플로우 실행 전 검증
-- 실시간 에러 힌트 표시
-- 템플릿 변수 유효성 검사
-
-#### 구현 계획
-
-##### 3-1. 백엔드: 워크플로우 검증기
-**파일**: `src/presentation/web/services/workflow_validator.py` (신규)
-
-```python
-from typing import List, Dict, Any
-from dataclasses import dataclass
-
-@dataclass
-class ValidationError:
-    """검증 에러"""
-    severity: str  # 'error', 'warning', 'info'
-    node_id: str
-    message: str
-    suggestion: str
-
-class WorkflowValidator:
-    """워크플로우 검증기"""
-
-    def validate(self, workflow: Workflow) -> List[ValidationError]:
-        """워크플로우 검증"""
-        errors = []
-
-        # 1. 순환 참조 검사
-        errors.extend(self._check_cycles(workflow))
-
-        # 2. 고아 노드 검사 (연결되지 않은 노드)
-        errors.extend(self._check_orphan_nodes(workflow))
-
-        # 3. 템플릿 변수 검증
-        errors.extend(self._validate_template_variables(workflow))
-
-        # 4. Worker별 필수 도구 권한 검사
-        errors.extend(self._check_worker_tools(workflow))
-
-        return errors
-
-    def _check_cycles(self, workflow: Workflow) -> List[ValidationError]:
-        """순환 참조 검사 (DFS)"""
-        pass
-
-    def _check_orphan_nodes(self, workflow: Workflow) -> List[ValidationError]:
-        """고아 노드 검사"""
-        pass
-
-    def _validate_template_variables(self, workflow: Workflow) -> List[ValidationError]:
-        """템플릿 변수 유효성 검사 ({{input}}, {{node_X}} 등)"""
-        pass
-
-    def _check_worker_tools(self, workflow: Workflow) -> List[ValidationError]:
-        """Worker별 필수 도구 확인"""
-        pass
-```
-
-**태스크**:
-- [ ] WorkflowValidator 클래스 구현
-- [ ] 각 검증 로직 구현
-- [ ] 단위 테스트 작성
-
-##### 3-2. 백엔드: API 엔드포인트
-**파일**: `src/presentation/web/routers/workflows.py`
-
-```python
-@router.post("/validate")
-async def validate_workflow(workflow: Workflow):
-    """워크플로우 검증"""
-    validator = WorkflowValidator()
-    errors = validator.validate(workflow)
-
-    return {
-        "valid": len([e for e in errors if e.severity == 'error']) == 0,
-        "errors": [e.__dict__ for e in errors]
-    }
-```
-
-**태스크**:
-- [ ] `/api/workflows/validate` 엔드포인트 추가
-- [ ] 응답 스키마 정의
-
-##### 3-3. 프론트엔드: 실시간 검증 UI
-**파일**: `src/presentation/web/frontend/src/components/WorkflowCanvas.tsx`
-
-```tsx
-import { useEffect, useState } from 'react'
-import { validateWorkflow } from '@/lib/api'
-
-export function WorkflowCanvas() {
-  const [validationErrors, setValidationErrors] = useState([])
-
-  // 노드/엣지 변경 시 자동 검증 (debounce)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const workflow = getWorkflow()
-      validateWorkflow(workflow).then(setValidationErrors)
-    }, 1000)
-
-    return () => clearTimeout(timer)
-  }, [nodes, edges])
-
-  // 에러가 있는 노드에 빨간 테두리 표시
-  // ...
-}
-```
-
-**태스크**:
-- [ ] 실시간 검증 로직 추가 (debounce 1초)
-- [ ] 에러가 있는 노드 시각적 표시 (빨간 테두리, 경고 아이콘)
-- [ ] 에러 목록 패널 추가 (하단 또는 우측)
-- [ ] 에러 클릭 → 해당 노드로 포커스
-
-##### 3-4. 프론트엔드: 템플릿 변수 프리뷰
-**파일**: `src/presentation/web/frontend/src/components/NodeConfigPanel.tsx`
-
-```tsx
-function TemplatePreview({ template, nodes }: Props) {
-  // {{input}}, {{node_X}} 등을 실제 값으로 치환하여 미리보기
-  const preview = renderTemplate(template, { input: "예시 입력", nodes })
-
-  return (
-    <div className="bg-gray-100 p-2 rounded">
-      <pre className="text-xs">{preview}</pre>
-    </div>
-  )
-}
-```
-
-**태스크**:
-- [ ] 템플릿 렌더링 함수 구현
-- [ ] NodeConfigPanel에 프리뷰 섹션 추가
-- [ ] 유효하지 않은 변수 하이라이트
-
-**예상 작업 시간**: 2-3일
-
----
 
 ### 기능 4: 조건부 분기 및 반복 노드
 
@@ -903,18 +810,19 @@ export function WorkflowGeneratorModal({ onGenerate }: Props) {
 
 ## 🗓️ 권장 구현 순서
 
-### Phase 1: 사용성 개선 (1-2주)
-1. **기능 2**: 워크플로우 템플릿 갤러리
-2. **기능 3**: 노드 검증 및 에러 힌트
+### Phase 1: 사용성 개선 (완료)
+1. ✅ **기능 1**: 실시간 실행 모니터링 강화
+2. ✅ **기능 2**: 워크플로우 템플릿 갤러리
+3. ✅ **기능 3**: 노드 검증 및 에러 힌트
 
 ### Phase 2: 고급 기능 (2-4주)
-3. **기능 6**: Human-in-the-Loop 통합
-4. **기능 5**: 변수 및 컨텍스트 관리
-5. **기능 4**: 조건부 분기 및 반복 노드
+4. **기능 6**: Human-in-the-Loop 통합
+5. **기능 5**: 변수 및 컨텍스트 관리
+6. **기능 4**: 조건부 분기 및 반복 노드
 
 ### Phase 3: 엔터프라이즈 기능 (4주+)
-6. **기능 7**: 워크플로우 버전 관리
-7. **기능 10**: AI 기반 워크플로우 최적화
+7. **기능 7**: 워크플로우 버전 관리
+8. **기능 10**: AI 기반 워크플로우 최적화
 
 ---
 

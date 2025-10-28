@@ -22,8 +22,11 @@ from src.presentation.web.schemas.workflow import (
     WorkflowSaveRequest,
     WorkflowSaveResponse,
     WorkflowListResponse,
+    WorkflowValidateResponse,
+    WorkflowValidationError,
 )
 from src.presentation.web.services.workflow_executor import WorkflowExecutor
+from src.presentation.web.services.workflow_validator import WorkflowValidator
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -365,4 +368,83 @@ async def delete_workflow(workflow_id: str) -> Dict[str, str]:
         raise HTTPException(
             status_code=500,
             detail=f"워크플로우 삭제 실패: {str(e)}"
+        )
+
+
+@router.post("/validate", response_model=WorkflowValidateResponse)
+async def validate_workflow(
+    workflow: Workflow,
+    config_loader: JsonConfigLoader = Depends(get_config_loader),
+):
+    """
+    워크플로우 검증
+
+    실행 전 워크플로우의 유효성을 검사합니다:
+    - 순환 참조 검사
+    - 고아 노드 검사
+    - 템플릿 변수 유효성 검사
+    - Worker별 도구 권한 검사
+    - Input 노드 존재 여부 검사
+    - Manager 노드 검증
+
+    Args:
+        workflow: 검증할 워크플로우
+        config_loader: ConfigLoader 의존성 주입
+
+    Returns:
+        WorkflowValidateResponse: 검증 결과
+            - valid: 검증 통과 여부 (error가 없으면 True)
+            - errors: 검증 에러 목록 (severity, node_id, message, suggestion)
+
+    Example:
+        POST /api/workflows/validate
+        {
+            "name": "test",
+            "nodes": [...],
+            "edges": [...]
+        }
+
+        Response:
+        {
+            "valid": false,
+            "errors": [
+                {
+                    "severity": "error",
+                    "node_id": "node1",
+                    "message": "순환 참조가 감지되었습니다",
+                    "suggestion": "노드 간 연결을 확인하여 순환 참조를 제거하세요"
+                }
+            ]
+        }
+    """
+    try:
+        # WorkflowValidator 생성 (config_loader 전달하여 Worker 도구 목록 동적 로드)
+        validator = WorkflowValidator(config_loader=config_loader)
+
+        # 워크플로우 검증
+        validation_errors = validator.validate(workflow)
+
+        # ValidationError → WorkflowValidationError 변환
+        errors = [
+            WorkflowValidationError(
+                severity=error.severity,
+                node_id=error.node_id,
+                message=error.message,
+                suggestion=error.suggestion,
+            )
+            for error in validation_errors
+        ]
+
+        # error severity가 있으면 invalid
+        has_errors = any(e.severity == "error" for e in errors)
+
+        return WorkflowValidateResponse(
+            valid=not has_errors,
+            errors=errors,
+        )
+
+    except Exception as e:
+        logger.error(f"워크플로우 검증 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"워크플로우 검증 실패: {str(e)}"
         )

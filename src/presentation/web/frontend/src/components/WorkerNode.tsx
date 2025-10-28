@@ -11,8 +11,9 @@ import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, AlertCircle } from 'lucide-react'
 import { useWorkflowStore } from '@/stores/workflowStore'
+import { WorkflowValidationError } from '@/lib/api'
 
 interface WorkerNodeData {
   agent_name: string
@@ -22,6 +23,10 @@ interface WorkerNodeData {
   isExecuting?: boolean
   isCompleted?: boolean
   hasError?: boolean
+  // 검증 상태
+  validationErrors?: WorkflowValidationError[]
+  hasValidationError?: boolean
+  hasValidationWarning?: boolean
 }
 
 export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData>) => {
@@ -38,6 +43,11 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
   const elapsedTime = nodeMeta?.elapsedTime
   const tokenUsage = nodeMeta?.tokenUsage
 
+  // 검증 상태
+  const hasValidationError = data.hasValidationError || false
+  const hasValidationWarning = data.hasValidationWarning || false
+  const validationErrors = data.validationErrors || []
+
   // Agent별 색상 매핑
   const agentColors: Record<string, { border: string; bg: string; text: string }> = {
     planner: { border: 'border-orange-400', bg: 'bg-orange-50', text: 'text-orange-700' },
@@ -53,10 +63,11 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
   const defaultColors = { border: 'border-gray-400', bg: 'bg-gray-50', text: 'text-gray-700' }
   const colors = agentColors[agent_name] || defaultColors
 
-  // 상태별 스타일
+  // 상태별 스타일 (우선순위: 실행 중 > 에러 > 검증 에러 > 검증 경고 > 완료 > 기본)
   let statusClass = `${colors.border} ${colors.bg}`
   let statusText = ''
   let statusColor = ''
+  let statusIcon = null
 
   if (isExecuting) {
     statusClass = 'border-yellow-500 bg-yellow-50'
@@ -66,6 +77,16 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
     statusClass = 'border-red-500 bg-red-50'
     statusText = '에러 발생'
     statusColor = 'text-red-700'
+  } else if (hasValidationError) {
+    statusClass = 'border-red-600 bg-red-50 border-dashed'
+    statusText = '검증 에러'
+    statusColor = 'text-red-700'
+    statusIcon = <AlertCircle className="h-4 w-4 text-red-600" />
+  } else if (hasValidationWarning) {
+    statusClass = 'border-yellow-600 bg-yellow-50 border-dashed'
+    statusText = '검증 경고'
+    statusColor = 'text-yellow-700'
+    statusIcon = <AlertTriangle className="h-4 w-4 text-yellow-600" />
   } else if (isCompleted) {
     statusClass = 'border-green-500 bg-green-50'
     statusText = '완료'
@@ -104,8 +125,9 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
           <CardTitle className="text-base flex items-center justify-between">
             <span className="flex items-center gap-2">
               {isExecuting && <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />}
-              {isCompleted && !hasError && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+              {isCompleted && !hasError && !hasValidationError && <CheckCircle2 className="h-4 w-4 text-green-600" />}
               {hasError && <XCircle className="h-4 w-4 text-red-600" />}
+              {statusIcon}
               {agent_name || '워커 선택'}
             </span>
             {statusText && (
@@ -136,6 +158,28 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
               <span className="text-gray-400 ml-1">
                 ({tokenUsage.input_tokens.toLocaleString()} in / {tokenUsage.output_tokens.toLocaleString()} out)
               </span>
+            </div>
+          )}
+
+          {/* 검증 에러 표시 */}
+          {validationErrors.length > 0 && (
+            <div className="space-y-1 text-xs">
+              {validationErrors.map((error, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    'p-2 rounded',
+                    error.severity === 'error' && 'bg-red-100 text-red-800',
+                    error.severity === 'warning' && 'bg-yellow-100 text-yellow-800',
+                    error.severity === 'info' && 'bg-blue-100 text-blue-800'
+                  )}
+                >
+                  <div className="font-medium">{error.message}</div>
+                  {error.suggestion && (
+                    <div className="text-xs mt-1 opacity-90">{error.suggestion}</div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 

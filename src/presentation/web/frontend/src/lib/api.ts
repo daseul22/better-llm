@@ -89,6 +89,24 @@ export interface WorkflowExecutionEvent {
 }
 
 /**
+ * 워크플로우 검증 에러
+ */
+export interface WorkflowValidationError {
+  severity: 'error' | 'warning' | 'info'
+  node_id: string
+  message: string
+  suggestion: string
+}
+
+/**
+ * 워크플로우 검증 응답
+ */
+export interface WorkflowValidateResponse {
+  valid: boolean
+  errors: WorkflowValidationError[]
+}
+
+/**
  * Agent 목록 조회
  */
 export async function getAgents(): Promise<Agent[]> {
@@ -564,6 +582,34 @@ export async function deleteTemplate(templateId: string): Promise<void> {
  */
 export async function validateTemplate(workflow: Workflow): Promise<{ valid: boolean; errors: string[] }> {
   const response = await fetch(`${API_BASE}/templates/validate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(workflow),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 워크플로우 검증 (유효성 검사)
+ *
+ * 워크플로우 실행 전 다음 항목을 검증합니다:
+ * - 순환 참조 검사
+ * - 고아 노드 검사
+ * - 템플릿 변수 유효성 검사
+ * - Worker별 도구 권한 검사
+ * - Input 노드 존재 여부 검사
+ * - Manager 노드 검증
+ */
+export async function validateWorkflow(workflow: Workflow): Promise<WorkflowValidateResponse> {
+  const response = await fetch(`${API_BASE}/workflows/validate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

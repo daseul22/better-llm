@@ -4,7 +4,7 @@
  * 워커 노드를 드래그 앤 드롭으로 배치하고 연결합니다.
  */
 
-import React, { useCallback, useRef } from 'react'
+import React, { useCallback, useRef, useEffect } from 'react'
 import ReactFlow, {
   Background,
   Controls,
@@ -25,7 +25,7 @@ import { WorkerNode } from './WorkerNode'
 import { ManagerNode } from './ManagerNode'
 import { InputNode } from './InputNode'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { WorkflowNode, WorkflowEdge } from '@/lib/api'
+import { WorkflowNode, WorkflowEdge, validateWorkflow } from '@/lib/api'
 
 // 커스텀 노드 타입 등록
 const nodeTypes: NodeTypes = {
@@ -46,6 +46,11 @@ export const WorkflowCanvas: React.FC = () => {
     deleteEdge,
     execution,
     setSelectedNodeId,
+    validationErrors,
+    setValidationErrors,
+    setIsValidating,
+    getWorkflow,
+    getValidationErrorsForNode,
   } = useWorkflowStore()
 
   // React Flow의 노드/엣지 상태 (로컬)
@@ -60,6 +65,36 @@ export const WorkflowCanvas: React.FC = () => {
   React.useEffect(() => {
     setLocalNodes(storeNodes)
   }, [storeNodes, setLocalNodes])
+
+  // 실시간 워크플로우 검증 (debounce 1초)
+  useEffect(() => {
+    // 노드/엣지가 비어있으면 검증 스킵
+    if (storeNodes.length === 0) {
+      setValidationErrors([])
+      return
+    }
+
+    // Debounce: 1초 후 검증 API 호출
+    const timer = setTimeout(async () => {
+      try {
+        setIsValidating(true)
+
+        const workflow = getWorkflow()
+        const result = await validateWorkflow(workflow)
+
+        setValidationErrors(result.errors)
+      } catch (error) {
+        console.error('워크플로우 검증 실패:', error)
+        // 에러 발생 시 검증 에러 초기화
+        setValidationErrors([])
+      } finally {
+        setIsValidating(false)
+      }
+    }, 1000) // 1초 debounce
+
+    // 클린업: 타이머 취소
+    return () => clearTimeout(timer)
+  }, [storeNodes, storeEdges, getWorkflow, setValidationErrors, setIsValidating])
 
   React.useEffect(() => {
     // Zustand에서 로드된 엣지에도 화살표 및 스타일 적용
@@ -76,7 +111,7 @@ export const WorkflowCanvas: React.FC = () => {
     setLocalEdges(edgesWithMarkers as any)
   }, [storeEdges, setLocalEdges])
 
-  // 실행 상태 표시 (노드 데이터 및 엣지 스타일 업데이트)
+  // 실행 상태 및 검증 에러 표시 (노드 데이터 업데이트)
   React.useEffect(() => {
     // 노드 상태 업데이트
     setLocalNodes((nds) =>
@@ -87,6 +122,11 @@ export const WorkflowCanvas: React.FC = () => {
           (log) => log.nodeId === node.id && log.type === 'error'
         )
 
+        // 검증 에러 가져오기
+        const nodeValidationErrors = getValidationErrorsForNode(node.id)
+        const hasValidationError = nodeValidationErrors.some(e => e.severity === 'error')
+        const hasValidationWarning = nodeValidationErrors.some(e => e.severity === 'warning')
+
         return {
           ...node,
           data: {
@@ -94,6 +134,9 @@ export const WorkflowCanvas: React.FC = () => {
             isExecuting,
             isCompleted,
             hasError,
+            validationErrors: nodeValidationErrors,
+            hasValidationError,
+            hasValidationWarning,
           },
         }
       })
@@ -121,7 +164,15 @@ export const WorkflowCanvas: React.FC = () => {
         }
       })
     )
-  }, [execution.currentNodeId, execution.nodeOutputs, execution.logs, setLocalNodes, setLocalEdges])
+  }, [
+    execution.currentNodeId,
+    execution.nodeOutputs,
+    execution.logs,
+    validationErrors,
+    setLocalNodes,
+    setLocalEdges,
+    getValidationErrorsForNode,
+  ])
 
   // 노드 변경 핸들러 (삭제 포함)
   const handleNodesChange: OnNodesChange = useCallback(

@@ -9,6 +9,7 @@ import { ReactFlowProvider } from 'reactflow'
 import { WorkflowCanvas } from './components/WorkflowCanvas'
 import { NodePanel } from './components/NodePanel'
 import { NodeConfigPanel } from './components/NodeConfigPanel'
+import { ValidationErrorsPanel } from './components/ValidationErrorsPanel'
 import { Button } from './components/ui/button'
 import { useWorkflowStore } from './stores/workflowStore'
 import {
@@ -324,8 +325,9 @@ function App() {
           {rightSidebarOpen && (
             <aside className="w-[28rem] border-l bg-white flex flex-col overflow-hidden transition-transform duration-300 ease-out">
               {/* 패널 내용 */}
-              <div className="flex-1 overflow-hidden px-2 py-4">
+              <div className="flex-1 overflow-y-auto px-2 py-4 space-y-4">
                 <NodeConfigPanel />
+                <ValidationErrorsPanel />
               </div>
             </aside>
           )}

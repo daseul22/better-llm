@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand'
-import { WorkflowNode, WorkflowEdge, Workflow } from '@/lib/api'
+import { WorkflowNode, WorkflowEdge, Workflow, WorkflowValidationError } from '@/lib/api'
 
 export type NodeExecutionStatus = 'idle' | 'running' | 'completed' | 'error'
 
@@ -53,6 +53,10 @@ interface WorkflowStore {
   // 실행 상태
   execution: WorkflowExecutionState
 
+  // 검증 상태
+  validationErrors: WorkflowValidationError[]
+  isValidating: boolean
+
   // 노드/엣지 조작
   setNodes: (nodes: WorkflowNode[]) => void
   setEdges: (edges: WorkflowEdge[]) => void
@@ -89,6 +93,12 @@ interface WorkflowStore {
   setNodeCompleted: (nodeId: string, elapsedTime: number, tokenUsage?: NodeExecutionMeta['tokenUsage']) => void
   setNodeError: (nodeId: string, error: string) => void
   getNodeMeta: (nodeId: string) => NodeExecutionMeta | null
+
+  // 검증 상태 관리
+  setValidationErrors: (errors: WorkflowValidationError[]) => void
+  setIsValidating: (isValidating: boolean) => void
+  clearValidationErrors: () => void
+  getValidationErrorsForNode: (nodeId: string) => WorkflowValidationError[]
 }
 
 const initialExecutionState: WorkflowExecutionState = {
@@ -112,6 +122,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   workflowDescription: '',
   selectedNodeId: null,
   execution: initialExecutionState,
+  validationErrors: [],
+  isValidating: false,
 
   // 노드/엣지 조작
   setNodes: (nodes) => set({ nodes }),
@@ -263,9 +275,9 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   },
 
   clearExecution: () =>
-    set((state) => ({
+    set({
       execution: initialExecutionState,
-    })),
+    }),
 
   // 노드별 실행 상태 관리 구현
   setNodeStatus: (nodeId, status) =>
@@ -346,5 +358,17 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   getNodeMeta: (nodeId) => {
     const state = get()
     return state.execution.nodeMeta[nodeId] || null
+  },
+
+  // 검증 상태 관리
+  setValidationErrors: (errors) => set({ validationErrors: errors }),
+
+  setIsValidating: (isValidating) => set({ isValidating }),
+
+  clearValidationErrors: () => set({ validationErrors: [] }),
+
+  getValidationErrorsForNode: (nodeId) => {
+    const state = get()
+    return state.validationErrors.filter((error) => error.node_id === nodeId)
   },
 }))
