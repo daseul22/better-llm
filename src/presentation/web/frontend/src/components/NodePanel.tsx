@@ -5,22 +5,43 @@
  * Manager 노드도 추가할 수 있습니다.
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Agent, getAgents } from '@/lib/api'
+import { Agent, getAgents, getCustomWorkers, getCurrentProject, CustomWorkerInfo, loadDisplayConfig, saveDisplayConfig } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus, Target, Zap, Search, ChevronDown, ChevronUp, Sparkles, GitBranch, RotateCw, Merge } from 'lucide-react'
+import { Plus, Target, Zap, Search, ChevronDown, ChevronUp, Sparkles, GitBranch, RotateCw, Merge, Wand2, Loader2 } from 'lucide-react'
+import { CustomWorkerCreateModal } from './CustomWorkerCreateModal'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])
+  const [customWorkers, setCustomWorkers] = useState<CustomWorkerInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'manager', 'advanced', 'general', 'specialized']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'manager', 'advanced', 'general', 'specialized', 'custom']))
+  const [isCustomWorkerModalOpen, setIsCustomWorkerModalOpen] = useState(false)
+  const [projectPath, setProjectPath] = useState<string | null>(null)
+  const [isWorkerGenerating, setIsWorkerGenerating] = useState(false)
 
   const { addNode, nodes } = useWorkflowStore()
+
+  // 초기 로드 완료 플래그 (무한 루프 방지)
+  const initialLoadDone = useRef(false)
+
+  // 새로고침 시 진행 중인 세션 확인
+  useEffect(() => {
+    const session = localStorage.getItem('custom_worker_session')
+    if (session) {
+      const parsedSession = JSON.parse(session)
+      if (parsedSession.status === 'generating') {
+        console.log('🔄 NodePanel: 진행 중인 워커 생성 세션 발견')
+        setIsWorkerGenerating(true)
+        setIsCustomWorkerModalOpen(true)  // 자동으로 모달 열기
+      }
+    }
+  }, [])
 
   // 섹션 토글 함수
   const toggleSection = (section: string) => {
@@ -34,6 +55,36 @@ export const NodePanel: React.FC = () => {
       return next
     })
   }
+
+  // expanded_sections 변경 시 자동 저장 (debounce)
+  useEffect(() => {
+    // 프로젝트 선택되지 않았거나 초기 로드 중이면 스킵
+    if (!projectPath || !initialLoadDone.current) {
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        // 기존 설정 로드 (사이드바 상태 보존)
+        const existingConfig = await loadDisplayConfig()
+
+        const displayConfig = {
+          left_sidebar_open: existingConfig.left_sidebar_open, // 기존 값 유지
+          right_sidebar_open: existingConfig.right_sidebar_open, // 기존 값 유지
+          expanded_sections: Array.from(expandedSections),
+        }
+
+        console.log('💾 NodePanel expanded_sections 자동 저장 중...', displayConfig.expanded_sections)
+
+        await saveDisplayConfig(displayConfig)
+        console.log('✅ NodePanel expanded_sections 저장 완료')
+      } catch (err) {
+        console.error('❌ NodePanel expanded_sections 저장 실패:', err)
+      }
+    }, 500) // 0.5초 debounce
+
+    return () => clearTimeout(timer)
+  }, [expandedSections, projectPath])
 
   // 워커 분류
   const generalWorkers = ['planner', 'coder', 'reviewer', 'tester', 'committer', 'ideator', 'product_manager', 'documenter']
@@ -49,13 +100,42 @@ export const NodePanel: React.FC = () => {
   const filteredGeneralWorkers = filteredAgents.filter((agent) => generalWorkers.includes(agent.name))
   const filteredSpecializedWorkers = filteredAgents.filter((agent) => specializedWorkers.includes(agent.name))
 
-  // Agent 목록 로드
+  // 프로젝트 경로 및 Agent 목록 로드
   useEffect(() => {
-    const loadAgents = async () => {
+    const loadData = async () => {
       try {
         setLoading(true)
-        const data = await getAgents()
-        setAgents(data)
+
+        // 프로젝트 경로 로드
+        const project = await getCurrentProject()
+        setProjectPath(project.project_path)
+
+        // 기본 Agent 로드
+        const agentData = await getAgents()
+        setAgents(agentData)
+
+        // 커스텀 워커 로드 (프로젝트 선택된 경우만)
+        if (project.project_path) {
+          try {
+            const customData = await getCustomWorkers(project.project_path)
+            setCustomWorkers(customData)
+          } catch (err) {
+            console.warn('커스텀 워커 로드 실패 (무시):', err)
+          }
+
+          // Display 설정 로드 (expanded_sections)
+          try {
+            const displayConfig = await loadDisplayConfig()
+            if (displayConfig.expanded_sections && displayConfig.expanded_sections.length > 0) {
+              setExpandedSections(new Set(displayConfig.expanded_sections))
+              console.log('✅ NodePanel expanded_sections 로드:', displayConfig.expanded_sections)
+            }
+          } catch (err) {
+            console.warn('NodePanel display 설정 로드 실패 (기본값 사용):', err)
+          }
+        }
+
+        initialLoadDone.current = true
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         setError(errorMsg)
@@ -64,7 +144,7 @@ export const NodePanel: React.FC = () => {
       }
     }
 
-    loadAgents()
+    loadData()
   }, [])
 
   // 드래그 시작 핸들러
@@ -182,6 +262,36 @@ export const NodePanel: React.FC = () => {
     }
 
     addNode(newNode)
+  }
+
+  // 커스텀 워커를 Agent로 변환
+  const customWorkerToAgent = (worker: CustomWorkerInfo): Agent => {
+    return {
+      name: worker.name,
+      role: worker.role,
+      description: `${worker.role} (커스텀 워커)`,
+      system_prompt: worker.prompt_preview,
+      allowed_tools: worker.allowed_tools,
+      model: worker.model,
+      thinking: worker.thinking,
+    }
+  }
+
+  // 커스텀 워커 생성 성공 핸들러
+  const handleCustomWorkerCreated = async () => {
+    // 커스텀 워커 재로드
+    if (projectPath) {
+      try {
+        const customData = await getCustomWorkers(projectPath)
+        setCustomWorkers(customData)
+
+        // Agent 목록도 재로드 (백엔드에서 병합된 목록 가져오기)
+        const agentData = await getAgents()
+        setAgents(agentData)
+      } catch (err) {
+        console.error('커스텀 워커 재로드 실패:', err)
+      }
+    }
   }
 
   if (loading) {
@@ -477,6 +587,100 @@ export const NodePanel: React.FC = () => {
           )}
         </div>
 
+        {/* 커스텀 워커 섹션 */}
+        <div className="border rounded-lg overflow-hidden bg-indigo-50/50">
+          <button
+            onClick={() => toggleSection('custom')}
+            className="w-full flex items-center justify-between p-3 hover:bg-indigo-100/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Wand2 className="h-4 w-4 text-indigo-600" />
+              <span className="font-semibold text-sm text-indigo-700">커스텀 워커</span>
+              <span className="text-xs px-2 py-0.5 bg-indigo-200 text-indigo-700 rounded-full">
+                {customWorkers.length}
+              </span>
+            </div>
+            {expandedSections.has('custom') ? (
+              <ChevronUp className="h-4 w-4 text-indigo-600" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-indigo-600" />
+            )}
+          </button>
+          {expandedSections.has('custom') && (
+            <div className="p-3 pt-0 space-y-2">
+              {/* 워커 생성 중 상태 (모달 닫혔을 때) */}
+              {isWorkerGenerating && !isCustomWorkerModalOpen && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-left border-amber-300 bg-amber-50 hover:bg-amber-100 animate-pulse"
+                  onClick={() => setIsCustomWorkerModalOpen(true)}
+                >
+                  <Loader2 className="mr-2 h-4 w-4 text-amber-600 animate-spin" />
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium text-amber-700">워커 생성 중...</span>
+                    <span className="text-xs text-amber-600">
+                      클릭하여 진행 상황 확인
+                    </span>
+                  </div>
+                </Button>
+              )}
+
+              {/* 새 워커 생성 버튼 (생성 중이 아닐 때) */}
+              {!isWorkerGenerating && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-left border-indigo-300 hover:bg-indigo-50 bg-white"
+                  onClick={() => setIsCustomWorkerModalOpen(true)}
+                  disabled={!projectPath}
+                >
+                  <Wand2 className="mr-2 h-4 w-4 text-indigo-600" />
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium text-indigo-700">새 워커 생성</span>
+                    <span className="text-xs text-muted-foreground">
+                      AI가 도와주는 커스텀 워커 제작
+                    </span>
+                  </div>
+                </Button>
+              )}
+
+              {!projectPath && (
+                <p className="text-xs text-amber-600 mt-2 px-2">
+                  ⚠️ 커스텀 워커를 사용하려면 먼저 프로젝트를 선택하세요
+                </p>
+              )}
+
+              {/* 커스텀 워커 목록 */}
+              {customWorkers.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  생성된 커스텀 워커가 없습니다
+                </div>
+              ) : (
+                customWorkers.map((worker) => {
+                  const agent = customWorkerToAgent(worker)
+                  return (
+                    <Button
+                      key={worker.name}
+                      variant="outline"
+                      className="w-full justify-start text-left hover:bg-indigo-50 bg-white cursor-grab active:cursor-grabbing"
+                      onClick={() => handleAddAgent(agent)}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, 'worker', { agent_name: worker.name, task_template: `{{input}}을(를) ${worker.role} 해주세요.` })}
+                    >
+                      <Wand2 className="mr-2 h-4 w-4 text-indigo-600" />
+                      <div className="flex flex-col items-start flex-1">
+                        <span className="font-medium">{worker.name}</span>
+                        <span className="text-xs text-muted-foreground line-clamp-1">
+                          {worker.role}
+                        </span>
+                      </div>
+                    </Button>
+                  )
+                })
+              )}
+            </div>
+          )}
+        </div>
+
         {/* 드래그 힌트 */}
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-xs text-blue-700">
@@ -484,6 +688,14 @@ export const NodePanel: React.FC = () => {
           </p>
         </div>
       </CardContent>
+
+      {/* 커스텀 워커 생성 모달 */}
+      <CustomWorkerCreateModal
+        isOpen={isCustomWorkerModalOpen}
+        onClose={() => setIsCustomWorkerModalOpen(false)}
+        onSuccess={handleCustomWorkerCreated}
+        onGeneratingStateChange={setIsWorkerGenerating}
+      />
     </Card>
   )
 }

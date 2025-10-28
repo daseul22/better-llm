@@ -19,6 +19,8 @@ import {
   getWorkflowSession,
   clearProjectSessions,
   clearProjectLogs,
+  loadDisplayConfig,
+  saveDisplayConfig,
 } from './lib/api'
 import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate, Settings, Trash2, FileText } from 'lucide-react'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
@@ -72,6 +74,18 @@ function App() {
 
   // 초기 로드 완료 플래그
   const initialLoadDone = useRef(false)
+
+  // Display 설정 로드
+  const loadDisplaySettings = async () => {
+    try {
+      const config = await loadDisplayConfig()
+      setLeftSidebarOpen(config.left_sidebar_open)
+      setRightSidebarOpen(config.right_sidebar_open)
+      console.log('✅ Display 설정 로드:', config)
+    } catch (err) {
+      console.warn('Display 설정 로드 실패 (기본값 사용):', err)
+    }
+  }
 
   // 앱 시작 시 프로젝트 자동 로드 및 세션 복원 (한 번만 실행)
   useEffect(() => {
@@ -232,6 +246,9 @@ function App() {
             loadWorkflow(data.workflow)
             console.log(`✅ 프로젝트 워크플로우 자동 로드: ${lastProjectPath}`)
           }
+
+          // Display 설정 로드
+          await loadDisplaySettings()
         } catch (err) {
           console.warn('프로젝트 자동 로드 실패:', err)
           // 실패 시 localStorage 정리
@@ -360,6 +377,41 @@ function App() {
 
     return () => clearTimeout(timer)
   }, [nodes, edges, workflowName, currentProjectPath, getCurrentWorkflow, addToast])
+
+  // Display 설정 변경 시 자동 저장 (debounce)
+  useEffect(() => {
+    // 프로젝트 선택되지 않았으면 스킵
+    if (!currentProjectPath) {
+      return
+    }
+
+    // 초기 로드 중이면 스킵 (무한 루프 방지)
+    if (!initialLoadDone.current) {
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        // 기존 설정 로드 (expanded_sections 보존)
+        const existingConfig = await loadDisplayConfig()
+
+        const displayConfig = {
+          left_sidebar_open: leftSidebarOpen,
+          right_sidebar_open: rightSidebarOpen,
+          expanded_sections: existingConfig.expanded_sections, // 기존 값 유지
+        }
+
+        console.log('💾 Display 설정 자동 저장 중 (사이드바)...', displayConfig)
+
+        await saveDisplayConfig(displayConfig)
+        console.log('✅ Display 설정 자동 저장 완료')
+      } catch (err) {
+        console.error('❌ Display 설정 저장 실패:', err)
+      }
+    }, 1000) // 1초 debounce
+
+    return () => clearTimeout(timer)
+  }, [leftSidebarOpen, rightSidebarOpen, currentProjectPath])
 
   // 프로젝트 선택 핸들러 (브라우저 또는 텍스트 입력)
   const handleSelectProjectPath = async (path: string) => {

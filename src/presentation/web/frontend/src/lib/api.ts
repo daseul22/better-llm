@@ -754,3 +754,268 @@ export async function clearProjectLogs(): Promise<{
   return await response.json()
 }
 
+// ==================== 커스텀 워커 API ====================
+
+/**
+ * 커스텀 워커 정보
+ */
+export interface CustomWorkerInfo {
+  name: string
+  role: string
+  allowed_tools: string[]
+  model: string
+  thinking: boolean
+  prompt_preview: string
+}
+
+/**
+ * 커스텀 워커 생성 요청
+ */
+export interface CustomWorkerGenerateRequest {
+  worker_requirements: string
+  session_id?: string
+}
+
+/**
+ * 커스텀 워커 저장 요청
+ */
+export interface CustomWorkerSaveRequest {
+  project_path: string
+  worker_name: string
+  role: string
+  prompt_content: string
+  allowed_tools: string[]
+  model: string
+  thinking: boolean
+}
+
+/**
+ * 커스텀 워커 프롬프트 생성 (SSE 스트리밍)
+ *
+ * @param workerRequirements 워커 요구사항
+ * @param onData 데이터 콜백
+ * @param onComplete 완료 콜백
+ * @param onError 에러 콜백
+ * @param signal AbortSignal (연결 중단용)
+ * @returns 세션 ID
+ */
+export async function generateCustomWorker(
+  workerRequirements: string,
+  onData: (chunk: string) => void,
+  onComplete: (finalOutput: string) => void,
+  onError: (error: string) => void,
+  signal?: AbortSignal,
+  sessionId?: string
+): Promise<string | null> {
+  const requestBody: CustomWorkerGenerateRequest = {
+    worker_requirements: workerRequirements,
+    session_id: sessionId,
+  }
+
+  const response = await fetch(`${API_BASE}/custom-workers/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    },
+    body: JSON.stringify(requestBody),
+    signal,
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const returnedSessionId = response.headers.get('X-Session-ID')
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('응답 본문을 읽을 수 없습니다')
+  }
+
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let accumulatedOutput = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (done) {
+        onComplete(accumulatedOutput)
+        break
+      }
+
+      const chunk = decoder.decode(value, { stream: true })
+      buffer += chunk
+
+      const messages = buffer.split(/\r\n\r\n|\n\n/)
+      buffer = messages.pop() || ''
+
+      for (const message of messages) {
+        if (!message.trim()) continue
+
+        const lines = message.split(/\r\n|\n/)
+        let dataContent = ''
+
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (trimmedLine.startsWith('data:')) {
+            const lineData = trimmedLine.substring(5).trim()
+            if (dataContent) {
+              dataContent += '\n' + lineData
+            } else {
+              dataContent = lineData
+            }
+          }
+        }
+
+        if (!dataContent) continue
+
+        // [DONE] 시그널
+        if (dataContent === '[DONE]') {
+          onComplete(accumulatedOutput)
+          return returnedSessionId
+        }
+
+        // ERROR 시그널
+        if (dataContent.startsWith('ERROR:')) {
+          const errorMsg = dataContent.substring(7)
+          onError(errorMsg)
+          return returnedSessionId
+        }
+
+        // 일반 데이터 청크
+        accumulatedOutput += dataContent
+        onData(dataContent)
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      onComplete(accumulatedOutput)
+      return returnedSessionId
+    }
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    onError(errorMsg)
+    return returnedSessionId
+  } finally {
+    reader.releaseLock()
+  }
+
+  return returnedSessionId
+}
+
+/**
+ * 커스텀 워커 저장
+ */
+export async function saveCustomWorker(
+  request: CustomWorkerSaveRequest
+): Promise<{
+  success: boolean
+  message: string
+  prompt_path: string
+}> {
+  const response = await fetch(`${API_BASE}/custom-workers/save`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 커스텀 워커 목록 조회
+ */
+export async function getCustomWorkers(
+  projectPath: string
+): Promise<CustomWorkerInfo[]> {
+  const response = await fetch(
+    `${API_BASE}/custom-workers?project_path=${encodeURIComponent(projectPath)}`
+  )
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const data = await response.json()
+  return data.workers
+}
+
+/**
+ * 커스텀 워커 삭제
+ */
+export async function deleteCustomWorker(
+  workerName: string,
+  projectPath: string
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/custom-workers/${workerName}?project_path=${encodeURIComponent(projectPath)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+}
+
+// ==================== Display Config API ====================
+
+/**
+ * Display 설정
+ */
+export interface DisplayConfig {
+  left_sidebar_open: boolean
+  right_sidebar_open: boolean
+  expanded_sections: string[]
+}
+
+/**
+ * Display 설정 로드
+ */
+export async function loadDisplayConfig(): Promise<DisplayConfig> {
+  const response = await fetch(`${API_BASE}/projects/display-config`)
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const data = await response.json()
+  return data.config
+}
+
+/**
+ * Display 설정 저장
+ */
+export async function saveDisplayConfig(config: DisplayConfig): Promise<{
+  message: string
+  config_path: string
+}> {
+  const response = await fetch(`${API_BASE}/projects/display-config`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ config }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
