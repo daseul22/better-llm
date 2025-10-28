@@ -7,7 +7,7 @@
 import asyncio
 import time
 from datetime import datetime
-from typing import Dict, Any, AsyncIterator, Set, List
+from typing import Dict, Any, AsyncIterator, Set, List, Optional
 from collections import deque
 from dataclasses import replace
 
@@ -23,6 +23,7 @@ from src.presentation.web.schemas.workflow import (
     WorkflowNodeExecutionEvent,
     WorkerNodeData,
     ManagerNodeData,
+    InputNodeData,
     TokenUsage,
 )
 
@@ -91,11 +92,26 @@ class WorkflowExecutor:
         # 노드 ID → 노드 매핑
         node_map = {node.id: node for node in nodes}
 
+        # 유효하지 않은 엣지 필터링 (존재하지 않는 노드를 참조하는 엣지 제거)
+        valid_edges = []
+        for edge in edges:
+            if edge.source not in node_map:
+                logger.warning(
+                    f"엣지 {edge.id}: source 노드 '{edge.source}'가 존재하지 않습니다. 엣지를 무시합니다."
+                )
+                continue
+            if edge.target not in node_map:
+                logger.warning(
+                    f"엣지 {edge.id}: target 노드 '{edge.target}'가 존재하지 않습니다. 엣지를 무시합니다."
+                )
+                continue
+            valid_edges.append(edge)
+
         # 인접 리스트 (노드 ID → 자식 노드 ID 목록)
         adjacency: Dict[str, List[str]] = {node.id: [] for node in nodes}
         in_degree: Dict[str, int] = {node.id: 0 for node in nodes}
 
-        for edge in edges:
+        for edge in valid_edges:
             adjacency[edge.source].append(edge.target)
             in_degree[edge.target] += 1
 
@@ -374,7 +390,12 @@ class WorkflowExecutor:
             if node.type == "input":
                 # Input 노드의 initial_input을 노드 출력으로 저장
                 # (다음 노드가 {{node_<id>}} 형태로 참조 가능)
-                input_value = node.data.get("initial_input", initial_input)
+                if isinstance(node.data, InputNodeData):
+                    input_value = node.data.initial_input
+                elif isinstance(node.data, dict):
+                    input_value = node.data.get("initial_input", initial_input)
+                else:
+                    input_value = initial_input
                 node_outputs[node_id] = input_value
 
                 # 시작 이벤트
@@ -418,9 +439,22 @@ class WorkflowExecutor:
 
             else:
                 # Worker 노드 실행 (기존 로직)
-                node_data: WorkerNodeData = node.data  # type: ignore
-                agent_name = node_data.agent_name
-                task_template = node_data.task_template
+                # node.data가 dict인 경우 처리
+                if isinstance(node.data, dict):
+                    agent_name = node.data.get("agent_name")
+                    task_template = node.data.get("task_template")
+                    allowed_tools_override = node.data.get("allowed_tools")
+
+                    if not agent_name:
+                        raise ValueError(f"노드 {node_id}: agent_name이 지정되지 않았습니다")
+                    if not task_template:
+                        raise ValueError(f"노드 {node_id}: task_template이 지정되지 않았습니다")
+                else:
+                    # WorkerNodeData 객체인 경우
+                    node_data: WorkerNodeData = node.data  # type: ignore
+                    agent_name = node_data.agent_name
+                    task_template = node_data.task_template
+                    allowed_tools_override = node_data.allowed_tools
 
                 # 노드 시작 시간 기록
                 start_time = time.time()
@@ -440,11 +474,11 @@ class WorkflowExecutor:
                     agent_config = self._get_agent_config(agent_name)
 
                     # allowed_tools 오버라이드 (노드에서 지정한 경우)
-                    if node_data.allowed_tools is not None:
-                        agent_config = replace(agent_config, allowed_tools=node_data.allowed_tools)
+                    if allowed_tools_override is not None:
+                        agent_config = replace(agent_config, allowed_tools=allowed_tools_override)
                         logger.info(
                             f"[{session_id}] 노드 {node_id}: allowed_tools 오버라이드 "
-                            f"({len(node_data.allowed_tools)}개 도구)"
+                            f"({len(allowed_tools_override)}개 도구)"
                         )
 
                     # 작업 설명 렌더링

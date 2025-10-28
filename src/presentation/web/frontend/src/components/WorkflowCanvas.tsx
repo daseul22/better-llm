@@ -103,6 +103,7 @@ export const WorkflowCanvas: React.FC = () => {
       type: 'default',
       animated: true,
       style: { stroke: '#3b82f6', strokeWidth: 2 },
+      zIndex: 100,
       markerEnd: {
         type: 'arrowclosed' as const,
         color: '#3b82f6',
@@ -157,6 +158,7 @@ export const WorkflowCanvas: React.FC = () => {
             stroke: isActiveEdge ? '#facc15' : '#3b82f6', // 실행 중: 노란색, 기본: 파란색
             strokeWidth: isActiveEdge ? 3 : 2,
           },
+          zIndex: 100,
           markerEnd: {
             ...(edge.markerEnd as any),
             color: isActiveEdge ? '#facc15' : '#3b82f6',
@@ -234,6 +236,7 @@ export const WorkflowCanvas: React.FC = () => {
         type: 'default',
         animated: true,  // 애니메이션 효과
         style: { stroke: '#3b82f6', strokeWidth: 2 },  // 파란색, 두께 2
+        zIndex: 100,
         markerEnd: {
           type: 'arrowclosed' as const,
           color: '#3b82f6',

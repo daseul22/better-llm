@@ -109,7 +109,7 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
           width: '12px',
           height: '12px',
           borderRadius: '50%',
-          zIndex: 10
+          zIndex: 1
         }}
       />
 
@@ -206,7 +206,7 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
           width: '12px',
           height: '12px',
           borderRadius: '50%',
-          zIndex: 10
+          zIndex: 1
         }}
       />
     </div>

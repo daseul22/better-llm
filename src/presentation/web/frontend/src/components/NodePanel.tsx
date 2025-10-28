@@ -12,7 +12,6 @@ import { Agent, getAgents } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
 import { Plus, Target, Download, Search, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])

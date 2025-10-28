@@ -95,7 +95,12 @@
 .react-flow__node .react-flow__handle {
   position: absolute !important;
   border-radius: 50% !important;
-  z-index: 10 !important;
+  z-index: 1 !important;
+}
+
+/* 엣지(화살표)를 핸들보다 위에 표시 */
+.react-flow__edge {
+  z-index: 100 !important;
 }
 
 /* 위쪽 핸들 */

@@ -173,21 +173,43 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   setWorkflowDescription: (description) => set({ workflowDescription: description }),
 
   // 워크플로우 전체 로드/저장
-  loadWorkflow: (workflow) =>
+  loadWorkflow: (workflow) => {
+    // 유효하지 않은 엣지 필터링 (존재하지 않는 노드를 참조하는 엣지 제거)
+    const nodeIds = new Set(workflow.nodes.map(node => node.id))
+    const validEdges = workflow.edges.filter(edge => {
+      const isValid = nodeIds.has(edge.source) && nodeIds.has(edge.target)
+      if (!isValid) {
+        console.warn(`[워크플로우 로드] 유효하지 않은 엣지 발견: ${edge.id} (source: ${edge.source}, target: ${edge.target})`)
+      }
+      return isValid
+    })
+
     set({
       nodes: workflow.nodes,
-      edges: workflow.edges,
+      edges: validEdges,
       workflowName: workflow.name,
       workflowDescription: workflow.description || '',
-    }),
+    })
+  },
 
   getWorkflow: () => {
     const state = get()
+
+    // 유효하지 않은 엣지 필터링 (존재하지 않는 노드를 참조하는 엣지 제거)
+    const nodeIds = new Set(state.nodes.map(node => node.id))
+    const validEdges = state.edges.filter(edge => {
+      const isValid = nodeIds.has(edge.source) && nodeIds.has(edge.target)
+      if (!isValid) {
+        console.warn(`[워크플로우] 유효하지 않은 엣지 발견: ${edge.id} (source: ${edge.source}, target: ${edge.target})`)
+      }
+      return isValid
+    })
+
     return {
       name: state.workflowName,
       description: state.workflowDescription,
       nodes: state.nodes,
-      edges: state.edges,
+      edges: validEdges,
     }
   },
 

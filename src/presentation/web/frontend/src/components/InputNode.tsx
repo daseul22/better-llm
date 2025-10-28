@@ -239,7 +239,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
           height: '16px',
           borderRadius: '50%',
           border: '2px solid white',
-          zIndex: 10
+          zIndex: 1
         }}
       />
     </div>

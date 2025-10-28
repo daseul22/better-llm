@@ -10,7 +10,7 @@
  */
 
 import React, { useEffect, useState, useRef } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useWorkflowStore } from '@/stores/workflowStore'
