@@ -19,6 +19,9 @@ from src.presentation.web.schemas.workflow import (
     ProjectWorkflowLoadResponse,
     Workflow,
     ProjectConfig,
+    DisplayConfig,
+    DisplayConfigLoadResponse,
+    DisplayConfigSaveRequest,
 )
 
 logger = get_logger(__name__)
@@ -41,6 +44,21 @@ def get_config_path(project_path: str) -> Path:
     project_dir = Path(project_path)
     config_dir = project_dir / ".better-llm"
     return config_dir / "workflow-config.json"
+
+
+def get_display_config_path(project_path: str) -> Path:
+    """
+    Display 설정 파일 경로 반환
+
+    Args:
+        project_path: 프로젝트 디렉토리 경로
+
+    Returns:
+        Path: .better-llm/display-config.json 경로
+    """
+    project_dir = Path(project_path)
+    config_dir = project_dir / ".better-llm"
+    return config_dir / "display-config.json"
 
 
 def validate_project_path(project_path: str) -> Path:
@@ -478,4 +496,145 @@ async def clear_logs() -> Dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"로그 파일 삭제 실패: {str(e)}"
+        )
+
+
+@router.get("/display-config", response_model=DisplayConfigLoadResponse)
+async def load_display_config(
+    project_path: Optional[str] = None
+) -> DisplayConfigLoadResponse:
+    """
+    Display 설정 로드
+
+    Args:
+        project_path: 프로젝트 디렉토리 경로 (옵션, 미제공 시 현재 프로젝트)
+
+    Returns:
+        DisplayConfigLoadResponse: 로드된 Display 설정
+
+    Example:
+        GET /api/projects/display-config
+
+        Response: {
+            "config": {
+                "left_sidebar_open": true,
+                "right_sidebar_open": true,
+                "expanded_sections": ["input", "manager", "general"]
+            }
+        }
+    """
+    # 프로젝트 경로 결정
+    target_path = project_path or _current_project_path
+
+    if not target_path:
+        # 프로젝트 선택되지 않은 경우 기본값 반환
+        logger.info("프로젝트 미선택 - Display 설정 기본값 반환")
+        return DisplayConfigLoadResponse(
+            config=DisplayConfig()
+        )
+
+    # 경로 검증
+    try:
+        validate_project_path(target_path)
+    except HTTPException:
+        # 경로 검증 실패 시 기본값 반환
+        logger.warning(f"프로젝트 경로 검증 실패 - Display 설정 기본값 반환: {target_path}")
+        return DisplayConfigLoadResponse(
+            config=DisplayConfig()
+        )
+
+    # 설정 파일 확인
+    config_path = get_display_config_path(target_path)
+
+    if not config_path.exists():
+        # 설정 파일 없으면 기본값 반환
+        logger.info(f"Display 설정 파일 없음 - 기본값 반환: {config_path}")
+        return DisplayConfigLoadResponse(
+            config=DisplayConfig()
+        )
+
+    # JSON 로드
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+
+        display_config = DisplayConfig(**config_data)
+
+        logger.info(f"Display 설정 로드 완료: {config_path}")
+
+        return DisplayConfigLoadResponse(
+            config=display_config
+        )
+
+    except Exception as e:
+        logger.error(f"Display 설정 로드 실패: {e}", exc_info=True)
+        # 로드 실패 시 기본값 반환
+        return DisplayConfigLoadResponse(
+            config=DisplayConfig()
+        )
+
+
+@router.post("/display-config")
+async def save_display_config(
+    request: DisplayConfigSaveRequest
+) -> Dict[str, str]:
+    """
+    Display 설정 저장
+
+    Args:
+        request: Display 설정 저장 요청
+
+    Returns:
+        Dict[str, str]: 응답 메시지
+
+    Example:
+        POST /api/projects/display-config
+        Body: {
+            "config": {
+                "left_sidebar_open": false,
+                "right_sidebar_open": true,
+                "expanded_sections": ["input", "manager"]
+            }
+        }
+
+        Response: {
+            "message": "Display 설정이 저장되었습니다",
+            "config_path": "/project/.better-llm/display-config.json"
+        }
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다. 먼저 프로젝트를 선택하세요."
+        )
+
+    # 경로 검증
+    validate_project_path(_current_project_path)
+
+    # 설정 디렉토리 생성
+    config_path = get_display_config_path(_current_project_path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # JSON 저장
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(
+                request.config.model_dump(),
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        logger.info(f"Display 설정 저장: {config_path}")
+
+        return {
+            "message": "Display 설정이 저장되었습니다",
+            "config_path": str(config_path),
+        }
+
+    except Exception as e:
+        logger.error(f"Display 설정 저장 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Display 설정 저장 실패: {str(e)}"
         )

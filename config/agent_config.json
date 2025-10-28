@@ -175,6 +175,17 @@
       ],
       "model": "claude-haiku-4-5-20251001",
       "thinking": false
+    },
+    {
+      "name": "worker_prompt_engineer",
+      "role": "커스텀 워커 프롬프트 생성",
+      "system_prompt_file": "prompts/worker_prompt_engineer.txt",
+      "allowed_tools": [
+        "read",
+        "glob"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
     }
   ]
 }

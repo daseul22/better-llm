@@ -17,6 +17,7 @@ from .repository_factory import (
 )
 from .migration import SessionMigration, migrate_sessions_cli
 from .artifact_storage import ArtifactStorage, get_artifact_storage
+from .custom_worker_repository import CustomWorkerRepository
 
 __all__ = [
     "JsonSessionRepository",
@@ -32,4 +33,5 @@ __all__ = [
     "migrate_sessions_cli",
     "ArtifactStorage",
     "get_artifact_storage",
+    "CustomWorkerRepository",
 ]

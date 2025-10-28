@@ -88,7 +88,7 @@ async def list_agents(
     config_loader: JsonConfigLoader = Depends(get_config_loader)
 ) -> AgentListResponse:
     """
-    사용 가능한 Worker Agent 목록 조회
+    사용 가능한 Worker Agent 목록 조회 (기본 워커 + 커스텀 워커)
 
     Args:
         config_loader: ConfigLoader 의존성 주입 (Depends)
@@ -112,8 +112,24 @@ async def list_agents(
         }
     """
     try:
+        # 1. 기본 워커 로드
         agent_configs = config_loader.load_agent_configs()
 
+        # 2. 커스텀 워커 로드 (프로젝트가 선택된 경우만)
+        from src.presentation.web.routers.projects import _current_project_path
+        from src.infrastructure.storage import CustomWorkerRepository
+        from pathlib import Path
+
+        if _current_project_path:
+            try:
+                custom_repo = CustomWorkerRepository(Path(_current_project_path))
+                custom_configs = custom_repo.load_custom_workers()
+                agent_configs.extend(custom_configs)
+                logger.info(f"커스텀 워커 로드: {len(custom_configs)}개")
+            except Exception as e:
+                logger.warning(f"커스텀 워커 로드 실패 (무시): {e}")
+
+        # 3. AgentInfo로 변환
         agents = []
         for config in agent_configs:
             # 시스템 프롬프트 로드
@@ -138,7 +154,7 @@ async def list_agents(
                 model=model,
             ))
 
-        logger.info(f"✅ Agent 목록 조회: {len(agents)}개 (시스템 프롬프트 포함)")
+        logger.info(f"✅ Agent 목록 조회: {len(agents)}개 (기본 + 커스텀, 시스템 프롬프트 포함)")
         return AgentListResponse(agents=agents)
 
     except Exception as e:

@@ -81,3 +81,101 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="에러 메시지")
     detail: Optional[str] = Field(None, description="상세 에러 정보")
+
+
+class CustomWorkerGenerateRequest(BaseModel):
+    """커스텀 워커 생성 요청 스키마"""
+
+    worker_requirements: str = Field(
+        ...,
+        description="원하는 워커의 요구사항 설명",
+        min_length=10,
+        max_length=2000,
+    )
+    session_id: Optional[str] = Field(
+        None,
+        description="세션 ID (선택적, 미제공 시 자동 생성)",
+    )
+
+    @field_validator("worker_requirements")
+    @classmethod
+    def validate_requirements(cls, v: str) -> str:
+        """요구사항 검증"""
+        if not v.strip():
+            raise ValueError("워커 요구사항은 비어있을 수 없습니다")
+        return v.strip()
+
+
+class CustomWorkerSaveRequest(BaseModel):
+    """커스텀 워커 저장 요청 스키마"""
+
+    project_path: str = Field(
+        ...,
+        description="프로젝트 경로",
+        min_length=1,
+    )
+    worker_name: str = Field(
+        ...,
+        description="워커 이름 (영문, 숫자, _ 만 가능)",
+        min_length=1,
+        max_length=50,
+    )
+    role: str = Field(
+        ...,
+        description="워커 역할 설명",
+        min_length=1,
+        max_length=100,
+    )
+    prompt_content: str = Field(
+        ...,
+        description="시스템 프롬프트 내용",
+        min_length=10,
+    )
+    allowed_tools: List[str] = Field(
+        ...,
+        description="허용 도구 리스트",
+        min_items=1,
+    )
+    model: str = Field(
+        default="claude-sonnet-4-5-20250929",
+        description="사용 모델",
+    )
+    thinking: bool = Field(
+        default=False,
+        description="Thinking 활성화 여부",
+    )
+
+    @field_validator("worker_name")
+    @classmethod
+    def validate_worker_name(cls, v: str) -> str:
+        """워커 이름 검증"""
+        if not v.replace("_", "").isalnum():
+            raise ValueError("워커 이름은 알파벳, 숫자, 언더스코어만 포함해야 합니다")
+        return v.lower()
+
+    @field_validator("allowed_tools")
+    @classmethod
+    def validate_tools(cls, v: List[str]) -> List[str]:
+        """도구 검증"""
+        valid_tools = {"read", "write", "edit", "bash", "glob", "grep"}
+        for tool in v:
+            if tool not in valid_tools:
+                raise ValueError(f"유효하지 않은 도구: {tool}")
+        return v
+
+
+class CustomWorkerInfo(BaseModel):
+    """커스텀 워커 정보 스키마"""
+
+    name: str = Field(..., description="워커 이름")
+    role: str = Field(..., description="워커 역할")
+    allowed_tools: List[str] = Field(..., description="허용 도구")
+    model: str = Field(..., description="사용 모델")
+    thinking: bool = Field(..., description="Thinking 활성화")
+    prompt_preview: str = Field(..., description="프롬프트 미리보기 (첫 100자)")
+
+
+class CustomWorkerListResponse(BaseModel):
+    """커스텀 워커 목록 응답 스키마"""
+
+    workers: List[CustomWorkerInfo] = Field(..., description="커스텀 워커 목록")
