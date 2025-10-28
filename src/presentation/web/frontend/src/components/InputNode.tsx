@@ -45,20 +45,16 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
   // 상태별 스타일 (WorkerNode 패턴과 동일)
   let statusClass = 'border-emerald-400 bg-emerald-50'
   let statusText = ''
-  let statusColor = ''
 
   if (isExecuting || localIsRunning) {
     statusClass = 'border-yellow-500 bg-yellow-50'
     statusText = '실행 중...'
-    statusColor = 'text-yellow-700'
   } else if (hasError) {
     statusClass = 'border-red-500 bg-red-50'
     statusText = '에러 발생'
-    statusColor = 'text-red-700'
   } else if (isCompleted) {
     statusClass = 'border-green-500 bg-green-50'
     statusText = '완료'
-    statusColor = 'text-green-700'
   }
 
   // 워크플로우 실행 (이 Input 노드에서 시작)
