@@ -4,17 +4,18 @@
  * 워크플로우 시작점인 Input 노드의 설정을 관리합니다.
  */
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { Terminal, HelpCircle, CheckCircle2, Save, ScrollText, ArrowDown } from 'lucide-react'
+import { Terminal, HelpCircle, CheckCircle2, Save } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { ParsedContent } from '@/components/ParsedContent'
+import { AutoScrollContainer } from '@/components/AutoScrollContainer'
 
 interface InputNodeConfigProps {
   node: WorkflowNode
@@ -26,77 +27,25 @@ interface InputNodeData {
 }
 
 /**
- * 단일 로그 항목 컴포넌트
+ * 노드별 실행 로그 컴포넌트 (WorkerNodeConfig 스타일)
  */
-const LogItem: React.FC<{ log: any; index: number }> = ({ log, index }) => {
-  // 로그 타입별 스타일
-  const getLogStyle = () => {
-    if (log.type === 'error') return 'bg-red-50 border-red-200 text-red-900'
-    if (log.type === 'complete') return 'bg-green-50 border-green-200 text-green-900'
-    if (log.type === 'start') return 'bg-blue-50 border-blue-200 text-blue-900'
-    return 'bg-gray-50 border-gray-200 text-gray-900'
-  }
+const NodeExecutionLogs: React.FC = () => {
+  const nodes = useWorkflowStore((state) => state.nodes)
+  const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
+  const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
+  const { isExecuting, totalTokenUsage } = useWorkflowStore((state) => state.execution)
 
-  return (
-    <div key={index} className={`p-2 rounded border text-xs ${getLogStyle()}`}>
-      <div className="flex flex-col gap-1">
-        <div className="text-xs text-muted-foreground">
-          {new Date(log.timestamp).toLocaleTimeString()}
-        </div>
-        {/* ParsedContent 컴포넌트로 여러 블록 파싱 및 렌더링 */}
-        <ParsedContent content={log.message} />
-      </div>
-    </div>
+  // 실행된 노드들만 필터링
+  const executedNodes = nodes.filter(
+    (node) => nodeInputs[node.id] || nodeOutputs[node.id]
   )
-}
-
-/**
- * 실행 로그 패널 컴포넌트 (자동 스크롤 기능 포함)
- */
-const ExecutionLogsPanel: React.FC = () => {
-  const execution = useWorkflowStore((state) => state.execution)
-  const { logs, isExecuting, totalTokenUsage } = execution
-
-  // 자동 스크롤 관련 상태 및 ref
-  const logsContainerRef = useRef<HTMLDivElement>(null)
-  const [autoScroll, setAutoScroll] = useState(true)
-
-  // 자동 스크롤 (로그가 업데이트될 때만)
-  useEffect(() => {
-    if (autoScroll && logsContainerRef.current) {
-      // scrollIntoView 대신 scrollTop 직접 조작 (부모 스크롤 방지)
-      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight
-    }
-  }, [logs, autoScroll])
-
-  // 스크롤 이벤트 핸들러 (수동 스크롤 감지)
-  const handleScroll = () => {
-    if (!logsContainerRef.current) return
-
-    const { scrollTop, scrollHeight, clientHeight } = logsContainerRef.current
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50 // 50px 여유
-
-    // 맨 아래에 있으면 자동 스크롤 활성화, 아니면 비활성화
-    setAutoScroll(isAtBottom)
-  }
-
-  // 맨 아래로 스크롤 버튼
-  const scrollToBottom = () => {
-    if (logsContainerRef.current) {
-      logsContainerRef.current.scrollTo({
-        top: logsContainerRef.current.scrollHeight,
-        behavior: 'smooth'
-      })
-      setAutoScroll(true)
-    }
-  }
 
   return (
-    <div className="space-y-3">
-      {/* 실행 상태 */}
-      <div className="bg-gray-50 border rounded-md p-2">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-medium">실행 상태</div>
+    <div className="space-y-4">
+      {/* 실행 상태 및 토큰 사용량 */}
+      <div className="bg-gray-50 border rounded-md p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-medium">실행 상태</div>
           {isExecuting ? (
             <div className="flex items-center gap-1.5 text-yellow-600">
               <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
@@ -112,7 +61,7 @@ const ExecutionLogsPanel: React.FC = () => {
 
         {/* 토큰 사용량 */}
         {totalTokenUsage.total_tokens > 0 && (
-          <div className="text-xs text-muted-foreground space-y-0.5 mt-1.5">
+          <div className="text-xs text-muted-foreground space-y-0.5 border-t pt-2">
             <div className="flex items-center justify-between">
               <span>입력 토큰:</span>
               <span className="font-mono">{totalTokenUsage.input_tokens.toLocaleString()}</span>
@@ -129,52 +78,89 @@ const ExecutionLogsPanel: React.FC = () => {
         )}
       </div>
 
-      {/* 로그 목록 */}
-      <div className="space-y-2 relative pt-1">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-medium">실행 로그</div>
-          <div className="flex items-center gap-2">
-            <div className="text-xs text-muted-foreground">{logs.length}개</div>
-            {!autoScroll && logs.length > 0 && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={scrollToBottom}
-                className="h-6 px-2 text-xs"
-              >
-                <ArrowDown className="h-3 w-3 mr-1" />
-                맨 아래로
-              </Button>
-            )}
-          </div>
+      {/* 노드별 입출력 표시 */}
+      {executedNodes.length === 0 ? (
+        <div className="bg-gray-50 border rounded-md p-6 text-center">
+          <Terminal className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
+          <div className="text-sm text-muted-foreground">워크플로우를 실행하면 노드별 입출력이 표시됩니다</div>
         </div>
-
-        {logs.length === 0 ? (
-          <div className="bg-gray-50 border rounded-md p-6 text-center">
-            <ScrollText className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-            <div className="text-sm text-muted-foreground">워크플로우를 실행하면 로그가 표시됩니다</div>
-          </div>
-        ) : (
-          <div
-            ref={logsContainerRef}
-            onScroll={handleScroll}
-            className="space-y-2 max-h-[500px] overflow-y-auto scroll-smooth relative"
-          >
-            {/* 자동 스크롤 비활성화 알림 (스크롤 컨테이너 내부 상단에 sticky) */}
-            {!autoScroll && (
-              <div className="sticky top-0 z-10 flex justify-center mb-2">
-                <div className="bg-gray-800 text-white text-xs px-3 py-1.5 rounded-full shadow-lg">
-                  자동 스크롤 일시 중지됨
+      ) : (
+        <div className="space-y-4">
+          {executedNodes.map((execNode) => (
+            <div key={execNode.id} className="space-y-3 border rounded-lg p-3 bg-white">
+              {/* 노드 헤더 */}
+              <div className="flex items-center justify-between border-b pb-2">
+                <div className="font-medium text-sm">
+                  {execNode.type === 'input' && '📥 Input'}
+                  {execNode.type === 'worker' && `🤖 ${execNode.data.agent_name || 'Worker'}`}
+                  {execNode.type === 'manager' && '👔 Manager'}
+                  {execNode.type === 'condition' && '🔀 Condition'}
+                  {execNode.type === 'loop' && '🔁 Loop'}
+                  {execNode.type === 'merge' && '🔗 Merge'}
+                </div>
+                <div className="text-xs text-muted-foreground font-mono">
+                  {execNode.id.substring(0, 8)}
                 </div>
               </div>
-            )}
 
-            {logs.map((log, index) => (
-              <LogItem key={index} log={log} index={index} />
-            ))}
-          </div>
-        )}
-      </div>
+              {/* 노드 입력 */}
+              {nodeInputs[execNode.id] && (
+                <div className="border rounded-md overflow-hidden">
+                  <div className="bg-blue-50 px-3 py-2 border-b">
+                    <div className="text-sm font-medium text-blue-900">노드 입력</div>
+                    <div className="text-xs text-blue-700">이 노드가 받은 입력 데이터</div>
+                  </div>
+                  <div className="p-3">
+                    <AutoScrollContainer maxHeight="300px" dependency={nodeInputs[execNode.id]}>
+                      <ParsedContent content={nodeInputs[execNode.id]} />
+                    </AutoScrollContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* 노드 출력 */}
+              {nodeOutputs[execNode.id] && (
+                <div className="border rounded-md overflow-hidden">
+                  <div className="bg-green-50 px-3 py-2 border-b">
+                    <div className="text-sm font-medium text-green-900">노드 출력</div>
+                    <div className="text-xs text-green-700">이 노드가 생성한 출력 데이터</div>
+                  </div>
+                  <div className="p-3">
+                    <AutoScrollContainer maxHeight="300px" dependency={nodeOutputs[execNode.id]}>
+                      <ParsedContent content={nodeOutputs[execNode.id]} />
+                    </AutoScrollContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* 통계 정보 */}
+              <div className="border rounded-md p-3 bg-purple-50 border-purple-200">
+                <div className="text-sm font-medium mb-2 text-purple-900">통계</div>
+                <div className="space-y-1 text-xs text-purple-800">
+                  <div>
+                    <span className="font-medium">입력 길이:</span>{' '}
+                    {nodeInputs[execNode.id] ? `${nodeInputs[execNode.id].length.toLocaleString()}자` : '0자'}
+                  </div>
+                  <div>
+                    <span className="font-medium">출력 길이:</span>{' '}
+                    {nodeOutputs[execNode.id] ? `${nodeOutputs[execNode.id].length.toLocaleString()}자` : '0자'}
+                  </div>
+                  <div>
+                    <span className="font-medium">상태:</span>{' '}
+                    {nodeOutputs[execNode.id] ? (
+                      <span className="text-green-600 font-medium">✓ 완료</span>
+                    ) : nodeInputs[execNode.id] ? (
+                      <span className="text-yellow-600 font-medium">⏳ 진행중</span>
+                    ) : (
+                      <span className="text-gray-500">⏸ 대기중</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -323,7 +309,7 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
 
           {/* 실행 로그 탭 */}
           <TabsContent value="logs" className="h-full overflow-y-auto px-4 pb-20 mt-4">
-            <ExecutionLogsPanel />
+            <NodeExecutionLogs />
           </TabsContent>
 
           {/* 정보 탭 */}
