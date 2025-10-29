@@ -2,11 +2,11 @@
 워크플로우 검증기
 
 워크플로우 실행 전 검증을 수행합니다:
-- 순환 참조 검사 (Loop 노드를 통한 제어된 피드백 루프는 허용)
+- 순환 참조 검사 (max_iterations가 설정된 Condition 노드를 통한 제어된 피드백 루프 허용)
 - 고아 노드 검사
 - 템플릿 변수 유효성 검사
 - Worker별 필수 도구 검사
-- Loop 노드 검증 (max_iterations 설정 확인, 무한 루프 방지)
+- Condition 노드 검증 (순환 경로에서 max_iterations 설정 확인)
 """
 
 from typing import List, Dict, Set, Optional, Any
@@ -124,17 +124,15 @@ class WorkflowValidator:
         # 5. Input 노드 존재 여부 검사
         errors.extend(self._check_input_node(workflow))
 
-        # 6. Loop 노드 검증 (무한 루프 방지)
-        errors.extend(self._check_loop_nodes(workflow))
-
         return errors
 
     def _check_cycles(self, workflow: Workflow) -> List[ValidationError]:
         """
         순환 참조 검사 (DFS)
 
-        Loop 노드를 통한 제어된 피드백 루프는 허용합니다.
-        Loop 노드가 없는 무한 순환만 에러로 처리합니다.
+        Loop 노드 또는 max_iterations가 설정된 Condition 노드를 통한
+        제어된 피드백 루프는 허용합니다.
+        제어 노드가 없는 무한 순환만 에러로 처리합니다.
 
         Args:
             workflow: 검증할 워크플로우
@@ -144,8 +142,20 @@ class WorkflowValidator:
         """
         errors: List[ValidationError] = []
 
-        # Loop 노드 ID 집합
-        loop_nodes = {node.id for node in workflow.nodes if node.type == "loop"}
+        # 제어 노드 ID 집합 (max_iterations 설정된 Condition 노드)
+        control_nodes = set()
+        for node in workflow.nodes:
+            if node.type == "condition":
+                # max_iterations가 설정된 Condition 노드만 제어 노드로 간주
+                if hasattr(node.data, "max_iterations"):
+                    max_iterations = node.data.max_iterations
+                elif isinstance(node.data, dict):
+                    max_iterations = node.data.get("max_iterations")
+                else:
+                    max_iterations = None
+
+                if max_iterations is not None:
+                    control_nodes.add(node.id)
 
         # 그래프 구성 (인접 리스트)
         graph: Dict[str, List[str]] = {node.id: [] for node in workflow.nodes}
@@ -178,14 +188,14 @@ class WorkflowValidator:
                     cycle_start_idx = path.index(neighbor)
                     cycle = path[cycle_start_idx:] + [neighbor]
 
-                    # 순환 경로에 Loop 노드가 포함되어 있는지 확인
-                    has_loop_node = any(node_id in loop_nodes for node_id in cycle)
+                    # 순환 경로에 제어 노드가 포함되어 있는지 확인
+                    has_control_node = any(node_id in control_nodes for node_id in cycle)
 
-                    if has_loop_node:
-                        # Loop 노드를 통한 제어된 피드백 루프 → 허용 (에러 아님)
+                    if has_control_node:
+                        # 제어 노드를 통한 피드백 루프 → 허용 (에러 아님)
                         return None
                     else:
-                        # Loop 노드 없는 무한 순환 → 에러
+                        # 제어 노드 없는 무한 순환 → 에러
                         return cycle
 
             rec_stack.remove(node_id)
@@ -200,7 +210,7 @@ class WorkflowValidator:
                         severity="error",
                         node_id=cycle_path[0],
                         message=f"무한 순환이 감지되었습니다: {' → '.join(cycle_path)}",
-                        suggestion="Loop 노드를 추가하여 반복 횟수를 제한하거나, 노드 간 연결을 변경하여 순환을 제거하세요."
+                        suggestion="Condition 노드에 max_iterations를 설정하여 반복 횟수를 제한하거나, 노드 간 연결을 변경하여 순환을 제거하세요."
                     ))
                     break  # 하나만 보고 (여러 개일 수 있지만 가독성 위해)
 
@@ -379,93 +389,5 @@ class WorkflowValidator:
                 suggestion="워크플로우 시작점으로 Input 노드를 추가하세요."
             ))
         # 여러 개의 Input 노드 허용 (병렬 작업 실행 가능)
-
-        return errors
-
-    def _check_loop_nodes(self, workflow: Workflow) -> List[ValidationError]:
-        """
-        Loop 노드 검증 (무한 루프 방지)
-
-        Loop 노드는 max_iterations 설정이 있어야 하며, 순환 경로에 포함되어야 합니다.
-
-        Args:
-            workflow: 검증할 워크플로우
-
-        Returns:
-            Loop 노드 에러 목록
-        """
-        errors: List[ValidationError] = []
-
-        # 그래프 구성 (순환 탐지를 위해)
-        graph: Dict[str, List[str]] = {node.id: [] for node in workflow.nodes}
-        for edge in workflow.edges:
-            if edge.source in graph:
-                graph[edge.source].append(edge.target)
-
-        for node in workflow.nodes:
-            if node.type != "loop":
-                continue
-
-            # Loop 노드 데이터 추출
-            max_iterations = None
-
-            # Pydantic 모델 객체인 경우
-            if hasattr(node.data, "max_iterations"):
-                max_iterations = node.data.max_iterations
-            # 딕셔너리인 경우
-            elif isinstance(node.data, dict):
-                max_iterations = node.data.get("max_iterations")
-
-            # max_iterations 설정 확인
-            if max_iterations is None:
-                errors.append(ValidationError(
-                    severity="error",
-                    node_id=node.id,
-                    message="Loop 노드에 max_iterations 설정이 없습니다.",
-                    suggestion="Loop 노드는 무한 루프를 방지하기 위해 max_iterations를 설정해야 합니다."
-                ))
-            elif not isinstance(max_iterations, int) or max_iterations <= 0:
-                errors.append(ValidationError(
-                    severity="error",
-                    node_id=node.id,
-                    message=f"Loop 노드의 max_iterations가 유효하지 않습니다: {max_iterations}",
-                    suggestion="max_iterations는 1 이상의 정수여야 합니다."
-                ))
-            elif max_iterations > 10:
-                errors.append(ValidationError(
-                    severity="warning",
-                    node_id=node.id,
-                    message=f"Loop 노드의 max_iterations가 너무 큽니다: {max_iterations}",
-                    suggestion="반복 횟수가 많으면 실행 시간이 길어질 수 있습니다. 10 이하 권장."
-                ))
-
-            # Loop 노드가 실제 순환 경로에 포함되어 있는지 확인
-            # (Loop 노드의 이웃에서 출발하여 다시 Loop 노드로 돌아올 수 있는지)
-            def can_reach_target(current: str, target: str, visited: Set[str]) -> bool:
-                """DFS로 current에서 target까지 도달 가능한지 확인"""
-                if current == target:
-                    return True
-                if current in visited:
-                    return False
-                visited.add(current)
-                for neighbor in graph.get(current, []):
-                    if can_reach_target(neighbor, target, visited):
-                        return True
-                return False
-
-            # Loop 노드에서 출발하여 자기 자신으로 돌아올 수 있는지 확인
-            is_in_cycle = False
-            for neighbor in graph.get(node.id, []):
-                if can_reach_target(neighbor, node.id, set()):
-                    is_in_cycle = True
-                    break
-
-            if not is_in_cycle:
-                errors.append(ValidationError(
-                    severity="warning",
-                    node_id=node.id,
-                    message="Loop 노드가 순환 경로에 포함되어 있지 않습니다.",
-                    suggestion="Loop 노드는 피드백 루프의 일부여야 합니다. 노드의 출력이 다시 이전 노드로 연결되도록 하세요."
-                ))
 
         return errors

@@ -262,25 +262,6 @@ export const NodePanel: React.FC = () => {
     addNode(newNode)
   }
 
-  // Loop 노드를 캔버스에 추가
-  const handleAddLoop = () => {
-    const x = 100 + (nodes.length % 3) * 300
-    const y = 100 + Math.floor(nodes.length / 3) * 150
-
-    const newNode: WorkflowNode = {
-      id: `loop-${Date.now()}`,
-      type: 'loop',
-      position: { x, y },
-      data: {
-        max_iterations: 5,
-        loop_condition: '완료',
-        loop_condition_type: 'contains',
-      },
-    }
-
-    addNode(newNode)
-  }
-
   // Merge 노드를 캔버스에 추가
   const handleAddMerge = () => {
     const x = 100 + (nodes.length % 3) * 300
@@ -446,23 +427,6 @@ export const NodePanel: React.FC = () => {
                   <span className="font-medium text-amber-700">조건 분기</span>
                   <span className="text-xs text-muted-foreground">
                     조건에 따라 True/False 분기
-                  </span>
-                </div>
-              </Button>
-
-              {/* Loop 노드 */}
-              <Button
-                variant="outline"
-                className="w-full justify-start text-left border-teal-300 hover:bg-teal-50 bg-white cursor-grab active:cursor-grabbing"
-                onClick={handleAddLoop}
-                draggable
-                onDragStart={(e) => onDragStart(e, 'loop', { max_iterations: 5, loop_condition: '완료', loop_condition_type: 'contains' })}
-              >
-                <RotateCw className="mr-2 h-4 w-4 text-teal-600" />
-                <div className="flex flex-col items-start">
-                  <span className="font-medium text-teal-700">반복</span>
-                  <span className="text-xs text-muted-foreground">
-                    조건 만족 시까지 반복 실행
                   </span>
                 </div>
               </Button>

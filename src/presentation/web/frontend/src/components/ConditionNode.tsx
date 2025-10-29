@@ -16,6 +16,7 @@ interface ConditionNodeData {
   condition_value: string
   true_branch_id?: string
   false_branch_id?: string
+  max_iterations?: number | null  // 반복 제한 (null이면 반복 안함)
   // 실행 상태
   isExecuting?: boolean
   isCompleted?: boolean
@@ -59,6 +60,7 @@ export const ConditionNode = memo(({ id, data, selected }: NodeProps<ConditionNo
     regex: '정규표현식',
     length: '길이 비교',
     custom: '커스텀 조건',
+    llm: 'LLM 판단',
   }
 
   return (

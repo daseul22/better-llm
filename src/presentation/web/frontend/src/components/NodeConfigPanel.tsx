@@ -15,7 +15,6 @@ import { Settings } from 'lucide-react'
 import { InputNodeConfig } from './node-config/InputNodeConfig'
 import { WorkerNodeConfig } from './node-config/WorkerNodeConfig'
 import { ConditionNodeConfig } from './node-config/ConditionNodeConfig'
-import { LoopNodeConfig } from './node-config/LoopNodeConfig'
 import { MergeNodeConfig } from './node-config/MergeNodeConfig'
 
 export const NodeConfigPanel: React.FC = () => {
@@ -48,9 +47,6 @@ export const NodeConfigPanel: React.FC = () => {
 
     case 'condition':
       return <ConditionNodeConfig node={selectedNode} />
-
-    case 'loop':
-      return <LoopNodeConfig node={selectedNode} />
 
     case 'merge':
       return <MergeNodeConfig node={selectedNode} />

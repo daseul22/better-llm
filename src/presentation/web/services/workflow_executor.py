@@ -25,7 +25,6 @@ from src.presentation.web.schemas.workflow import (
     WorkerNodeData,
     InputNodeData,
     ConditionNodeData,
-    LoopNodeData,
     MergeNodeData,
     TokenUsage,
 )
@@ -56,6 +55,10 @@ class WorkflowExecutor:
         self.config_loader = config_loader
         self.project_path = project_path
         self.agent_configs = config_loader.load_agent_configs()
+
+        # Condition 노드 반복 횟수 추적 (세션별, 노드별)
+        # {session_id: {node_id: iteration_count}}
+        self._condition_iterations: Dict[str, Dict[str, int]] = {}
 
         # 커스텀 워커 로드 (프로젝트 경로가 주어진 경우)
         self.custom_worker_names = set()
@@ -152,20 +155,6 @@ class WorkflowExecutor:
                 continue
             valid_edges.append(edge)
 
-        # Loop 노드에서 나가는 엣지를 백엣지로 식별 (위상 정렬에서 제외)
-        loop_node_ids = {node.id for node in nodes if node.type == "loop"}
-        back_edges = set()
-        for edge in valid_edges:
-            if edge.source in loop_node_ids:
-                back_edges.add((edge.source, edge.target))
-                logger.debug(f"Loop 백엣지 감지: {edge.source} -> {edge.target}")
-
-        # 위상 정렬용 엣지 (백엣지 제외)
-        topo_edges = [
-            edge for edge in valid_edges
-            if (edge.source, edge.target) not in back_edges
-        ]
-
         # Input 노드 찾기 (시작점)
         input_nodes = [node for node in nodes if node.type == "input"]
         if not input_nodes:
@@ -186,15 +175,15 @@ class WorkflowExecutor:
             input_node_ids = [node.id for node in input_nodes]
             logger.info(f"모든 Input 노드에서 시작: {input_node_ids}")
 
-        # 인접 리스트 (노드 ID → 자식 노드 ID 목록) - 백엣지 제외
+        # 인접 리스트 (노드 ID → 자식 노드 ID 목록)
         adjacency: Dict[str, List[str]] = {node.id: [] for node in nodes}
         in_degree: Dict[str, int] = {node.id: 0 for node in nodes}
 
-        for edge in topo_edges:
+        for edge in valid_edges:
             adjacency[edge.source].append(edge.target)
             in_degree[edge.target] += 1
 
-        # Input 노드에서 도달 가능한 노드만 필터링 (BFS) - 백엣지 제외
+        # Input 노드에서 도달 가능한 노드만 필터링 (BFS)
         reachable_nodes = set(input_node_ids)
         bfs_queue = deque(input_node_ids)
 
@@ -242,9 +231,9 @@ class WorkflowExecutor:
             if node_id not in reachable_nodes:
                 continue
 
-            # 모든 부모 노드가 처리되었는지 확인 (백엣지 제외)
+            # 모든 부모 노드가 처리되었는지 확인
             parents_ready = True
-            for edge in topo_edges:
+            for edge in valid_edges:
                 if edge.target == node_id and edge.source in reachable_nodes:
                     if edge.source not in visited:
                         parents_ready = False
@@ -419,6 +408,93 @@ class WorkflowExecutor:
 
         return result
 
+    async def _evaluate_llm_condition(
+        self,
+        condition_prompt: str,
+        input_text: str,
+        session_id: str,
+    ) -> Tuple[bool, str]:
+        """
+        LLM을 사용하여 조건 평가 (Haiku 모델 사용)
+
+        Args:
+            condition_prompt: LLM에게 전달할 조건 프롬프트
+            input_text: 평가할 텍스트
+            session_id: 세션 ID
+
+        Returns:
+            Tuple[bool, str]: (조건 결과, LLM 응답 이유)
+        """
+        from claude_agent_sdk import query
+        from claude_agent_sdk.types import ClaudeAgentOptions
+
+        logger.info(f"[{session_id}] LLM 조건 평가 시작 (Haiku 모델)")
+
+        # Haiku 모델로 빠른 판단
+        options = ClaudeAgentOptions(
+            model="claude-haiku-4-20250514",
+            allowed_tools=[],  # 도구 사용 안함
+            permission_mode="default",
+        )
+
+        # LLM에게 전달할 전체 프롬프트
+        full_prompt = f"""다음 출력을 분석하여 조건을 평가해주세요.
+
+<조건>
+{condition_prompt}
+</조건>
+
+<평가 대상 출력>
+{input_text[:5000]}  # 처음 5000자만
+</평가 대상 출력>
+
+위 출력이 조건을 만족하는지 판단하여, 다음 형식으로 응답해주세요:
+
+판단: [YES 또는 NO]
+이유: [한 줄 설명]
+
+예시:
+판단: YES
+이유: 테스트가 모두 통과했으며 에러가 없습니다.
+"""
+
+        try:
+            # LLM 호출
+            response_text = ""
+            async for response in query(prompt=full_prompt, options=options):
+                if hasattr(response, 'content') and isinstance(response.content, list):
+                    for block in response.content:
+                        if hasattr(block, 'type') and block.type == 'text':
+                            response_text += block.text
+
+            logger.debug(f"[{session_id}] LLM 응답: {response_text[:200]}")
+
+            # 응답 파싱
+            lines = response_text.strip().split('\n')
+            result = False
+            reason = ""
+
+            for line in lines:
+                if line.startswith('판단:'):
+                    decision = line.replace('판단:', '').strip().upper()
+                    result = decision in ['YES', 'Y', 'TRUE', '예']
+                elif line.startswith('이유:'):
+                    reason = line.replace('이유:', '').strip()
+
+            if not reason:
+                reason = response_text[:200]  # 파싱 실패 시 전체 응답 사용
+
+            logger.info(
+                f"[{session_id}] LLM 조건 평가 완료: {result} (이유: {reason[:100]})"
+            )
+
+            return result, reason
+
+        except Exception as e:
+            logger.error(f"[{session_id}] LLM 조건 평가 실패: {e}", exc_info=True)
+            # 에러 발생 시 안전하게 False 반환
+            return False, f"LLM 평가 실패: {str(e)}"
+
     def _evaluate_condition(
         self,
         condition_type: str,
@@ -429,7 +505,7 @@ class WorkflowExecutor:
         조건 평가
 
         Args:
-            condition_type: 조건 타입 ('contains', 'regex', 'length', 'custom')
+            condition_type: 조건 타입 ('contains', 'regex', 'length', 'custom', 'llm')
             condition_value: 조건 값
             input_text: 평가할 텍스트
 
@@ -508,7 +584,7 @@ class WorkflowExecutor:
         session_id: str,
     ) -> tuple[str, str]:
         """
-        조건 분기 노드 실행
+        조건 분기 노드 실행 (반복 제한 포함)
 
         Args:
             node: 조건 노드
@@ -525,9 +601,16 @@ class WorkflowExecutor:
         node_id = node.id
         node_data: ConditionNodeData = node.data  # type: ignore
 
+        # 반복 횟수 증가
+        if session_id not in self._condition_iterations:
+            self._condition_iterations[session_id] = {}
+
+        current_iteration = self._condition_iterations[session_id].get(node_id, 0) + 1
+        self._condition_iterations[session_id][node_id] = current_iteration
+
         logger.info(
             f"[{session_id}] 조건 노드 실행: {node_id} "
-            f"(타입: {node_data.condition_type}, 값: {node_data.condition_value})"
+            f"(타입: {node_data.condition_type}, 반복: {current_iteration}회)"
         )
 
         # 부모 노드 출력 가져오기
@@ -539,17 +622,38 @@ class WorkflowExecutor:
         parent_id = parent_nodes[0]
         parent_output = node_outputs.get(parent_id, "")
 
-        # 조건 평가
-        condition_result = self._evaluate_condition(
-            node_data.condition_type,
-            node_data.condition_value,
-            parent_output
-        )
+        # LLM 조건인 경우 비동기 평가
+        llm_reason = ""
+        if node_data.condition_type == "llm":
+            condition_result, llm_reason = await self._evaluate_llm_condition(
+                node_data.condition_value,
+                parent_output,
+                session_id
+            )
+        else:
+            # 일반 조건 평가
+            condition_result = self._evaluate_condition(
+                node_data.condition_type,
+                node_data.condition_value,
+                parent_output
+            )
 
         logger.info(
             f"[{session_id}] 조건 평가 결과: {condition_result} "
             f"(입력 길이: {len(parent_output)})"
         )
+
+        # max_iterations 체크 (반복 제한)
+        if node_data.max_iterations is not None:
+            if current_iteration >= node_data.max_iterations:
+                logger.warning(
+                    f"[{session_id}] 조건 노드 {node_id}: "
+                    f"최대 반복 횟수 도달 ({current_iteration}/{node_data.max_iterations}). "
+                    f"강제로 true 경로로 이동합니다."
+                )
+                # 최대 반복 횟수 도달 시 강제로 true 경로로 이동
+                condition_result = True
+                llm_reason = f"최대 반복 횟수 도달 ({node_data.max_iterations}회)"
 
         # 분기 경로 결정 (엣지의 sourceHandle을 사용)
         # sourceHandle이 "true"인 엣지 → True 경로
@@ -572,197 +676,16 @@ class WorkflowExecutor:
             )
 
         # 조건 결과를 텍스트로 변환
-        result_text = f"조건 평가 결과: {condition_result}\n분기: {next_node_id}"
+        result_text = f"조건 평가 결과: {condition_result}\n"
+        result_text += f"반복 횟수: {current_iteration}"
+        if node_data.max_iterations:
+            result_text += f"/{node_data.max_iterations}"
+        result_text += f"\n분기: {next_node_id}"
+
+        if llm_reason:
+            result_text += f"\nLLM 판단 이유: {llm_reason}"
 
         return next_node_id, result_text
-
-    async def _execute_loop_node(
-        self,
-        node: WorkflowNode,
-        node_outputs: Dict[str, str],
-        edges: List[WorkflowEdge],
-        nodes: List[WorkflowNode],
-        initial_input: str,
-        session_id: str,
-        project_path: Optional[str] = None,
-    ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
-        """
-        반복 노드 실행
-
-        Args:
-            node: 반복 노드
-            node_outputs: 이전 노드 출력들
-            edges: 엣지 목록
-            nodes: 노드 목록
-            initial_input: 초기 입력
-            session_id: 세션 ID
-            project_path: 프로젝트 디렉토리 경로 (CLAUDE.md 로드용)
-
-        Yields:
-            WorkflowNodeExecutionEvent: 노드 실행 이벤트
-        """
-        node_id = node.id
-        node_data: LoopNodeData = node.data  # type: ignore
-
-        logger.info(
-            f"[{session_id}] 반복 노드 시작: {node_id} "
-            f"(최대 반복: {node_data.max_iterations}, 조건: {node_data.loop_condition})"
-        )
-
-        # 부모 노드 출력 가져오기 (입력으로 사용)
-        parent_nodes = self._get_parent_nodes(node_id, edges)
-        loop_input = initial_input  # 기본값
-        if parent_nodes:
-            parent_id = parent_nodes[0]
-            loop_input = node_outputs.get(parent_id, initial_input)
-
-        # 노드 시작 시간 기록
-        start_time = time.time()
-
-        # 노드 시작 이벤트
-        yield WorkflowNodeExecutionEvent(
-            event_type="node_start",
-            node_id=node_id,
-            data={
-                "node_type": "loop",
-                "max_iterations": node_data.max_iterations,
-                "input": loop_input,
-                "loop_condition_type": node_data.loop_condition_type,
-                "loop_condition": node_data.loop_condition,
-            },
-            timestamp=datetime.now().isoformat(),
-        )
-
-        try:
-            # 루프 본문 노드 찾기 (loop 노드의 자식 노드들)
-            loop_body_node_ids = [
-                edge.target for edge in edges if edge.source == node_id
-            ]
-
-            if not loop_body_node_ids:
-                raise ValueError(f"반복 노드 {node_id}에 자식 노드가 없습니다")
-
-            iteration = 0
-            loop_output_history = []
-
-            while iteration < node_data.max_iterations:
-                iteration += 1
-
-                yield WorkflowNodeExecutionEvent(
-                    event_type="node_output",
-                    node_id=node_id,
-                    data={"chunk": f"\n\n--- 반복 {iteration}회차 시작 ---\n\n"},
-                )
-
-                logger.info(f"[{session_id}] 반복 노드 {node_id}: {iteration}회차 실행")
-
-                # 루프 본문 노드 실행 (첫 번째 자식 노드만)
-                # TODO: 여러 노드를 순서대로 실행하려면 위상 정렬 필요
-                body_node_id = loop_body_node_ids[0]
-                body_node = next((n for n in nodes if n.id == body_node_id), None)
-
-                if body_node is None:
-                    raise ValueError(f"루프 본문 노드 {body_node_id}를 찾을 수 없습니다")
-
-                # 루프 본문이 Worker 노드인 경우만 지원 (현재 구현)
-                if body_node.type != "worker":
-                    raise ValueError(
-                        f"반복 노드는 현재 Worker 노드만 지원합니다 (노드: {body_node_id}, 타입: {body_node.type})"
-                    )
-
-                # Worker 노드 실행 (간소화된 버전)
-                body_node_data: WorkerNodeData = body_node.data  # type: ignore
-                agent_name = body_node_data.agent_name
-                task_template = body_node_data.task_template
-
-                # 작업 설명 렌더링 (이전 반복 결과 포함)
-                task_description = self._render_task_template(
-                    template=task_template,
-                    node_id=body_node_id,
-                    node_outputs=node_outputs,
-                    initial_input=initial_input,
-                )
-
-                # Worker Agent 실행
-                agent_config = self._get_agent_config(agent_name)
-                worker = WorkerAgent(config=agent_config, project_dir=project_path)
-                body_output_chunks = []
-
-                async for chunk in worker.execute_task(task_description):
-                    body_output_chunks.append(chunk)
-                    yield WorkflowNodeExecutionEvent(
-                        event_type="node_output",
-                        node_id=node_id,
-                        data={"chunk": chunk},
-                    )
-
-                body_output = "".join(body_output_chunks)
-                loop_output_history.append(body_output)
-
-                # 루프 본문 출력을 node_outputs에 저장 (다음 반복에서 사용)
-                node_outputs[body_node_id] = body_output
-
-                yield WorkflowNodeExecutionEvent(
-                    event_type="node_output",
-                    node_id=node_id,
-                    data={"chunk": f"\n\n--- 반복 {iteration}회차 완료 ---\n\n"},
-                )
-
-                # 조건 평가 (종료 조건 확인)
-                condition_met = self._evaluate_condition(
-                    node_data.loop_condition_type,
-                    node_data.loop_condition,
-                    body_output
-                )
-
-                logger.info(
-                    f"[{session_id}] 반복 노드 {node_id}: 조건 평가 결과 = {condition_met}"
-                )
-
-                if condition_met:
-                    logger.info(
-                        f"[{session_id}] 반복 노드 {node_id}: 조건 만족, 루프 종료"
-                    )
-                    break
-
-            # 실행 시간 계산
-            elapsed_time = time.time() - start_time
-
-            # 통합 출력 (모든 반복 결과 결합)
-            integrated_output = "\n\n---\n\n".join(loop_output_history)
-
-            # 노드 완료 이벤트
-            yield WorkflowNodeExecutionEvent(
-                event_type="node_complete",
-                node_id=node_id,
-                data={
-                    "node_type": "loop",
-                    "iterations": iteration,
-                    "output": integrated_output,
-                },
-                timestamp=datetime.now().isoformat(),
-                elapsed_time=elapsed_time,
-            )
-
-            logger.info(
-                f"[{session_id}] 반복 노드 완료: {node_id} ({iteration}회 반복)"
-            )
-
-        except Exception as e:
-            error_msg = f"반복 노드 실행 실패: {str(e)}"
-            logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
-
-            elapsed_time = time.time() - start_time
-
-            yield WorkflowNodeExecutionEvent(
-                event_type="node_error",
-                node_id=node_id,
-                data={"error": error_msg},
-                timestamp=datetime.now().isoformat(),
-                elapsed_time=elapsed_time,
-            )
-
-            raise
 
     async def _execute_merge_node(
         self,
@@ -972,16 +895,6 @@ class WorkflowExecutor:
                 )
 
                 raise
-
-        # Loop 노드
-        elif node.type == "loop":
-            async for event in self._execute_loop_node(
-                node, node_outputs, edges, all_nodes,
-                initial_input, session_id, project_path
-            ):
-                if event.event_type == "node_complete":
-                    node_outputs[node_id] = event.data.get("output", "")
-                yield event
 
         # Merge 노드
         elif node.type == "merge":
@@ -1257,6 +1170,9 @@ class WorkflowExecutor:
         """
         # 세션별 파일 핸들러 추가
         add_session_file_handlers(session_id, project_path)
+
+        # 세션별 Condition 노드 반복 횟수 초기화
+        self._condition_iterations[session_id] = {}
 
         # 실행 중인 병렬 태스크 추적 (취소 시 정리용)
         running_tasks: List[asyncio.Task] = []

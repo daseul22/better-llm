@@ -25,7 +25,6 @@ import 'reactflow/dist/style.css'
 import { WorkerNode } from './WorkerNode'
 import { InputNode } from './InputNode'
 import { ConditionNode } from './ConditionNode'
-import { LoopNode } from './LoopNode'
 import { MergeNode } from './MergeNode'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode, WorkflowEdge, validateWorkflow } from '@/lib/api'
@@ -35,7 +34,6 @@ const nodeTypes: NodeTypes = {
   worker: WorkerNode,
   input: InputNode,
   condition: ConditionNode,
-  loop: LoopNode,
   merge: MergeNode,
 }
 

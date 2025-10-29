@@ -71,17 +71,19 @@ class ConditionNodeData(BaseModel):
     조건 분기 노드의 데이터
 
     조건 분기 노드는 이전 노드의 출력을 평가하여 True/False 경로로 분기합니다.
+    반복 기능을 활성화하면 false 경로가 순환을 만들 때 최대 반복 횟수를 제한합니다.
 
     Attributes:
-        condition_type: 조건 타입 ('contains', 'regex', 'length', 'custom')
+        condition_type: 조건 타입 ('contains', 'regex', 'length', 'custom', 'llm')
         condition_value: 조건 값 (예: 'success', '\\d{3}', '100', 'len(output) > 0')
         true_branch_id: True 경로 노드 ID
         false_branch_id: False 경로 노드 ID (옵션)
+        max_iterations: 최대 반복 횟수 (옵션, 피드백 루프 제한용)
         parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
     """
     condition_type: str = Field(
         ...,
-        description="조건 타입 (contains, regex, length, custom)"
+        description="조건 타입 (contains, regex, length, custom, llm)"
     )
     condition_value: str = Field(
         ...,
@@ -95,35 +97,9 @@ class ConditionNodeData(BaseModel):
         default=None,
         description="False 경로 노드 ID (동적으로 엣지로 관리될 수 있음)"
     )
-    parallel_execution: Optional[bool] = Field(
-        default=False,
-        description="자식 노드를 병렬로 실행할지 여부 (기본: false)"
-    )
-
-
-class LoopNodeData(BaseModel):
-    """
-    반복 노드의 데이터
-
-    반복 노드는 지정된 조건이 만족될 때까지 연결된 노드들을 반복 실행합니다.
-
-    Attributes:
-        max_iterations: 최대 반복 횟수 (무한 루프 방지)
-        loop_condition: 반복 조건 (예: 'output contains "완료"')
-        loop_condition_type: 조건 타입 ('contains', 'regex', 'custom')
-        parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
-    """
-    max_iterations: int = Field(
-        default=5,
-        description="최대 반복 횟수 (기본값: 5)"
-    )
-    loop_condition: str = Field(
-        ...,
-        description="반복 조건 (예: 'output contains \"완료\"')"
-    )
-    loop_condition_type: str = Field(
-        default="contains",
-        description="조건 타입 (contains, regex, custom)"
+    max_iterations: Optional[int] = Field(
+        default=None,
+        description="최대 반복 횟수 (None이면 반복 안함, 피드백 루프에서 무한 반복 방지)"
     )
     parallel_execution: Optional[bool] = Field(
         default=False,
@@ -166,7 +142,6 @@ WorkflowNodeData = Union[
     WorkerNodeData,
     InputNodeData,
     ConditionNodeData,
-    LoopNodeData,
     MergeNodeData
 ]
 
@@ -177,14 +152,14 @@ class WorkflowNode(BaseModel):
 
     Attributes:
         id: 노드 고유 ID
-        type: 노드 타입 (worker, input, condition, loop, merge)
+        type: 노드 타입 (worker, input, condition, merge)
         position: 캔버스 상의 위치 {x, y}
-        data: 노드 데이터 (WorkerNodeData, InputNodeData, ConditionNodeData, LoopNodeData, MergeNodeData)
+        data: 노드 데이터 (WorkerNodeData, InputNodeData, ConditionNodeData, MergeNodeData)
     """
     id: str = Field(..., description="노드 고유 ID")
     type: str = Field(
         default="worker",
-        description="노드 타입 (worker, input, condition, loop, merge)"
+        description="노드 타입 (worker, input, condition, merge)"
     )
     position: Dict[str, float] = Field(
         ...,
@@ -195,7 +170,6 @@ class WorkflowNode(BaseModel):
         WorkerNodeData,
         InputNodeData,
         ConditionNodeData,
-        LoopNodeData,
         MergeNodeData,
         Dict[str, Any]
     ] = Field(

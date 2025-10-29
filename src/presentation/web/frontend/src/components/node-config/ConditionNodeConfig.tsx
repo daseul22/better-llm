@@ -25,6 +25,7 @@ interface ConditionNodeData {
   condition_value: string
   true_branch_id?: string
   false_branch_id?: string
+  max_iterations?: number | null  // 반복 제한 (null이면 반복 안함)
 }
 
 export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }) => {
@@ -38,6 +39,7 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
     condition_value: node.data.condition_value || '',
     true_branch_id: node.data.true_branch_id,
     false_branch_id: node.data.false_branch_id,
+    max_iterations: node.data.max_iterations ?? null,
   }
 
   // 노드 설정 Hook
@@ -113,36 +115,93 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
             <option value="regex">정규표현식</option>
             <option value="length">길이 비교</option>
             <option value="custom">커스텀 조건</option>
+            <option value="llm">LLM 판단 (Haiku)</option>
           </select>
           <p className="text-xs text-gray-500 mt-1">
             {data.condition_type === 'contains' && '입력 텍스트에 특정 문자열이 포함되어 있는지 확인'}
             {data.condition_type === 'regex' && '정규표현식 패턴 매칭'}
             {data.condition_type === 'length' && '텍스트 길이 비교 (예: >100, <=500)'}
             {data.condition_type === 'custom' && 'Python 표현식 평가 (예: len(output) > 0)'}
+            {data.condition_type === 'llm' && 'LLM(Haiku)이 출력을 분석하여 조건 만족 여부 판단'}
           </p>
         </div>
 
         {/* 조건 값 입력 */}
         <div>
           <label className="block text-sm font-medium mb-2">
-            조건 값 <span className="text-red-500">*</span>
+            {data.condition_type === 'llm' ? 'LLM 판단 프롬프트' : '조건 값'} <span className="text-red-500">*</span>
           </label>
-          <input
-            type="text"
-            value={data.condition_value}
-            onChange={(e) => setData({ ...data, condition_value: e.target.value })}
-            onKeyDown={handleInputKeyDown}
-            placeholder={
-              data.condition_type === 'contains' ? '예: success' :
-              data.condition_type === 'regex' ? '예: \\d{3}' :
-              data.condition_type === 'length' ? '예: >20' :
-              '예: len(output) > 0'
-            }
-            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-sm"
-          />
+          {data.condition_type === 'llm' ? (
+            <textarea
+              value={data.condition_value}
+              onChange={(e) => setData({ ...data, condition_value: e.target.value })}
+              onKeyDown={handleInputKeyDown}
+              placeholder="예: 테스트가 모두 통과했는지 확인"
+              rows={3}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm resize-none"
+            />
+          ) : (
+            <input
+              type="text"
+              value={data.condition_value}
+              onChange={(e) => setData({ ...data, condition_value: e.target.value })}
+              onKeyDown={handleInputKeyDown}
+              placeholder={
+                data.condition_type === 'contains' ? '예: success' :
+                data.condition_type === 'regex' ? '예: \\d{3}' :
+                data.condition_type === 'length' ? '예: >20' :
+                '예: len(output) > 0'
+              }
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-sm"
+            />
+          )}
           {data.condition_type === 'length' && (
             <p className="text-xs text-gray-500 mt-1">
               연산자 사용 가능: &gt;, &lt;, &gt;=, &lt;=, ==
+            </p>
+          )}
+          {data.condition_type === 'llm' && (
+            <p className="text-xs text-gray-500 mt-1">
+              LLM이 이전 노드의 출력을 분석하여 YES/NO로 판단합니다
+            </p>
+          )}
+        </div>
+
+        {/* 반복 제한 설정 */}
+        <div className="border-t pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium">
+              반복 제한 (피드백 루프 방지)
+            </label>
+            <input
+              type="checkbox"
+              checked={data.max_iterations !== null}
+              onChange={(e) => {
+                setData({ ...data, max_iterations: e.target.checked ? 3 : null })
+              }}
+              className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+            />
+          </div>
+          {data.max_iterations !== null && (
+            <div>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={data.max_iterations || 3}
+                onChange={(e) => setData({ ...data, max_iterations: parseInt(e.target.value) || 3 })}
+                onKeyDown={handleInputKeyDown}
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                이 Condition 노드가 순환 경로에 있을 때 최대 {data.max_iterations}회까지 반복합니다.
+                반복 횟수 초과 시 자동으로 true 경로로 이동합니다.
+              </p>
+            </div>
+          )}
+          {data.max_iterations === null && (
+            <p className="text-xs text-gray-500">
+              체크박스를 활성화하면 피드백 루프에서 최대 반복 횟수를 제한할 수 있습니다.
             </p>
           )}
         </div>
