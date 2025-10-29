@@ -369,16 +369,18 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
   const extractWorkflowFromOutput = (output: string) => {
     console.log('📥 extractWorkflowFromOutput 호출됨')
     console.log('📊 출력 길이:', output.length)
+    console.log('📄 출력 미리보기 (앞 500자):', output.substring(0, 500))
 
     let jsonText = ''
 
     try {
-      // "workflow" 필드를 찾고 그 근처의 { 부터 시작
+      // 방법 1: "workflow" 필드를 찾고 그 근처의 { 부터 시작
       const workflowIdx = output.indexOf('"workflow"')
       if (workflowIdx !== -1) {
-        // workflow 앞의 { 찾기
+        console.log('🔍 "workflow" 필드 발견 (위치):', workflowIdx)
+        // workflow 앞의 { 찾기 (최대 1000자 뒤로)
         let startIdx = -1
-        for (let i = workflowIdx; i >= Math.max(0, workflowIdx - 500); i--) {
+        for (let i = workflowIdx; i >= Math.max(0, workflowIdx - 1000); i--) {
           if (output[i] === '{') {
             startIdx = i
             break
@@ -426,25 +428,86 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
           if (endIdx !== -1) {
             jsonText = output.substring(startIdx, endIdx)
             console.log('✅ Balanced matching 성공 (길이):', jsonText.length)
+          } else {
+            console.warn('⚠️ Balanced matching 실패: JSON 끝을 찾지 못함')
+          }
+        } else {
+          console.warn('⚠️ "workflow" 앞의 { 를 찾지 못함')
+        }
+      } else {
+        console.warn('⚠️ "workflow" 필드를 찾지 못함')
+      }
+
+      // 방법 2: ```json ... ``` 블록에서 추출
+      if (!jsonText) {
+        console.log('🔄 방법 2: ```json ... ``` 블록 추출 시도')
+        const jsonBlockRegex = /```json\s*\n([\s\S]+?)```/g
+        let match
+        const matches = []
+        while ((match = jsonBlockRegex.exec(output)) !== null) {
+          matches.push(match[1].trim())
+        }
+
+        if (matches.length > 0) {
+          // 가장 긴 JSON 블록 선택 (가장 완전한 JSON일 가능성)
+          jsonText = matches.reduce((a, b) => (a.length > b.length ? a : b))
+          console.log(`✅ JSON 블록 추출 성공 (${matches.length}개 중 가장 긴 블록, 길이: ${jsonText.length})`)
+        }
+      }
+
+      // 방법 3: { ... } 형태의 JSON 직접 추출
+      if (!jsonText) {
+        console.log('🔄 방법 3: { ... } 형태 JSON 직접 추출 시도')
+        const firstBrace = output.indexOf('{')
+        if (firstBrace !== -1) {
+          let depth = 0
+          let endIdx = -1
+          let inString = false
+          let escapeNext = false
+
+          for (let i = firstBrace; i < output.length; i++) {
+            const char = output[i]
+
+            if (escapeNext) {
+              escapeNext = false
+              continue
+            }
+
+            if (char === '\\') {
+              escapeNext = true
+              continue
+            }
+
+            if (char === '"') {
+              inString = !inString
+              continue
+            }
+
+            if (!inString) {
+              if (char === '{') depth++
+              if (char === '}') {
+                depth--
+                if (depth === 0) {
+                  endIdx = i + 1
+                  break
+                }
+              }
+            }
+          }
+
+          if (endIdx !== -1) {
+            jsonText = output.substring(firstBrace, endIdx)
+            console.log('✅ 직접 추출 성공 (길이):', jsonText.length)
           }
         }
       }
 
-      // 폴백: ```json ... ``` 블록에서 추출
       if (!jsonText) {
-        console.log('🔄 Balanced matching 실패, JSON 블록 추출 시도')
-        const jsonBlockRegex = /```json\s*\n([\s\S]+?)```/
-        const match = output.match(jsonBlockRegex)
-
-        if (match && match[1]) {
-          jsonText = match[1].trim()
-          console.log('✅ JSON 블록 추출 성공 (길이):', jsonText.length)
-        }
-      }
-
-      if (!jsonText) {
+        console.error('❌ 모든 추출 방법 실패')
         throw new Error('워크플로우 JSON을 찾을 수 없습니다')
       }
+
+      console.log('📝 추출된 JSON 미리보기 (앞 500자):', jsonText.substring(0, 500))
 
       // JSON 파싱
       const parsed = JSON.parse(jsonText)
