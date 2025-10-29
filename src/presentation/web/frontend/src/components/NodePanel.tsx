@@ -34,15 +34,43 @@ export const NodePanel: React.FC = () => {
 
   // 새로고침 시 진행 중인 세션 확인
   useEffect(() => {
-    const session = localStorage.getItem('custom_worker_session')
-    if (session) {
-      const parsedSession = JSON.parse(session)
+    // 커스텀 워커 세션 확인
+    const workerSession = localStorage.getItem('custom_worker_session')
+    if (workerSession) {
+      const parsedSession = JSON.parse(workerSession)
       if (parsedSession.status === 'generating') {
         console.log('🔄 NodePanel: 진행 중인 워커 생성 세션 발견')
         setIsWorkerGenerating(true)
         setIsCustomWorkerModalOpen(true)  // 자동으로 모달 열기
       }
     }
+
+    // 워크플로우 설계 세션 확인
+    const designSession = localStorage.getItem('workflow_design_session')
+    if (designSession) {
+      const parsedSession = JSON.parse(designSession)
+      if (parsedSession.status === 'generating') {
+        console.log('🔄 NodePanel: 진행 중인 워크플로우 설계 세션 발견')
+        setIsWorkflowDesigning(true)
+        setIsWorkflowDesignerModalOpen(true)  // 자동으로 모달 열기
+      }
+    }
+  }, [])
+
+  // 주기적으로 localStorage 체크 (백그라운드 실행 중 세션 상태 동기화)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // 워크플로우 설계 세션 상태 체크
+      const designSession = localStorage.getItem('workflow_design_session')
+      if (designSession) {
+        const parsedSession = JSON.parse(designSession)
+        setIsWorkflowDesigning(parsedSession.status === 'generating')
+      } else {
+        setIsWorkflowDesigning(false)
+      }
+    }, 1000) // 1초마다 체크
+
+    return () => clearInterval(interval)
   }, [])
 
   // 섹션 토글 함수

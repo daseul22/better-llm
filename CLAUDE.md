@@ -405,6 +405,39 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
+### feat: Workflow Designer 백그라운드 실행 및 세션 복구 (완료)
+- **날짜**: 2025-10-29 16:30 (Asia/Seoul)
+- **목적**: 워크플로우 설계 중 백그라운드 전환 및 새로고침 시 세션 복구 지원
+- **변경사항**:
+  - **NodePanel.tsx**:
+    - 워크플로우 설계 세션 감지 로직 추가 (36-58줄)
+      * localStorage에서 `workflow_design_session` 확인
+      * 진행 중인 세션 발견 시 `isWorkflowDesigning` 상태 업데이트
+      * 자동으로 모달 열기 (setIsWorkflowDesignerModalOpen(true))
+    - 주기적 세션 상태 동기화 (60-74줄)
+      * 1초마다 localStorage 체크하여 버튼 상태 업데이트
+      * 백그라운드 실행 중에도 "워크플로우 설계 중..." 표시 유지
+    - 버튼 클릭 시 동작
+      * 진행 중일 때 클릭 → 모달 열어서 진행 상황 확인
+      * 미진행 시 클릭 → 새로운 설계 시작
+  - **WorkflowDesignerModal.tsx** (기존 구현 확인):
+    - localStorage 세션 관리 (STORAGE_KEY: 'workflow_design_session')
+    - 모달 열릴 때 세션 자동 복구 (176-240줄)
+    - 완료/중단/에러 시 세션 정리 (clearSession)
+    - "백그라운드 실행" 버튼: 모달만 닫고 세션 유지
+    - "중단" 버튼: 세션 정리 및 초기화
+- **사용 시나리오**:
+  1. 워크플로우 설계 시작 → "백그라운드 실행" 클릭
+  2. 버튼이 "워크플로우 설계 중..."으로 변경됨
+  3. 버튼 클릭 → 모달 다시 열림, 진행 중인 출력 확인
+  4. 새로고침 → localStorage에서 세션 복구, 모달 자동 열림
+  5. 완료 또는 중단 → 세션 자동 정리
+- **파일**: `NodePanel.tsx` (40줄 추가), `WorkflowDesignerModal.tsx` (기존 구현 확인)
+- **영향범위**: UX 개선, 세션 영속성, 백그라운드 실행
+- **패턴**: CustomWorkerCreateModal과 동일한 세션 관리 패턴 적용
+- **테스트**: TypeScript 컴파일 및 빌드 통과
+- **후속 조치**: 실제 브라우저에서 백그라운드 실행 및 새로고침 테스트
+
 ### refactor: Workflow Designer 고급 노드 활용 및 미리보기 개선 (완료)
 - **날짜**: 2025-10-29 16:00 (Asia/Seoul)
 - **목적**:
