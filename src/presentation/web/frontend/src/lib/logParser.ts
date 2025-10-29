@@ -82,8 +82,6 @@ function parseUserMessageRepr(message: string): ParsedLogMessage | null {
     const toolUseIdMatch = message.match(/tool_use_id='([^']+)'/)
     if (!toolUseIdMatch) return null
 
-    const toolUseId = toolUseIdMatch[1]
-
     // content=' 위치 찾기
     const contentStartIndex = message.indexOf("content='")
     if (contentStartIndex === -1) return null

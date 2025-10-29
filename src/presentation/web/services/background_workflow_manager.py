@@ -379,30 +379,51 @@ class BackgroundWorkflowManager:
         return removed_count
 
 
-# 싱글톤 인스턴스
-_manager: Optional[BackgroundWorkflowManager] = None
+# 프로젝트별 인스턴스 캐시 (프로젝트 경로 → BackgroundWorkflowManager)
+_managers: Dict[str, BackgroundWorkflowManager] = {}
 
 
 def get_background_workflow_manager(
     executor: Optional[WorkflowExecutor] = None,
+    project_path: Optional[str] = None,
 ) -> BackgroundWorkflowManager:
     """
-    BackgroundWorkflowManager 싱글톤 인스턴스 반환
+    BackgroundWorkflowManager 인스턴스 반환 (프로젝트별 캐싱)
+
+    프로젝트 경로별로 별도의 BackgroundWorkflowManager 인스턴스를 유지합니다.
+    이를 통해 프로젝트 전환 시에도 각 프로젝트의 커스텀 워커를 올바르게 로드할 수 있습니다.
 
     Args:
         executor: WorkflowExecutor 인스턴스 (첫 호출 시 필수)
+        project_path: 프로젝트 경로 (None이면 기본 인스턴스)
 
     Returns:
-        BackgroundWorkflowManager: 싱글톤 인스턴스
+        BackgroundWorkflowManager: 프로젝트별 인스턴스
 
     Raises:
         ValueError: 첫 호출 시 executor가 None인 경우
     """
-    global _manager
-    if _manager is None:
+    global _managers
+
+    # 캐시 키 생성
+    cache_key = project_path or "~default"
+
+    # 캐시에서 인스턴스 확인
+    if cache_key not in _managers:
         if executor is None:
             raise ValueError(
                 "첫 호출 시 executor를 제공해야 합니다"
             )
-        _manager = BackgroundWorkflowManager(executor)
-    return _manager
+        logger.info(f"새 BackgroundWorkflowManager 생성 (프로젝트: {cache_key})")
+        _managers[cache_key] = BackgroundWorkflowManager(executor)
+    else:
+        # 기존 인스턴스가 있지만 executor가 다르면 업데이트
+        if executor is not None:
+            existing_manager = _managers[cache_key]
+            if existing_manager.executor != executor:
+                logger.info(
+                    f"BackgroundWorkflowManager executor 업데이트 (프로젝트: {cache_key})"
+                )
+                existing_manager.executor = executor
+
+    return _managers[cache_key]

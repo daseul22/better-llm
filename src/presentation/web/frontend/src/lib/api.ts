@@ -1,5 +1,5 @@
 /**
- * Better-LLM API 클라이언트
+ * Claude Flow API 클라이언트
  *
  * 백엔드 API와 통신하는 함수들을 제공합니다.
  */
@@ -39,6 +39,22 @@ export type WorkflowNodeData =
   | {
       // Input 노드
       initial_input: string
+    }
+  | {
+      // Condition 노드
+      condition_type: string
+      condition_value: string
+    }
+  | {
+      // Loop 노드
+      max_iterations: number
+      loop_condition: string
+      loop_condition_type: string
+    }
+  | {
+      // Merge 노드
+      merge_strategy: string
+      separator: string
     }
 
 /**

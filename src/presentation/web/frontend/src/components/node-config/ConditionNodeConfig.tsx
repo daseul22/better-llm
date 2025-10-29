@@ -4,8 +4,8 @@
  * 조건 분기 노드의 설정을 관리합니다.
  */
 
-import React, { useState } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import React from 'react'
+import { CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { GitBranch, Save, RotateCcw } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'

@@ -5,7 +5,7 @@
  * 사용자와 상호작용하며 최종 저장까지 수행합니다.
  */
 
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { generateCustomWorker, saveCustomWorker, getTools, Tool, getCurrentProject } from '@/lib/api'
 import { Loader2, Send, Save, X, Sparkles, ArrowDown, ChevronDown, ChevronRight, Brain } from 'lucide-react'
-import { parseLogMessage, ParsedLogMessage } from '@/lib/logParser'
+import { parseLogMessage } from '@/lib/logParser'
 
 interface CustomWorkerCreateModalProps {
   isOpen: boolean
@@ -26,7 +26,7 @@ interface CustomWorkerCreateModalProps {
 /**
  * 단일 출력 청크 렌더링 컴포넌트 (InputNodeConfig의 LogItem 방식)
  */
-const OutputChunkItem: React.FC<{ chunk: string; index: number }> = ({ chunk, index }) => {
+const OutputChunkItem: React.FC<{ chunk: string; index: number }> = ({ chunk }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const parsed = parseLogMessage(chunk)
 

@@ -60,14 +60,22 @@ class WorkflowExecutor:
         self.agent_configs = config_loader.load_agent_configs()
 
         # 커스텀 워커 로드 (프로젝트 경로가 주어진 경우)
+        self.custom_worker_names = set()
         if project_path:
             try:
                 custom_repo = CustomWorkerRepository(Path(project_path))
                 custom_workers = custom_repo.load_custom_workers()
                 self.agent_configs.extend(custom_workers)
-                logger.info(f"커스텀 워커 로드 완료: {len(custom_workers)}개")
+                self.custom_worker_names = {w.name for w in custom_workers}
+                logger.info(
+                    f"커스텀 워커 로드 완료: {len(custom_workers)}개 "
+                    f"(프로젝트: {project_path})"
+                )
             except Exception as e:
-                logger.warning(f"커스텀 워커 로드 실패: {e}")
+                logger.warning(
+                    f"커스텀 워커 로드 실패 (프로젝트: {project_path}): {e}",
+                    exc_info=True
+                )
 
         self.agent_config_map = {
             config.name: config for config in self.agent_configs
@@ -88,7 +96,27 @@ class WorkflowExecutor:
         """
         config = self.agent_config_map.get(agent_name)
         if not config:
-            raise ValueError(f"Agent '{agent_name}'를 찾을 수 없습니다")
+            # 더 명확한 에러 메시지 제공
+            available_agents = list(self.agent_config_map.keys())
+            error_msg = (
+                f"Agent '{agent_name}'를 찾을 수 없습니다.\n"
+                f"사용 가능한 Agent: {', '.join(available_agents)}"
+            )
+
+            # 커스텀 워커인 경우 추가 안내
+            if agent_name not in self.custom_worker_names:
+                error_msg += (
+                    f"\n\n힌트: 기본 제공 Worker가 아닙니다. "
+                    f"커스텀 워커인 경우 프로젝트 경로를 확인하세요."
+                )
+            else:
+                error_msg += (
+                    f"\n\n힌트: 커스텀 워커 '{agent_name}'가 로드되지 않았습니다. "
+                    f"프로젝트 경로: {self.project_path}"
+                )
+
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         return config
 
     def _topological_sort(

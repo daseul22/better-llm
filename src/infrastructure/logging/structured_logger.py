@@ -207,7 +207,7 @@ def add_session_file_handlers(
     """
     # 로그 디렉토리 설정
     if project_path:
-        base_log_dir = Path(project_path) / ".better-llm" / "logs"
+        base_log_dir = Path(project_path) / ".claude-flow" / "logs"
     else:
         base_log_dir = Path(_get_default_log_dir())
 

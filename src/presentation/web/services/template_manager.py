@@ -38,7 +38,7 @@ class TemplateManager:
 
         Args:
             builtin_templates_dir: 내장 템플릿 디렉토리 (기본: 프로젝트 루트/templates)
-            user_templates_dir: 사용자 템플릿 디렉토리 (기본: ~/.better-llm/templates)
+            user_templates_dir: 사용자 템플릿 디렉토리 (기본: ~/.claude-flow/templates)
         """
         # 내장 템플릿 디렉토리 (프로젝트 루트/templates)
         if builtin_templates_dir is None:
@@ -47,7 +47,7 @@ class TemplateManager:
         else:
             self.builtin_templates_dir = builtin_templates_dir
 
-        # 사용자 템플릿 디렉토리 (~/.better-llm/templates)
+        # 사용자 템플릿 디렉토리 (~/.claude-flow/templates)
         if user_templates_dir is None:
             self.user_templates_dir = Path.home() / ".claude-flow" / "templates"
         else:

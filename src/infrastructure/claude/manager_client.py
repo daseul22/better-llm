@@ -98,14 +98,14 @@ Worker Tool 실행 시 **전체 출력은 artifact 파일로 저장**되고, **�
 
 **Artifact 형식**:
 - 각 Worker 출력 말미: [전체 로그: artifact `{worker_name}_{timestamp}`]
-- 저장 위치: ~/.better-llm/{project}/artifacts/{artifact_id}.txt
+- 저장 위치: ~/.claude-flow/{project}/artifacts/{artifact_id}.txt
 
 **Artifact 활용 방법**:
 1. **일반적인 경우**: 요약만으로 충분합니다. 다음 Worker에게 요약을 전달하세요.
 2. **상세 정보 필요 시**: Worker에게 artifact 파일 읽기를 지시하세요.
    ```
    execute_coder_task({
-     "task_description": "다음 계획에 따라 코드를 작성하세요:\n\n[Planner 요약]\n\n상세 계획은 ~/.better-llm/my-project/artifacts/planner_20250121_143025.txt 파일을 read 도구로 읽어보세요."
+     "task_description": "다음 계획에 따라 코드를 작성하세요:\n\n[Planner 요약]\n\n상세 계획은 ~/.claude-flow/my-project/artifacts/planner_20250121_143025.txt 파일을 read 도구로 읽어보세요."
    })
    ```
 

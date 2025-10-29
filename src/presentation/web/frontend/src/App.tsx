@@ -354,12 +354,6 @@ function App() {
 
     const timer = setTimeout(() => {
       const workflow = getCurrentWorkflow()
-      console.log('💾 워크플로우 자동 저장 중...', {
-        nodes: workflow.nodes.length,
-        edges: workflow.edges.length,
-        name: workflow.name,
-        projectPath: currentProjectPath,
-      })
 
       saveProjectWorkflow(workflow)
         .then(() => {
@@ -507,7 +501,7 @@ function App() {
         <header className="border-b bg-white px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold text-primary">Better-LLM</h1>
+              <h1 className="text-2xl font-bold text-primary">Claude Flow</h1>
               <input
                 type="text"
                 value={workflowName}

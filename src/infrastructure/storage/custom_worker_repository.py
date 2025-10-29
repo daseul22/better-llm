@@ -132,7 +132,7 @@ class CustomWorkerRepository:
         worker_config = {
             "name": worker_name,
             "role": role,
-            "system_prompt_file": f".better-llm/worker/{worker_name}.txt",
+            "system_prompt_file": f".claude-flow/worker/{worker_name}.txt",
             "allowed_tools": allowed_tools,
             "model": model,
             "thinking": thinking

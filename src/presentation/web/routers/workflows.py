@@ -80,7 +80,7 @@ def get_background_manager(
     executor: WorkflowExecutor = Depends(get_workflow_executor)
 ) -> BackgroundWorkflowManager:
     """
-    BackgroundWorkflowManager 싱글톤 인스턴스 반환 (FastAPI Depends)
+    BackgroundWorkflowManager 인스턴스 반환 (프로젝트별 캐싱)
 
     Args:
         executor: WorkflowExecutor 의존성 주입
@@ -88,7 +88,9 @@ def get_background_manager(
     Returns:
         BackgroundWorkflowManager: 백그라운드 워크플로우 관리자
     """
-    return get_background_workflow_manager(executor)
+    # projects 라우터에서 현재 프로젝트 경로 가져오기
+    from src.presentation.web.routers.projects import _current_project_path
+    return get_background_workflow_manager(executor, project_path=_current_project_path)
 
 
 @router.post("/execute")
