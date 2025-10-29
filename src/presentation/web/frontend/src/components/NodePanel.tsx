@@ -195,7 +195,7 @@ export const NodePanel: React.FC = () => {
       type: 'input',
       position: { x, y },
       data: {
-        initial_input: '초기 입력을 입력하세요',
+        initial_input: '',
       },
     }
 
@@ -334,7 +334,7 @@ export const NodePanel: React.FC = () => {
                 className="w-full justify-start text-left border-emerald-300 hover:bg-emerald-50 bg-white cursor-grab active:cursor-grabbing"
                 onClick={handleAddInput}
                 draggable
-                onDragStart={(e) => onDragStart(e, 'input', { initial_input: '초기 입력을 입력하세요' })}
+                onDragStart={(e) => onDragStart(e, 'input', { initial_input: '' })}
               >
                 <Zap className="mr-2 h-4 w-4 text-emerald-600" />
                 <div className="flex flex-col items-start">
@@ -497,7 +497,7 @@ export const NodePanel: React.FC = () => {
                     <Plus className="mr-2 h-4 w-4" />
                     <div className="flex flex-col items-start flex-1">
                       <span className="font-medium">{agent.name}</span>
-                      <span className="text-xs text-muted-foreground line-clamp-1">
+                      <span className="text-xs text-muted-foreground line-clamp-2">
                         {agent.role}
                       </span>
                     </div>
@@ -546,7 +546,7 @@ export const NodePanel: React.FC = () => {
                     <Target className="mr-2 h-4 w-4 text-orange-600" />
                     <div className="flex flex-col items-start flex-1">
                       <span className="font-medium">{agent.name}</span>
-                      <span className="text-xs text-muted-foreground line-clamp-1">
+                      <span className="text-xs text-muted-foreground line-clamp-2">
                         {agent.role}
                       </span>
                     </div>
@@ -639,7 +639,7 @@ export const NodePanel: React.FC = () => {
                       <Wand2 className="mr-2 h-4 w-4 text-indigo-600" />
                       <div className="flex flex-col items-start flex-1">
                         <span className="font-medium">{worker.name}</span>
-                        <span className="text-xs text-muted-foreground line-clamp-1">
+                        <span className="text-xs text-muted-foreground line-clamp-2">
                           {worker.role}
                         </span>
                       </div>

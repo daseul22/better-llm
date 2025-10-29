@@ -4,13 +4,17 @@
  * 병합 노드의 설정을 관리합니다.
  */
 
-import React from 'react'
-import { CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import React, { useState } from 'react'
+import { CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Merge, Save, RotateCcw } from 'lucide-react'
+import { Merge, Save, RotateCcw, FileText } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
+import { useWorkflowStore } from '@/stores/workflowStore'
+import { ParsedContent } from '@/components/ParsedContent'
+import { AutoScrollContainer } from '@/components/AutoScrollContainer'
 
 interface MergeNodeConfigProps {
   node: WorkflowNode
@@ -23,6 +27,10 @@ interface MergeNodeData {
 }
 
 export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
+  const [activeTab, setActiveTab] = useState('basic')
+  const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
+  const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
+
   // 초기 데이터 설정
   const initialData: MergeNodeData = {
     merge_strategy: node.data.merge_strategy || 'concatenate',
@@ -70,7 +78,19 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+        <TabsList className="flex w-auto mx-4 mt-4 gap-1">
+          <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
+            기본
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
+            <FileText className="h-3 w-3 mr-1" />
+            로그
+          </TabsTrigger>
+        </TabsList>
+
+        {/* 기본 설정 탭 */}
+        <TabsContent value="basic" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
         {/* 병합 전략 선택 */}
         <div>
           <label className="block text-sm font-medium mb-2">
@@ -184,7 +204,68 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
             <li>• <strong>반복 결과 수집:</strong> Loop 노드의 각 반복 결과를 모으기</li>
           </ul>
         </div>
-      </CardContent>
+        </TabsContent>
+
+        {/* 로그 탭 */}
+        <TabsContent value="logs" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+          <div className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              이 노드의 입력과 출력을 확인할 수 있습니다 (디버깅용)
+            </div>
+
+            {/* 노드 입력 */}
+            <div className="border rounded-md overflow-hidden">
+              <div className="bg-blue-50 px-3 py-2 border-b">
+                <div className="text-sm font-medium text-blue-900">노드 입력</div>
+                <div className="text-xs text-blue-700">이 노드가 받은 입력 데이터 (모든 부모 노드 출력)</div>
+              </div>
+              <div className="p-3">
+                <AutoScrollContainer maxHeight="400px" dependency={nodeInputs[node.id]}>
+                  <ParsedContent content={nodeInputs[node.id] || ''} />
+                </AutoScrollContainer>
+              </div>
+            </div>
+
+            {/* 노드 출력 */}
+            <div className="border rounded-md overflow-hidden">
+              <div className="bg-green-50 px-3 py-2 border-b">
+                <div className="text-sm font-medium text-green-900">노드 출력</div>
+                <div className="text-xs text-green-700">병합된 결과 (전략에 따라 처리됨)</div>
+              </div>
+              <div className="p-3">
+                <AutoScrollContainer maxHeight="400px" dependency={nodeOutputs[node.id]}>
+                  <ParsedContent content={nodeOutputs[node.id] || ''} />
+                </AutoScrollContainer>
+              </div>
+            </div>
+
+            {/* 통계 정보 */}
+            <div className="border rounded-md p-3 bg-purple-50 border-purple-200">
+              <div className="text-sm font-medium mb-2 text-purple-900">통계</div>
+              <div className="space-y-1 text-xs text-purple-800">
+                <div>
+                  <span className="font-medium">입력 길이:</span>{' '}
+                  {nodeInputs[node.id] ? `${nodeInputs[node.id].length.toLocaleString()}자` : '0자'}
+                </div>
+                <div>
+                  <span className="font-medium">출력 길이:</span>{' '}
+                  {nodeOutputs[node.id] ? `${nodeOutputs[node.id].length.toLocaleString()}자` : '0자'}
+                </div>
+                <div>
+                  <span className="font-medium">상태:</span>{' '}
+                  {nodeOutputs[node.id] ? (
+                    <span className="text-green-600 font-medium">✓ 완료</span>
+                  ) : nodeInputs[node.id] ? (
+                    <span className="text-yellow-600 font-medium">⏳ 진행중</span>
+                  ) : (
+                    <span className="text-gray-500">⏸ 대기중</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {/* 저장 버튼 */}
       <div className="border-t p-4 flex items-center justify-between">

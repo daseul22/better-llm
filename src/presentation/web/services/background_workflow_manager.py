@@ -82,6 +82,7 @@ class BackgroundWorkflowManager:
         workflow: Workflow,
         initial_input: str,
         project_path: Optional[str] = None,
+        start_node_id: Optional[str] = None,
     ) -> None:
         """
         워크플로우를 백그라운드 Task로 시작
@@ -91,6 +92,7 @@ class BackgroundWorkflowManager:
             workflow: 실행할 워크플로우
             initial_input: 초기 입력
             project_path: 프로젝트 디렉토리 경로 (세션별 로그 저장용)
+            start_node_id: 시작 노드 ID (옵션, 지정 시 해당 Input 노드에서만 시작)
 
         Raises:
             ValueError: 이미 실행 중인 세션인 경우
@@ -107,9 +109,9 @@ class BackgroundWorkflowManager:
             f"[{session_id}] 백그라운드 워크플로우 시작: {workflow.name}"
         )
 
-        # 백그라운드 Task 생성 (project_path 전달)
+        # 백그라운드 Task 생성 (project_path, start_node_id 전달)
         task = asyncio.create_task(
-            self._run_workflow(session_id, workflow, initial_input, project_path)
+            self._run_workflow(session_id, workflow, initial_input, project_path, start_node_id)
         )
 
         # Task 등록
@@ -124,6 +126,7 @@ class BackgroundWorkflowManager:
         workflow: Workflow,
         initial_input: str,
         project_path: Optional[str] = None,
+        start_node_id: Optional[str] = None,
     ) -> None:
         """
         워크플로우 실행 (백그라운드 Task 내부)
@@ -133,6 +136,7 @@ class BackgroundWorkflowManager:
             workflow: 실행할 워크플로우
             initial_input: 초기 입력
             project_path: 프로젝트 디렉토리 경로 (세션별 로그 저장용)
+            start_node_id: 시작 노드 ID (옵션, 지정 시 해당 Input 노드에서만 시작)
         """
         bg_task = self.tasks[session_id]
 
@@ -141,12 +145,13 @@ class BackgroundWorkflowManager:
                 f"[{session_id}] 워크플로우 실행 시작 (백그라운드)"
             )
 
-            # WorkflowExecutor 실행 (project_path 전달)
+            # WorkflowExecutor 실행 (project_path, start_node_id 전달)
             async for event in self.executor.execute_workflow(
                 workflow=workflow,
                 initial_input=initial_input,
                 session_id=session_id,
                 project_path=project_path,
+                start_node_id=start_node_id,
             ):
                 # 이벤트를 큐에 저장
                 bg_task.event_queue.append(event)

@@ -147,6 +147,7 @@ export async function getAgents(): Promise<Agent[]> {
  * @param signal AbortSignal (연결 중단용)
  * @param sessionId 세션 ID (재접속 시 사용, optional)
  * @param lastEventIndex 마지막 수신 이벤트 인덱스 (재접속 시 중복 방지, optional)
+ * @param startNodeId 시작 노드 ID (Input 노드 선택, optional)
  * @returns 세션 ID (X-Session-ID 헤더에서 추출)
  */
 export async function executeWorkflow(
@@ -157,7 +158,8 @@ export async function executeWorkflow(
   onError: (error: string) => void,
   signal?: AbortSignal,
   sessionId?: string,
-  lastEventIndex?: number
+  lastEventIndex?: number,
+  startNodeId?: string
 ): Promise<string | null> {
   const requestBody: any = {
     workflow,
@@ -170,6 +172,10 @@ export async function executeWorkflow(
   }
   if (lastEventIndex !== undefined) {
     requestBody.last_event_index = lastEventIndex
+  }
+  // 시작 노드 ID 전달 (Input 노드 선택)
+  if (startNodeId) {
+    requestBody.start_node_id = startNodeId
   }
 
   console.log('[executeWorkflow] 요청:', {

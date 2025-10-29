@@ -85,6 +85,7 @@ interface WorkflowStore {
   startExecution: () => void
   stopExecution: () => void
   setCurrentNode: (nodeId: string | null) => void
+  setNodeInput: (nodeId: string, input: string) => void
   addNodeOutput: (nodeId: string, output: string) => void
   addLog: (nodeId: string, type: WorkflowExecutionState['logs'][0]['type'], message: string) => void
   clearExecution: () => void
@@ -297,6 +298,17 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         nodeOutputs: {
           ...state.execution.nodeOutputs,
           [nodeId]: (state.execution.nodeOutputs[nodeId] || '') + output,
+        },
+      },
+    })),
+
+  setNodeInput: (nodeId, input) =>
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        nodeInputs: {
+          ...state.execution.nodeInputs,
+          [nodeId]: input,
         },
       },
     })),

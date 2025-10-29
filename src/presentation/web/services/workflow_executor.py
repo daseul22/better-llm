@@ -120,7 +120,7 @@ class WorkflowExecutor:
         return config
 
     def _topological_sort(
-        self, nodes: List[WorkflowNode], edges: List[WorkflowEdge]
+        self, nodes: List[WorkflowNode], edges: List[WorkflowEdge], start_node_id: Optional[str] = None
     ) -> List[WorkflowNode]:
         """
         워크플로우 노드 위상 정렬 (Topological Sort)
@@ -128,6 +128,7 @@ class WorkflowExecutor:
         Args:
             nodes: 노드 목록
             edges: 엣지 목록
+            start_node_id: 시작 노드 ID (옵션, 지정 시 해당 Input 노드만 시작점으로 사용)
 
         Returns:
             List[WorkflowNode]: 실행 순서대로 정렬된 노드 목록
@@ -158,8 +159,20 @@ class WorkflowExecutor:
         if not input_nodes:
             raise ValueError("워크플로우에 Input 노드가 없습니다. Input 노드에서 시작해야 합니다.")
 
-        # 여러 Input 노드가 있는 경우 모두 시작점으로 사용
-        input_node_ids = [node.id for node in input_nodes]
+        # start_node_id가 지정된 경우 해당 노드만 시작점으로 사용
+        if start_node_id:
+            # 지정된 노드가 Input 노드인지 확인
+            start_node = node_map.get(start_node_id)
+            if not start_node:
+                raise ValueError(f"지정된 시작 노드를 찾을 수 없습니다: {start_node_id}")
+            if start_node.type != "input":
+                raise ValueError(f"시작 노드는 Input 노드여야 합니다: {start_node_id} (타입: {start_node.type})")
+            input_node_ids = [start_node_id]
+            logger.info(f"특정 Input 노드에서 시작: {start_node_id}")
+        else:
+            # start_node_id가 없으면 모든 Input 노드를 시작점으로 사용 (기존 동작)
+            input_node_ids = [node.id for node in input_nodes]
+            logger.info(f"모든 Input 노드에서 시작: {input_node_ids}")
 
         # 인접 리스트 (노드 ID → 자식 노드 ID 목록)
         adjacency: Dict[str, List[str]] = {node.id: [] for node in nodes}
@@ -1353,6 +1366,7 @@ class WorkflowExecutor:
         initial_input: str,
         session_id: str,
         project_path: Optional[str] = None,
+        start_node_id: Optional[str] = None,
     ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
         """
         워크플로우 실행 (스트리밍, 병렬 실행 지원)
@@ -1362,6 +1376,7 @@ class WorkflowExecutor:
             initial_input: 초기 입력 데이터
             session_id: 세션 ID
             project_path: 프로젝트 디렉토리 경로 (세션별 로그 저장용)
+            start_node_id: 시작 노드 ID (옵션, 지정 시 해당 Input 노드에서만 시작)
 
         Yields:
             WorkflowNodeExecutionEvent: 노드 실행 이벤트
@@ -1384,7 +1399,7 @@ class WorkflowExecutor:
 
             # 위상 정렬
             try:
-                sorted_nodes = self._topological_sort(workflow.nodes, workflow.edges)
+                sorted_nodes = self._topological_sort(workflow.nodes, workflow.edges, start_node_id)
             except ValueError as e:
                 logger.error(f"[{session_id}] 워크플로우 정렬 실패: {e}")
                 raise

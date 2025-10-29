@@ -397,9 +397,7 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
     },
     onValidate: (data) => {
       const errors: Record<string, string> = {}
-      if (!data.initial_input.trim()) {
-        errors.initial_input = '초기 입력을 입력하세요'
-      }
+      // 빈 입력도 허용 (빈 문자열 전달 가능)
       return errors
     },
   })
@@ -470,7 +468,7 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
                 value={data.initial_input}
                 onChange={(e) => setData({ ...data, initial_input: e.target.value })}
                 onKeyDown={handleInputKeyDown}
-                placeholder="워크플로우 초기 입력을 입력하세요...&#10;예시:&#10;- 새로운 기능 추가&#10;- 버그 수정&#10;- 코드 리뷰"
+                placeholder="아키텍처 패턴 리뷰 해주세요"
               />
               <p className="text-xs text-muted-foreground">이 입력이 연결된 첫 번째 노드로 전달됩니다.</p>
             </div>

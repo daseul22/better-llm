@@ -160,6 +160,9 @@ function App() {
                         if (timestamp) {
                           store.setNodeStartTime(node_id, new Date(timestamp).getTime())
                         }
+                        if (eventData.input) {
+                          store.setNodeInput(node_id, eventData.input)
+                        }
                         store.addLog(node_id, 'start', `▶️  ${eventData.agent_name || eventData.node_type || 'Unknown'} 실행 시작`)
                         break
 

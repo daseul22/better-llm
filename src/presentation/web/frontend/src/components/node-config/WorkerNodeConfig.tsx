@@ -15,6 +15,8 @@ import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { generateTemplatePreview } from '@/lib/templateRenderer'
+import { ParsedContent } from '@/components/ParsedContent'
+import { AutoScrollContainer } from '@/components/AutoScrollContainer'
 
 interface WorkerNodeConfigProps {
   node: WorkflowNode
@@ -588,15 +590,9 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 <div className="text-xs text-blue-700">이 노드가 받은 입력 데이터</div>
               </div>
               <div className="p-3">
-                {nodeInputs[node.id] ? (
-                  <pre className="text-xs font-mono bg-gray-50 p-3 rounded border overflow-x-auto whitespace-pre-wrap break-words">
-                    {nodeInputs[node.id]}
-                  </pre>
-                ) : (
-                  <div className="text-sm text-muted-foreground text-center py-4">
-                    아직 실행되지 않았습니다
-                  </div>
-                )}
+                <AutoScrollContainer maxHeight="400px" dependency={nodeInputs[node.id]}>
+                  <ParsedContent content={nodeInputs[node.id] || ''} />
+                </AutoScrollContainer>
               </div>
             </div>
 
@@ -607,15 +603,9 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 <div className="text-xs text-green-700">이 노드가 생성한 출력 데이터</div>
               </div>
               <div className="p-3">
-                {nodeOutputs[node.id] ? (
-                  <pre className="text-xs font-mono bg-gray-50 p-3 rounded border overflow-x-auto whitespace-pre-wrap break-words">
-                    {nodeOutputs[node.id]}
-                  </pre>
-                ) : (
-                  <div className="text-sm text-muted-foreground text-center py-4">
-                    아직 실행되지 않았습니다
-                  </div>
-                )}
+                <AutoScrollContainer maxHeight="400px" dependency={nodeOutputs[node.id]}>
+                  <ParsedContent content={nodeOutputs[node.id] || ''} />
+                </AutoScrollContainer>
               </div>
             </div>
 

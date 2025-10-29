@@ -164,13 +164,14 @@ async def execute_workflow(
             project_path=_current_project_path,
         )
 
-        # 백그라운드 워크플로우 시작 (프로젝트 경로 전달)
+        # 백그라운드 워크플로우 시작 (프로젝트 경로, start_node_id 전달)
         try:
             await bg_manager.start_workflow(
                 session_id=session_id,
                 workflow=request.workflow,
                 initial_input=request.initial_input,
                 project_path=_current_project_path,
+                start_node_id=request.start_node_id,
             )
             logger.info(f"[{session_id}] 백그라운드 워크플로우 시작 완료")
         except ValueError as e:
@@ -192,12 +193,13 @@ async def execute_workflow(
             project_path=_current_project_path,
         )
 
-        # 백그라운드 워크플로우 시작 (프로젝트 경로 전달)
+        # 백그라운드 워크플로우 시작 (프로젝트 경로, start_node_id 전달)
         await bg_manager.start_workflow(
             session_id=session_id,
             workflow=request.workflow,
             initial_input=request.initial_input,
             project_path=_current_project_path,
+            start_node_id=request.start_node_id,
         )
         logger.info(f"[{session_id}] 새 워크플로우 시작 완료")
     else:

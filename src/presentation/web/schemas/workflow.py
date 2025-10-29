@@ -296,6 +296,7 @@ class WorkflowExecuteRequest(BaseModel):
     Attributes:
         workflow: 실행할 워크플로우
         initial_input: 초기 입력 데이터
+        start_node_id: 시작 노드 ID (옵션, Input 노드 선택)
         session_id: 세션 ID (옵션)
         last_event_index: 마지막 수신 이벤트 인덱스 (재접속 시 중복 방지용, 옵션)
     """
@@ -303,6 +304,10 @@ class WorkflowExecuteRequest(BaseModel):
     initial_input: str = Field(
         ...,
         description="초기 입력 데이터 (첫 번째 노드에 전달)"
+    )
+    start_node_id: Optional[str] = Field(
+        default=None,
+        description="시작 노드 ID (옵션, 지정 시 해당 Input 노드에서만 시작)"
     )
     session_id: Optional[str] = Field(
         default=None,

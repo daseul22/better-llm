@@ -35,6 +35,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
     stopExecution,
     setCurrentNode,
     addNodeOutput,
+    setNodeInput,
     addLog,
     updateNode,
     setNodeStartTime,
@@ -98,6 +99,9 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
               setCurrentNode(node_id)
               if (timestamp) {
                 setNodeStartTime(node_id, new Date(timestamp).getTime())
+              }
+              if (eventData.input) {
+                setNodeInput(node_id, eventData.input)
               }
               addLog(node_id, 'start', `▶️  ${eventData.agent_name} 실행 시작`)
               break
@@ -165,7 +169,9 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
         // sessionId (재접속용)
         savedSessionId || undefined,
         // lastEventIndex (중복 방지용)
-        lastEventIndex
+        lastEventIndex,
+        // startNodeId (이 Input 노드에서만 시작)
+        id
       )
 
       // 세션 ID를 localStorage에 저장 (새로고침 후 복원용)
@@ -227,7 +233,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
         <CardContent className="py-1.5 px-3 space-y-1">
           {/* 입력 텍스트 미리보기 */}
           <div className="text-[11px] text-muted-foreground bg-white border border-emerald-200 rounded p-1.5 max-h-12 overflow-hidden line-clamp-2">
-            {initial_input?.substring(0, 60) || '초기 입력을 설정하세요...'}
+            {initial_input?.substring(0, 60) || '아키텍처 패턴 리뷰 해주세요'}
             {(initial_input?.length || 0) > 60 && '...'}
           </div>
 
