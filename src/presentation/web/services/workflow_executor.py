@@ -154,6 +154,20 @@ class WorkflowExecutor:
                 continue
             valid_edges.append(edge)
 
+        # Loop 노드에서 나가는 엣지를 백엣지로 식별 (위상 정렬에서 제외)
+        loop_node_ids = {node.id for node in nodes if node.type == "loop"}
+        back_edges = set()
+        for edge in valid_edges:
+            if edge.source in loop_node_ids:
+                back_edges.add((edge.source, edge.target))
+                logger.debug(f"Loop 백엣지 감지: {edge.source} -> {edge.target}")
+
+        # 위상 정렬용 엣지 (백엣지 제외)
+        topo_edges = [
+            edge for edge in valid_edges
+            if (edge.source, edge.target) not in back_edges
+        ]
+
         # Input 노드 찾기 (시작점)
         input_nodes = [node for node in nodes if node.type == "input"]
         if not input_nodes:
@@ -174,15 +188,15 @@ class WorkflowExecutor:
             input_node_ids = [node.id for node in input_nodes]
             logger.info(f"모든 Input 노드에서 시작: {input_node_ids}")
 
-        # 인접 리스트 (노드 ID → 자식 노드 ID 목록)
+        # 인접 리스트 (노드 ID → 자식 노드 ID 목록) - 백엣지 제외
         adjacency: Dict[str, List[str]] = {node.id: [] for node in nodes}
         in_degree: Dict[str, int] = {node.id: 0 for node in nodes}
 
-        for edge in valid_edges:
+        for edge in topo_edges:
             adjacency[edge.source].append(edge.target)
             in_degree[edge.target] += 1
 
-        # Input 노드에서 도달 가능한 노드만 필터링 (BFS)
+        # Input 노드에서 도달 가능한 노드만 필터링 (BFS) - 백엣지 제외
         reachable_nodes = set(input_node_ids)
         bfs_queue = deque(input_node_ids)
 
@@ -207,7 +221,20 @@ class WorkflowExecutor:
         sorted_nodes = []
         visited = set()
 
+        # 무한 루프 방지: 최대 반복 횟수 (노드 수 * 노드 수)
+        max_iterations = len(reachable_nodes) * len(reachable_nodes)
+        iteration_count = 0
+        stuck_counter: Dict[str, int] = {}  # 각 노드가 큐에 추가된 횟수
+
         while queue:
+            iteration_count += 1
+            if iteration_count > max_iterations:
+                stuck_nodes = [nid for nid, count in stuck_counter.items() if count > 5]
+                raise ValueError(
+                    f"위상 정렬 중 무한 루프 감지. 교착 상태 노드: {stuck_nodes}. "
+                    f"Loop 노드를 통한 피드백 루프가 아닌 실제 순환 참조가 있을 수 있습니다."
+                )
+
             node_id = queue.popleft()
 
             if node_id in visited:
@@ -217,9 +244,9 @@ class WorkflowExecutor:
             if node_id not in reachable_nodes:
                 continue
 
-            # 모든 부모 노드가 처리되었는지 확인
+            # 모든 부모 노드가 처리되었는지 확인 (백엣지 제외)
             parents_ready = True
-            for edge in valid_edges:
+            for edge in topo_edges:
                 if edge.target == node_id and edge.source in reachable_nodes:
                     if edge.source not in visited:
                         parents_ready = False
@@ -227,6 +254,7 @@ class WorkflowExecutor:
 
             if not parents_ready:
                 # 부모 노드가 아직 처리되지 않았으면 큐 뒤로
+                stuck_counter[node_id] = stuck_counter.get(node_id, 0) + 1
                 queue.append(node_id)
                 continue
 
@@ -240,7 +268,10 @@ class WorkflowExecutor:
 
         # 순환 참조 검사 (도달 가능한 노드 기준)
         if len(sorted_nodes) != len(reachable_nodes):
-            raise ValueError("워크플로우에 순환 참조가 있습니다")
+            unvisited = [nid for nid in reachable_nodes if nid not in visited]
+            raise ValueError(
+                f"워크플로우에 순환 참조가 있습니다. 방문하지 못한 노드: {unvisited}"
+            )
 
         return sorted_nodes
 
