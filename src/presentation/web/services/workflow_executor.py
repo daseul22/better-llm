@@ -525,6 +525,72 @@ class WorkflowExecutor:
         """
         return [edge.target for edge in edges if edge.source == node_id]
 
+    def _extract_final_output(self, full_output: str) -> str:
+        """
+        전체 출력에서 최종 표준 출력 추출 (TextBlock만)
+
+        SDK 출력은 JSON 형식으로 직렬화되어 있습니다:
+        - {"role": "assistant", "content": [{"type": "text", "text": "..."}]}
+        - {"role": "assistant", "content": [{"type": "thinking", "thinking": "..."}]}
+        - {"role": "assistant", "content": [{"type": "tool_use", ...}]}
+        - {"role": "user", "content": [{"type": "tool_result", ...}]}
+
+        이 메서드는 type="text"인 블록만 추출합니다.
+
+        Args:
+            full_output: 전체 출력 (모든 chunk 결합)
+
+        Returns:
+            str: 최종 표준 출력 (TextBlock만)
+        """
+        import json
+        import re
+
+        text_parts = []
+
+        # JSON 블록 추출 ({"role": ... } 패턴)
+        json_pattern = r'\{"role":\s*"[^"]+",\s*"content":\s*\[.*?\]\}'
+
+        for match in re.finditer(json_pattern, full_output, re.DOTALL):
+            try:
+                json_str = match.group(0)
+                data = json.loads(json_str)
+
+                if isinstance(data, dict) and "content" in data:
+                    for block in data["content"]:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+
+            except json.JSONDecodeError:
+                continue
+
+        # JSON이 아닌 일반 텍스트도 포함 (디버그 정보 등 제외)
+        # JSON 블록을 제거한 나머지 텍스트
+        cleaned_output = re.sub(json_pattern, '', full_output, flags=re.DOTALL)
+
+        # Worker 완료 메시지 제거
+        cleaned_output = re.sub(
+            r'\n={50,}\n✅\s*\[.*?\]\s*Worker execution completed\n={50,}\n',
+            '',
+            cleaned_output
+        )
+
+        # 디버그 정보 제거 (🔍으로 시작하는 블록)
+        cleaned_output = re.sub(
+            r'\n={50,}\n🔍.*?={50,}\n',
+            '',
+            cleaned_output,
+            flags=re.DOTALL
+        )
+
+        # 빈 줄만 있는 경우 제거
+        cleaned_output = cleaned_output.strip()
+
+        if cleaned_output:
+            text_parts.append(cleaned_output)
+
+        return "".join(text_parts)
+
     def _check_parallel_execution(self, node: WorkflowNode) -> bool:
         """
         노드의 parallel_execution 플래그 확인
@@ -1040,9 +1106,28 @@ class WorkflowExecutor:
                 node_id=node_id,
                 data={
                     "agent_name": "Input",
-                    "input": input_value,  # 노드 입력 추가 (디버깅용)
                 },
                 timestamp=datetime.now().isoformat(),
+            )
+
+            # 입력 로그 이벤트
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_output",
+                node_id=node_id,
+                data={
+                    "chunk": input_value,
+                    "log_type": "input"  # 노드 입력
+                },
+            )
+
+            # 최종 출력 이벤트 (Input 노드는 입력=출력)
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_output",
+                node_id=node_id,
+                data={
+                    "chunk": input_value,
+                    "log_type": "output"  # 최종 출력
+                },
             )
 
             yield WorkflowNodeExecutionEvent(
@@ -1052,7 +1137,6 @@ class WorkflowExecutor:
                     "node_type": "input",
                     "agent_name": "Input",
                     "output_length": len(input_value),
-                    "output": input_value,
                 },
                 timestamp=datetime.now().isoformat(),
                 elapsed_time=0.0,
@@ -1395,6 +1479,7 @@ class WorkflowExecutor:
                     f"  - SDK 세션: {worker.last_session_id[:8] if worker.last_session_id else 'None'}...\n"
                     f"  - 총 저장된 노드: {len(self._node_sessions)}개"
                 )
+
 
                 elapsed_time = time.time() - start_time
 

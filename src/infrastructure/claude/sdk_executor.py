@@ -359,6 +359,34 @@ class SDKResponseHandler(ABC):
         logger.debug("No text found in response")
         return None
 
+    def extract_final_output_from_response(self, response: Any) -> Optional[str]:
+        """
+        SDK 응답 객체에서 **최종 표준 출력**만 추출 (TextBlock만).
+
+        다음 노드로 전달할 출력을 추출합니다.
+        ThinkingBlock, ToolUseBlock, ToolResultBlock은 제외됩니다.
+
+        Args:
+            response: SDK 응답 객체
+
+        Returns:
+            str: 최종 표준 출력 (TextBlock만) 또는 None
+        """
+        if isinstance(response, AssistantMessage):
+            if not response.content:
+                return None
+
+            # TextBlock만 추출
+            text_parts = []
+            for content_block in response.content:
+                if isinstance(content_block, TextBlock):
+                    text_parts.append(content_block.text)
+
+            if text_parts:
+                return "".join(text_parts)
+
+        return None
+
     # ========================================================================
     # Usage 정보 추출 헬퍼 메서드 (토큰 사용량)
     # ========================================================================

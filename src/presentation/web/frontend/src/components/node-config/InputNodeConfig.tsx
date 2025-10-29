@@ -28,7 +28,7 @@ interface InputNodeData {
 }
 
 /**
- * 노드별 실행 로그 컴포넌트 (WorkerNodeConfig 스타일)
+ * 노드별 실행 로그 컴포넌트 (3가지 로그 타입 분리)
  */
 const NodeExecutionLogs: React.FC = () => {
   const nodes = useWorkflowStore((state) => state.nodes)

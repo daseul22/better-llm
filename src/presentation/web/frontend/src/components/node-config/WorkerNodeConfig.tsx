@@ -686,30 +686,6 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
               </AutoScrollContainer>
             </div>
 
-            {/* 통계 정보 */}
-            <div className="border rounded-md p-3 bg-purple-50 border-purple-200">
-              <div className="text-sm font-medium mb-2 text-purple-900">통계</div>
-              <div className="space-y-1 text-xs text-purple-800">
-                <div>
-                  <span className="font-medium">입력 길이:</span>{' '}
-                  {nodeInputs[node.id] ? `${nodeInputs[node.id].length.toLocaleString()}자` : '0자'}
-                </div>
-                <div>
-                  <span className="font-medium">출력 길이:</span>{' '}
-                  {nodeOutputs[node.id] ? `${nodeOutputs[node.id].length.toLocaleString()}자` : '0자'}
-                </div>
-                <div>
-                  <span className="font-medium">상태:</span>{' '}
-                  {nodeOutputs[node.id] ? (
-                    <span className="text-green-600 font-medium">✓ 완료</span>
-                  ) : nodeInputs[node.id] ? (
-                    <span className="text-yellow-600 font-medium">⏳ 진행중</span>
-                  ) : (
-                    <span className="text-gray-500">⏸ 대기중</span>
-                  )}
-                </div>
-              </div>
-            </div>
 
             {/* 대화 입력 섹션 (Human-in-the-Loop) */}
             {pendingUserInput && pendingUserInput.nodeId === node.id && (

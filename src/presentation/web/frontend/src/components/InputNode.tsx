@@ -108,7 +108,11 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
               break
 
             case 'node_output':
-              addNodeOutput(node_id, eventData.chunk)
+              // log_type이 'output'인 경우만 다음 노드로 전달
+              if (eventData.log_type === 'output') {
+                addNodeOutput(node_id, eventData.chunk)
+              }
+              // 모든 chunk를 로그에 추가 (log_type 포함)
               if (eventData.chunk && eventData.chunk.trim().length > 0) {
                 // chunk_type에 따라 로그 타입 결정
                 const chunkType = eventData.chunk_type || 'text'
