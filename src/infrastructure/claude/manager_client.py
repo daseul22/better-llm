@@ -934,12 +934,18 @@ Manager: "Coder가 여러 번 실패했습니다. 사용자가 직접 수정해�
 
         return compressed_history
 
-    async def analyze_and_plan_stream(self, history: List[Message]):
+    async def analyze_and_plan_stream(
+        self,
+        history: List[Message],
+        allowed_tools_override: Optional[List[str]] = None
+    ):
         """
         사용자 요청을 분석하고 작업 수행 (스트리밍)
 
         Args:
             history: 전체 대화 히스토리
+            allowed_tools_override: 사용 가능한 도구 목록 오버라이드 (Manager 노드용)
+                                    None이면 기본 도구 목록 사용
 
         Yields:
             매니저의 응답 청크 (텍스트만)
@@ -984,22 +990,27 @@ Manager: "Coder가 여러 번 실패했습니다. 사용자가 직접 수정해�
             history_size=len(history)
         )
 
-        # allowed_tools 리스트 생성 (auto_commit_enabled에 따라 조건부)
-        allowed_tools = [
-            "mcp__workers__execute_planner_task",
-            "mcp__workers__execute_parallel_tasks",  # 병렬 실행
-            "mcp__workers__execute_coder_task",
-            "mcp__workers__execute_reviewer_task",
-            "mcp__workers__execute_tester_task",
-            "mcp__workers__execute_ideator_task",  # 아이디어 생성
-            "mcp__workers__execute_product_manager_task",  # 제품 기획
-            "mcp__workers__ask_user",  # 사용자 입력 (Human-in-the-Loop)
-            "read"  # 파일 읽기 툴
-        ]
+        # allowed_tools 리스트 생성
+        if allowed_tools_override is not None:
+            # Manager 노드에서 전달한 도구 목록 사용 (등록된 워커만 포함)
+            allowed_tools = allowed_tools_override
+        else:
+            # 기본 도구 목록 (TUI용)
+            allowed_tools = [
+                "mcp__workers__execute_planner_task",
+                "mcp__workers__execute_parallel_tasks",  # 병렬 실행
+                "mcp__workers__execute_coder_task",
+                "mcp__workers__execute_reviewer_task",
+                "mcp__workers__execute_tester_task",
+                "mcp__workers__execute_ideator_task",  # 아이디어 생성
+                "mcp__workers__execute_product_manager_task",  # 제품 기획
+                "mcp__workers__ask_user",  # 사용자 입력 (Human-in-the-Loop)
+                "read"  # 파일 읽기 툴
+            ]
 
-        # auto_commit_enabled가 True일 때만 committer tool 추가
-        if self.auto_commit_enabled:
-            allowed_tools.append("mcp__workers__execute_committer_task")
+            # auto_commit_enabled가 True일 때만 committer tool 추가
+            if self.auto_commit_enabled:
+                allowed_tools.append("mcp__workers__execute_committer_task")
 
         # SDK 실행 설정 (컨텍스트 관리 옵션 포함)
         config = SDKExecutionConfig(

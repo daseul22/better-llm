@@ -837,9 +837,16 @@ class WorkflowExecutor:
             WorkflowNodeExecutionEvent: 노드 실행 이벤트
         """
         node_id = node.id
-        node_data: ManagerNodeData = node.data  # type: ignore
-        task_description = node_data.task_description
-        available_workers = node_data.available_workers
+
+        # 노드 데이터 추출 (Pydantic 모델과 딕셔너리 모두 처리)
+        if hasattr(node.data, "task_description"):
+            task_description = node.data.task_description
+            available_workers = node.data.available_workers
+        elif isinstance(node.data, dict):
+            task_description = node.data.get("task_description", "")
+            available_workers = node.data.get("available_workers", [])
+        else:
+            raise ValueError(f"Manager 노드 데이터 형식이 잘못되었습니다: {type(node.data)}")
 
         logger.info(
             f"[{session_id}] Manager 노드 실행: {node_id} "
@@ -863,63 +870,58 @@ class WorkflowExecutor:
         yield start_event
 
         try:
-            # 등록된 워커들 병렬 실행
-            worker_tasks = []
-            for worker_name in available_workers:
-                # Worker 설정 조회
-                try:
-                    worker_config = self._get_agent_config(worker_name)
-                except ValueError as e:
-                    logger.warning(
-                        f"[{session_id}] 워커 '{worker_name}' 설정을 찾을 수 없습니다: {e}"
-                    )
-                    continue
+            # ManagerAgent 사용 (지능형 오케스트레이터)
+            from src.infrastructure.claude.manager_client import ManagerAgent
+            from src.domain.models import Message
 
-                # Worker Agent 생성
-                worker = WorkerAgent(config=worker_config, project_dir=project_path)
-                worker_tasks.append((worker_name, worker.execute_task(task_description)))
+            # Worker Tools MCP 서버 가져오기
+            from src.infrastructure.mcp.worker_tools import get_worker_tools_server
+            worker_tools_server = get_worker_tools_server()
 
-            # 병렬 실행 및 결과 수집
-            worker_results: Dict[str, str] = {}
-
-            for worker_name, worker_stream in worker_tasks:
-                # 워커 시작 로그
-                yield WorkflowNodeExecutionEvent(
-                    event_type="node_output",
-                    node_id=node_id,
-                    data={"chunk": f"\n\n--- {worker_name.upper()} 실행 시작 ---\n\n"},
-                )
-
-                chunks = []
-                async for chunk in worker_stream:
-                    chunks.append(chunk)
-                    # 스트리밍 출력
-                    yield WorkflowNodeExecutionEvent(
-                        event_type="node_output",
-                        node_id=node_id,
-                        data={"chunk": chunk},
-                    )
-
-                worker_output = "".join(chunks)
-                worker_results[worker_name] = worker_output
-
-                # 워커 완료 로그
-                yield WorkflowNodeExecutionEvent(
-                    event_type="node_output",
-                    node_id=node_id,
-                    data={"chunk": f"\n\n--- {worker_name.upper()} 완료 ---\n\n"},
-                )
-
-                logger.info(
-                    f"[{session_id}] Manager 노드의 워커 완료: {worker_name} "
-                    f"(출력 길이: {len(worker_output)})"
-                )
-
-            # 통합 결과 생성
-            integrated_output = "\n\n".join(
-                f"## {worker_name.upper()} 결과\n\n{output}"
-                for worker_name, output in worker_results.items()
+            # ManagerAgent 생성
+            manager_agent = ManagerAgent(
+                worker_tools_server=worker_tools_server,
+                model="claude-sonnet-4-5-20250929",
+                project_dir=project_path,
+                session_id=session_id,
+                auto_commit_enabled=False,  # Manager 노드는 커밋하지 않음
             )
+
+            # available_workers를 allowed_tools로 변환
+            # 각 워커에 대해 execute_{worker}_task 형식의 MCP 도구 이름 생성
+            allowed_tools = [
+                f"mcp__workers__execute_{worker}_task"
+                for worker in available_workers
+            ] + ["read", "mcp__workers__ask_user"]  # 기본 도구 추가
+
+            # 원래 allowed_tools를 백업하고 필터링
+            original_analyzer = manager_agent.analyzer
+
+            # 대화 히스토리 생성 (사용자 메시지 1개)
+            history = [
+                Message(role="user", content=task_description)
+            ]
+
+            logger.info(
+                f"[{session_id}] Manager 노드: ManagerAgent 실행 시작 "
+                f"(available_workers: {available_workers})"
+            )
+
+            # 스트리밍 출력 수집 (allowed_tools 전달)
+            output_chunks = []
+            async for chunk in manager_agent.analyze_and_plan_stream(
+                history,
+                allowed_tools_override=allowed_tools
+            ):
+                output_chunks.append(chunk)
+                # 스트리밍 출력
+                yield WorkflowNodeExecutionEvent(
+                    event_type="node_output",
+                    node_id=node_id,
+                    data={"chunk": chunk},
+                )
+
+            integrated_output = "".join(output_chunks)
 
             # 실행 시간 계산
             elapsed_time = time.time() - start_time
