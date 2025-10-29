@@ -731,7 +731,7 @@ class WorkflowExecutor:
 
         # Haiku 모델로 빠른 판단
         options = ClaudeAgentOptions(
-            model="haiku",
+            model="claude-3-5-haiku-20241022",
             allowed_tools=[],  # 도구 사용 안함
             permission_mode="bypassPermissions",  # 자동 실행을 위해 승인 우회
         )
