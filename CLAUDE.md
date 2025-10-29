@@ -401,6 +401,55 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
+### fix: 노드 위치 저장 문제 해결 (완료)
+- **날짜**: 2025-10-29 14:00 (Asia/Seoul)
+- **문제**: 웹 UI에서 노드 위치를 변경해도 workflow-config.json에 저장되지 않음
+- **원인**: React Flow의 `onNodesChange` 이벤트만으로는 드래그 완료 시점을 정확히 감지하기 어려움
+- **해결**:
+  - **`onNodeDragStop` 핸들러 추가** (`WorkflowCanvas.tsx:287-293`):
+    - 노드 드래그 완료 시 확실하게 `updateNodePosition` 호출
+    - React Flow의 공식 드래그 완료 이벤트 사용
+  - **디버그 로그 추가** (`WorkflowCanvas.tsx:195-199, 289`):
+    - position change 이벤트 추적
+    - `updateNodePosition` 호출 추적
+  - **조건문 개선** (`WorkflowCanvas.tsx:203`):
+    - `dragging === false || dragging === undefined` 명시적 검사
+    - 이전: `!change.dragging` (암묵적)
+  - **타입 에러 수정** (`WorkflowCanvas.tsx:362`):
+    - `fitViewOnInit` → `fitView` (React Flow 11.x 호환)
+- **파일**: `src/presentation/web/frontend/src/components/WorkflowCanvas.tsx`
+- **영향범위**: 노드 위치 영속성, 자동 저장 트리거
+- **테스트**: TypeScript 타입 검사 통과
+- **후속 조치**: 실제 브라우저에서 노드 드래그 후 workflow-config.json 저장 확인
+
+---
+
+### 커스텀 워커 세션 복구 버그 수정 (완료)
+- **날짜**: 2025-10-29 10:30 (Asia/Seoul)
+- **문제**: 커스텀 워커 실행 중 웹 새로고침 시 세션 복구 실패
+  - 싱글톤 `BackgroundWorkflowManager`가 첫 초기화 시 프로젝트 경로 없이 생성됨
+  - 이후 프로젝트 선택 후 커스텀 워커 실행 시 구버전 `executor` 사용
+  - 결과: "Agent를 찾을 수 없습니다" 에러
+- **원인**:
+  - `get_background_workflow_manager`가 전역 싱글톤 패턴 사용
+  - 첫 호출 시 전달된 `executor`로 한 번만 초기화
+  - 프로젝트 전환 시 새로운 `executor` (커스텀 워커 포함) 무시
+- **해결**:
+  - **프로젝트별 인스턴스 캐싱** (`background_workflow_manager.py`):
+    - 싱글톤 → 프로젝트 경로별 딕셔너리 캐싱 (`_managers: Dict[str, BackgroundWorkflowManager]`)
+    - `get_background_workflow_manager`에 `project_path` 매개변수 추가
+    - 프로젝트 경로 변경 시 자동으로 올바른 인스턴스 반환
+    - 기존 인스턴스의 `executor` 동적 업데이트 지원
+  - **워크플로우 라우터 수정** (`workflows.py:79-93`):
+    - `get_background_manager`에서 현재 프로젝트 경로 전달
+  - **에러 메시지 개선** (`workflow_executor.py`):
+    - 커스텀 워커 로드 실패 시 프로젝트 경로 포함하여 로깅
+    - Agent 찾을 수 없을 때 사용 가능한 Agent 목록 표시
+    - 커스텀 워커 여부에 따라 힌트 메시지 제공
+- **영향범위**: 세션 복구, 프로젝트 전환, 커스텀 워커 실행
+- **테스트**: 구문 검사 통과
+- **후속 조치**: 실제 시나리오 테스트 필요 (커스텀 워커 실행 중 새로고침)
+
 ### 템플릿 변수 설명 및 기본값 수정 (완료)
 - **문제**: 노드 설정 패널과 기본 템플릿에서 `{{input}}`이 "이전 노드 출력"이라고 잘못 설명됨
 - **원인**:

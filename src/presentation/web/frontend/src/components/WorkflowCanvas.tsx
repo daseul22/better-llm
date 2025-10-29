@@ -18,6 +18,7 @@ import ReactFlow, {
   OnConnect,
   NodeTypes,
   useReactFlow,
+  NodeDragHandler,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -44,7 +45,6 @@ export const WorkflowCanvas: React.FC = () => {
   const {
     nodes: storeNodes,
     edges: storeEdges,
-    setNodes,
     setEdges,
     addNode,
     addEdge: addStoreEdge,
@@ -191,9 +191,20 @@ export const WorkflowCanvas: React.FC = () => {
         if (change.type === 'remove') {
           // 삭제된 노드를 Zustand에 반영
           deleteNode(change.id)
-        } else if (change.type === 'position' && change.dragging === false && change.position) {
-          // 드래그 완료 시 position을 Zustand에 반영
-          updateNodePosition(change.id, change.position)
+        } else if (change.type === 'position' && change.position) {
+          // 디버그 로그
+          console.log('[WorkflowCanvas] position change:', {
+            id: change.id,
+            dragging: change.dragging,
+            position: change.position,
+          })
+
+          // 드래그 완료 시에만 position을 Zustand에 반영
+          // dragging이 false이거나 undefined일 때 (드래그 완료 시점)
+          if (change.dragging === false || change.dragging === undefined) {
+            console.log('[WorkflowCanvas] updateNodePosition 호출:', change.id, change.position)
+            updateNodePosition(change.id, change.position)
+          }
         }
       })
     },
@@ -272,6 +283,15 @@ export const WorkflowCanvas: React.FC = () => {
     [setLocalEdges, addStoreEdge]
   )
 
+  // 노드 드래그 완료 핸들러 (위치 저장)
+  const handleNodeDragStop: NodeDragHandler = useCallback(
+    (_event, node) => {
+      console.log('[WorkflowCanvas] onNodeDragStop:', node.id, node.position)
+      updateNodePosition(node.id, node.position)
+    },
+    [updateNodePosition]
+  )
+
   // 노드 클릭 핸들러 (선택)
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: any) => {
@@ -331,14 +351,16 @@ export const WorkflowCanvas: React.FC = () => {
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeClick={handleNodeClick}
+        onNodeDragStop={handleNodeDragStop}
         onPaneClick={handlePaneClick}
         onDrop={onDrop}
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}
-        fitView
         className="bg-gray-50"
         elevateEdgesOnSelect={false}
         elevateNodesOnSelect={false}
+        fitView={false}
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
       >
         <Background />
         <Controls />
