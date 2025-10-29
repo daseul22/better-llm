@@ -395,7 +395,7 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
       initial_input: node.data.initial_input || '',
       parallel_execution: node.data.parallel_execution ?? false,
     },
-    onValidate: (data) => {
+    onValidate: (_data) => {
       const errors: Record<string, string> = {}
       // 빈 입력도 허용 (빈 문자열 전달 가능)
       return errors

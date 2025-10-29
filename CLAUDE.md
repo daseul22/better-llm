@@ -401,6 +401,36 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
+### fix: 로그 파싱 혼합 형태 처리 개선 (완료)
+- **날짜**: 2025-10-29 13:30 (Asia/Seoul)
+- **문제**: Worker 노드 출력에서 텍스트와 JSON이 혼합된 경우 파싱 실패
+  - 예: "먼저 프로젝트 구조를 파악하고...{"role": "assistant", "content": [...]}"
+  - 기존 파서는 순수 JSON만 처리하여 혼합 형태는 raw 텍스트로 표시됨
+- **해결**:
+  - **logParser.ts 개선**:
+    - `extractJSONBlocks` 함수 추가: 텍스트에서 JSON 블록 추출
+      * `{"role":` 패턴으로 JSON 시작 감지
+      * 중괄호 카운팅으로 JSON 끝 감지 (문자열 내부 처리 포함)
+      * 텍스트와 JSON을 분리하여 배열로 반환
+    - `parseLogMessageBlocks` 함수 추가: 여러 블록 파싱 지원
+      * 텍스트와 JSON 혼합 형태 처리
+      * 각 블록을 개별적으로 파싱하여 배열로 반환
+    - `ParsedLogBlocks` 인터페이스 추가: 여러 블록 반환용
+  - **ParsedContent.tsx 개선**:
+    - `ParsedBlock` 컴포넌트 분리: 단일 블록 렌더링
+    - 메인 컴포넌트에서 `parseLogMessageBlocks` 사용
+    - 여러 블록을 순서대로 렌더링 (map)
+    - 각 블록의 상태(isExpanded) 독립적으로 관리
+  - **InputNodeConfig.tsx 타입 에러 수정**:
+    - onValidate의 사용하지 않는 파라미터를 `_data`로 변경
+- **파일**:
+  - `src/presentation/web/frontend/src/lib/logParser.ts`
+  - `src/presentation/web/frontend/src/components/ParsedContent.tsx`
+  - `src/presentation/web/frontend/src/components/node-config/InputNodeConfig.tsx`
+- **영향범위**: Worker 노드 출력 파싱, 로그 가독성
+- **테스트**: TypeScript 컴파일 검사 통과
+- **후속 조치**: 실제 브라우저에서 혼합 형태 로그 확인
+
 ### docs: README.md 오픈소스 공개 버전으로 업데이트 (완료)
 - **날짜**: 2025-10-29 11:00 (Asia/Seoul)
 - **목적**: 실제 오픈소스 프로젝트로 공개하기 위해 README 전면 개편
