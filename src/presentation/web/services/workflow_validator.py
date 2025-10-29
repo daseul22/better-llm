@@ -20,7 +20,6 @@ from ..schemas.workflow import (
     WorkflowNode,
     WorkflowEdge,
     WorkerNodeData,
-    ManagerNodeData,
     InputNodeData,
 )
 
@@ -125,10 +124,7 @@ class WorkflowValidator:
         # 5. Input 노드 존재 여부 검사
         errors.extend(self._check_input_node(workflow))
 
-        # 6. Manager 노드 검증
-        errors.extend(self._check_manager_nodes(workflow))
-
-        # 7. Loop 노드 검증 (무한 루프 방지)
+        # 6. Loop 노드 검증 (무한 루프 방지)
         errors.extend(self._check_loop_nodes(workflow))
 
         return errors
@@ -267,11 +263,6 @@ class WorkflowValidator:
                     template = node.data.task_template
                 elif isinstance(node.data, dict):
                     template = node.data.get("task_template", "")
-            elif node.type == "manager" and isinstance(node.data, (ManagerNodeData, dict)):
-                if isinstance(node.data, ManagerNodeData):
-                    template = node.data.task_description
-                elif isinstance(node.data, dict):
-                    template = node.data.get("task_description", "")
 
             if not template:
                 continue
@@ -387,51 +378,7 @@ class WorkflowValidator:
                 message="워크플로우에 Input 노드가 없습니다.",
                 suggestion="워크플로우 시작점으로 Input 노드를 추가하세요."
             ))
-        elif len(input_nodes) > 1:
-            errors.append(ValidationError(
-                severity="warning",
-                node_id=input_nodes[1].id,
-                message="워크플로우에 여러 개의 Input 노드가 있습니다.",
-                suggestion="일반적으로 Input 노드는 1개만 필요합니다. 불필요한 노드를 제거하세요."
-            ))
-
-        return errors
-
-    def _check_manager_nodes(self, workflow: Workflow) -> List[ValidationError]:
-        """
-        Manager 노드 검증
-
-        Manager 노드는 최소 1개의 워커가 등록되어 있어야 합니다.
-
-        Args:
-            workflow: 검증할 워크플로우
-
-        Returns:
-            Manager 노드 에러 목록
-        """
-        errors: List[ValidationError] = []
-
-        for node in workflow.nodes:
-            if node.type != "manager":
-                continue
-
-            # Manager 노드 데이터 추출
-            available_workers = None
-
-            if isinstance(node.data, ManagerNodeData):
-                available_workers = node.data.available_workers
-            elif isinstance(node.data, dict):
-                available_workers = node.data.get("available_workers", [])
-
-            # 워커 등록 여부 검사
-            if not available_workers or len(available_workers) == 0:
-                errors.append(ValidationError(
-                    severity="error",
-                    node_id=node.id,
-                    message="Manager 노드에 등록된 워커가 없습니다.",
-                    suggestion="Manager 노드는 최소 1개의 워커가 필요합니다. 노드 설정에서 워커를 선택하세요."
-                ))
-            # 커스텀 워커 지원을 위해 알려지지 않은 워커 검증 제거
+        # 여러 개의 Input 노드 허용 (병렬 작업 실행 가능)
 
         return errors
 

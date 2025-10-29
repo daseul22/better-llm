@@ -19,7 +19,6 @@ Input 노드 → Planner → Coder → Reviewer → Tester → Committer
 - 각 Worker는 독립적인 노드로 실행
 - 노드 간 연결로 데이터 전달 (이전 노드의 **전체 출력** → 다음 노드 입력)
 - 드래그 앤 드롭으로 워크플로우 구성
-- Manager 노드로 여러 워커를 병렬 실행 (20-50% 속도 향상)
 
 #### Clean Architecture (4계층)
 ```
@@ -233,56 +232,6 @@ prompts/                       # Worker Agent 시스템 프롬프트
 - `{{parent}}`: 직전 부모 노드의 출력
 - `{{node_<id>}}`: 특정 노드의 출력
 
-### Manager 노드 (지능형 오케스트레이터)
-
-**Manager 노드는 워커들을 "도구"로 사용하는 지능형 오케스트레이터입니다**:
-
-- 등록된 워커를 MCP 도구로 보유
-- 작업 요구사항을 분석하여 **필요한 워커만 선택적으로 호출**
-- 등록한 워커를 모두 사용할 필요 없음 (지능형 판단)
-- TUI의 ManagerAgent와 동일한 동작 방식
-
-**구현**:
-```python
-# 백엔드 구현 (workflow_executor.py)
-async def _execute_manager_node(self, node, ...):
-    # 1. ManagerAgent 생성
-    manager_agent = ManagerAgent(
-        worker_tools_server=worker_tools_server,
-        model="claude-sonnet-4-5-20250929",
-        ...
-    )
-
-    # 2. available_workers를 allowed_tools로 변환
-    allowed_tools = [
-        f"mcp__workers__execute_{worker}_task"
-        for worker in available_workers
-    ]
-
-    # 3. Manager가 알아서 필요한 워커만 선택 호출
-    async for chunk in manager_agent.analyze_and_plan_stream(
-        history,
-        allowed_tools_override=allowed_tools
-    ):
-        yield chunk
-```
-
-**병렬 실행**:
-- Manager가 독립적인 워커들을 선택하면 **자동으로 병렬 실행**
-- Claude가 여러 Tool을 한 번에 호출하면 SDK가 병렬 처리
-- 예: Reviewer + Tester를 동시에 호출 → 병렬 실행 (속도 2배)
-
-**사용법**:
-1. 왼쪽 패널에서 "Manager" 노드 추가
-2. 노드 설정에서 **사용 가능한 워커** 체크박스 선택 (최소 1개)
-3. 작업 설명 입력 (Manager가 분석하여 필요한 워커만 호출)
-
-**예시**:
-- 등록된 워커: Planner, Coder, Reviewer, Tester
-- 작업: "FastAPI CRUD API 작성"
-- Manager 판단: Planner → Coder → Reviewer 호출 (Tester는 생략 가능)
-- 독립 작업: Reviewer + Tester → 병렬 실행
-
 ### 피드백 루프 (Loop 노드)
 
 **Loop 노드를 통한 제어된 피드백 루프를 지원합니다**:
@@ -399,7 +348,6 @@ cat ~/.claude-flow/{project-name}/sessions/{session-id}.json
 
 - **Input 노드 필수**: Input에서 도달 불가능한 노드는 실행 안 됨
 - **순환 참조 금지**: 사이클 있으면 위상 정렬 실패
-- **Manager 노드**: 최소 1개 워커 필수
 - **변수 치환**: 존재하지 않는 변수는 빈 문자열로 대체
 
 ### 일반
@@ -480,7 +428,6 @@ options = ClaudeAgentOptions(
 
 ### 2. System Prompt 설정
 
-- **Manager**: `self.SYSTEM_PROMPT` 속성 (`manager_client.py`)
 - **Worker**: `prompts/*.txt` 파일에서 로드 (`worker_client.py:68-105`)
 
 ```python
@@ -524,12 +471,11 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ### 5. Context 관리
 
-**Manager Agent 슬라이딩 윈도우**:
-- 최대 20개 메시지 유지 (`max_history_messages=20`)
-- 첫 사용자 요청 + 최근 메시지 포함
-- 컨텍스트 90% 초과 시 경고
+**Worker Agent**:
+- 각 Worker는 독립적인 컨텍스트로 실행
+- 노드 간 데이터 전달은 템플릿 변수(`{{parent}}`, `{{input}}`)를 통해 처리
 
-**구현**: `manager_client.py` (ManagerAgent 슬라이딩 윈도우)
+**구현**: `workflow_executor.py` (워크플로우 실행 및 데이터 전달)
 
 ---
 
@@ -548,54 +494,44 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
-### fix: Manager 노드를 지능형 오케스트레이터로 수정 + 병렬 실행 지원 (완료)
-- **날짜**: 2025-10-29 18:00 (Asia/Seoul)
-- **문제**:
-  - Manager 노드가 등록된 **모든 워커를 강제로 병렬 실행**
-  - 순차 실행 방식 (for 루프)으로 구현되어 병렬 실행조차 안 됨
-  - 지능형 판단 없이 무조건 모든 워커 호출
-- **요구사항**:
-  - Manager 노드는 **지능형 오케스트레이터**여야 함
-  - 워커를 "도구"로 보유하고, 필요한 워커만 선택적으로 호출
-  - **선택된 워커들은 병렬로 실행** (가능하면)
-  - TUI의 ManagerAgent와 동일한 동작 방식
-- **해결**:
-  - **workflow_executor.py 재작성**:
-    ```python
-    # 신규: ManagerAgent 사용 (지능형)
-    manager_agent = ManagerAgent(...)
-    allowed_tools = [f"mcp__workers__execute_{w}_task" for w in available_workers]
-
-    # Manager 노드 전용 지침 추가
-    manager_instruction = """
-    - 독립적인 워커들은 한 번에 여러 Tool을 동시에 호출
-    - 순차 호출하지 말고, 한 응답에 모두 포함
-    """
-
-    async for chunk in manager_agent.analyze_and_plan_stream(
-        history,
-        allowed_tools_override=allowed_tools
-    ):
-        yield chunk
-    ```
-  - **병렬 실행 메커니즘**:
-    - Claude가 여러 Tool을 한 번에 호출하면 SDK가 자동으로 병렬 처리
-    - `execute_parallel_tasks` Tool도 allowed_tools에 추가 (대체 방법)
-    - Manager 노드 전용 지침으로 병렬 실행 유도
-  - **manager_client.py 확장**:
-    - `analyze_and_plan_stream`에 `allowed_tools_override` 파라미터 추가
-    - Manager 노드가 등록된 워커만 사용하도록 도구 필터링
-- **파일**:
-  - `src/presentation/web/services/workflow_executor.py` (Manager 노드 로직 재작성)
-  - `src/infrastructure/claude/manager_client.py` (allowed_tools_override 추가)
-  - `CLAUDE.md` (Manager 노드 설명 수정)
-- **영향범위**: Manager 노드 동작 방식, 워크플로우 실행 로직
-- **기대효과**:
-  - Manager가 작업을 분석하여 필요한 워커만 호출 (효율성)
-  - 독립적인 워커들은 병렬 실행 (속도 향상)
-  - 등록된 워커를 모두 사용할 필요 없음 (유연성)
+### refactor: Workflow Designer 프롬프트 - Manager 노드 제거 및 병렬 실행 옵션 추가 (완료)
+- **날짜**: 2025-10-29 21:00 (Asia/Seoul)
+- **목적**: Manager 노드 제거에 따른 Workflow Designer 프롬프트 업데이트
+- **변경사항**:
+  - **prompts/workflow_designer.txt**:
+    - Manager 노드 타입 제거 (input, worker, condition, loop, merge만 남김)
+    - 노드별 `parallel_execution` 옵션 설명 추가
+      * 부모 노드의 `parallel_execution: true` 설정 시 자식 노드들이 병렬 실행됨
+      * 예: Coder → (Reviewer + Tester + Security Reviewer) 병렬 실행
+      * 20-50% 속도 향상 가능
+    - 고급 노드 우선 원칙 수정
+      * "2개 이상의 독립적 작업 → `parallel_execution: true` 설정" 추가
+    - 예시 재구성 (총 4개):
+      * 예시 1: 순차 실행 (기존 유지)
+      * 예시 2: 병렬 실행 활용 (새로 추가) - Coder → 3개 리뷰어 병렬 실행 → Merge
+      * 예시 3: 조건 분기 (기존 유지)
+      * 예시 4: 조건 + 반복 (Manager 노드 제거, 순차 실행으로 변경)
+- **파일**: `prompts/workflow_designer.txt`
+- **영향범위**: Workflow Designer 워커가 Manager 노드 없이 병렬 실행을 활용한 워크플로우 생성
 - **테스트**: 구문 검사 통과
-- **후속 조치**: Web UI에서 병렬 실행 여부 확인
+- **후속 조치**: Web UI에서 실제 워크플로우 생성 시 병렬 실행 옵션 활용 확인
+
+### fix: Manager 노드 제거 (완료)
+- **날짜**: 2025-10-29 20:00 (Asia/Seoul)
+- **이유**: Manager 노드 기능 제거
+- **제거된 파일**:
+  - `src/infrastructure/claude/manager_client.py`
+  - `src/presentation/web/frontend/src/components/ManagerNode.tsx`
+  - `src/presentation/web/frontend/src/components/node-config/ManagerNodeConfig.tsx`
+- **수정된 파일**:
+  - `src/infrastructure/claude/__init__.py` (import 제거)
+  - `src/presentation/web/services/workflow_executor.py` (_execute_manager_node 메서드 제거)
+  - `src/presentation/web/frontend/src/components/WorkflowCanvas.tsx` (nodeTypes에서 제거)
+  - `src/presentation/web/frontend/src/components/NodeConfigPanel.tsx` (설정 패널 제거)
+  - `src/presentation/web/frontend/src/stores/workflowStore.ts` (nodeWorkerLogs 제거)
+  - `src/presentation/web/frontend/src/components/NodePanel.tsx` (Manager 노드 버튼 제거)
+  - `CLAUDE.md` (Manager 노드 관련 문서 제거)
+- **영향범위**: Manager 노드 완전 제거, 워커 병렬 실행 기능 제거
 
 ### fix: Loop 노드 검증 버그 수정 (완료)
 - **날짜**: 2025-10-29 17:00 (Asia/Seoul)
@@ -667,33 +603,30 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 ### refactor: Workflow Designer 고급 노드 활용 및 미리보기 개선 (완료)
 - **날짜**: 2025-10-29 16:00 (Asia/Seoul)
 - **목적**:
-  - 워크플로우 설계 시 고급 노드(condition, loop, merge, manager)를 적극 활용하도록 개선
+  - 워크플로우 설계 시 고급 노드(condition, loop, merge)를 적극 활용하도록 개선
   - 미리보기에서 노드/엣지 연결 관계를 상세히 표시
 - **변경사항**:
   - **prompts/workflow_designer.txt**:
     - "워크플로우 설계" 섹션에 고급 노드 활용 지침 강화
       * **단순 순차 실행을 피하고 고급 노드를 적극 활용**
-      * **독립적인 작업은 반드시 Manager 노드로 병렬 실행** (20-50% 속도 향상)
       * **조건 분기가 필요하면 Condition 노드 추가**
       * **반복 작업은 Loop 노드 사용**
       * **여러 분기를 통합할 때는 Merge 노드 사용**
     - "고급 노드 우선 원칙" 섹션 추가 (3번 항목)
-      * 2개 이상의 독립적 작업 → Manager 노드 병렬 실행
       * 조건부 실행 → Condition 노드
       * 반복 실행 → Loop 노드
       * 분기 통합 → Merge 노드
       * 단순 순차 실행은 최소화
     - 예시 3 추가: 고급 노드 활용 (조건 분기 + 반복 + 병합)
       * 테스트 실패 시 자동 버그 수정 반복
-      * 테스트 성공 시 Manager 노드로 리뷰 및 문서 작성 병렬 실행
-      * Condition, Loop, Manager 노드를 모두 활용한 복잡한 워크플로우 예시
+      * Condition, Loop 노드를 활용한 복잡한 워크플로우 예시
   - **WorkflowDesignerModal.tsx (미리보기 개선)**:
     - 노드 타입별 색상 및 아이콘 추가
-      * input: 📥 (파란색), worker: ⚙️ (녹색), manager: 👥 (보라색)
+      * input: 📥 (파란색), worker: ⚙️ (녹색)
       * condition: 🔀 (노란색), loop: 🔁 (주황색), merge: 🔗 (핑크색)
     - 노드 상세 정보 표시
       * agent_name, task_template/task_description (80자 이내 미리보기)
-      * available_workers (Manager 노드), condition_type/value (Condition 노드)
+      * condition_type/value (Condition 노드)
       * max_iterations (Loop 노드), merge_strategy (Merge 노드)
     - 연결 관계 섹션 추가
       * source → target 화살표로 시각적 표시
@@ -719,7 +652,7 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
     - model: claude-sonnet-4-5-20250929, thinking: true
   - **prompts/workflow_designer.txt**:
     - 워크플로우 설계 전문가 프롬프트 작성
-    - 노드 타입 (input, worker, manager, condition, loop, merge) 설명
+    - 노드 타입 (input, worker, condition, loop, merge) 설명
     - 사용 가능한 기본 워커 목록 (15개)
     - 노드 연결 규칙 및 템플릿 변수 설명
     - JSON 출력 형식 정의:
@@ -727,7 +660,7 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
       * `custom_workers`: 필요 시 커스텀 워커 정의 배열
       * `explanation`: 워크플로우 설명
       * `usage_guide`: 사용 방법 가이드
-    - 예시 2개 추가 (순차 워크플로우, Manager 병렬 실행)
+    - 예시 2개 추가 (순차 워크플로우, 고급 노드 활용)
   - **CLAUDE.md**:
     - prompts 섹션에 workflow_designer.txt 추가
     - agent_config.json 섹션에 Workflow Designer 워커 추가

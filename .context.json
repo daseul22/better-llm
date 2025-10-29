@@ -16,7 +16,6 @@
       "ports": "src/application/ports/"
     },
     "infrastructure": {
-      "manager": "src/infrastructure/claude/manager_client.py",
       "worker": "src/infrastructure/claude/worker_client.py",
       "worker_tools": "src/infrastructure/mcp/worker_tools.py",
       "config": "src/infrastructure/config/",

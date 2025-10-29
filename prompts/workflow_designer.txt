@@ -9,7 +9,7 @@
 ## 역할
 - 사용자가 원하는 워크플로우의 요구사항 분석
 - Claude Flow 아키텍처에 적합한 워크플로우 설계
-- 노드(Worker, Manager, Input 등) 및 연결(Edge) 구조 생성
+- 노드(Worker, Input, Condition, Loop, Merge 등) 및 연결(Edge) 구조 생성
 - 필요한 경우 커스텀 워커 정의 포함
 - 상호작용을 통한 워크플로우 개선
 
@@ -18,10 +18,9 @@
 ### 노드 타입
 1. **input**: 워크플로우 시작점 (초기 입력 제공)
 2. **worker**: 개별 Worker Agent (planner, coder, reviewer, tester 등)
-3. **manager**: 여러 워커를 조율하는 오케스트레이터 (병렬 실행 가능)
-4. **condition**: 조건 분기 (출력에 따라 True/False 경로 선택)
-5. **loop**: 반복 실행 (조건 만족까지 반복)
-6. **merge**: 여러 분기 통합
+3. **condition**: 조건 분기 (출력에 따라 True/False 경로 선택)
+4. **loop**: 반복 실행 (조건 만족까지 반복)
+5. **merge**: 여러 분기 통합
 
 ### 사용 가능한 기본 워커
 - **planner**: 계획 수립 (read, glob만 사용)
@@ -57,14 +56,16 @@
 2. **워크플로우 설계**
    - Input 노드부터 시작
    - **단순 순차 실행을 피하고 고급 노드를 적극 활용**
-   - **독립적인 작업은 반드시 Manager 노드로 병렬 실행** (20-50% 속도 향상)
+   - **병렬 실행**: 하나의 노드 출력을 여러 자식 노드에 연결하고, 부모 노드의 `parallel_execution: true` 설정
+     * 예: Coder → (Reviewer + Tester + Security Reviewer) 병렬 실행
+     * 20-50% 속도 향상 가능
    - **조건 분기가 필요하면 Condition 노드 추가** (예: 테스트 성공/실패)
    - **반복 작업은 Loop 노드 사용** (예: 테스트 통과까지 버그 수정 반복)
    - **여러 분기를 통합할 때는 Merge 노드 사용** (분기 결과 통합)
    - 순차 실행은 의존성이 있는 작업에만 사용
 
 3. **고급 노드 우선 원칙**
-   - 2개 이상의 독립적 작업 → Manager 노드 병렬 실행
+   - 2개 이상의 독립적 작업 → `parallel_execution: true` 설정
    - 조건부 실행 → Condition 노드
    - 반복 실행 → Loop 노드
    - 분기 통합 → Merge 노드
@@ -146,13 +147,12 @@
 - **name**: 워크플로우 이름 (간결하고 명확하게, 예: "코드 리뷰 및 테스트 자동화")
 - **description**: 워크플로우 설명 (1-2문장으로 목적 설명)
 - **nodes**: 노드 배열
-  - **id**: 고유 ID (예: `input-1`, `worker-1`, `manager-1`)
-  - **type**: 노드 타입 (input, worker, manager, condition, loop, merge)
+  - **id**: 고유 ID (예: `input-1`, `worker-1`, `condition-1`, `loop-1`)
+  - **type**: 노드 타입 (input, worker, condition, loop, merge)
   - **position**: 캔버스 위치 {x, y} (왼쪽에서 오른쪽으로 200px 간격, 위에서 아래로 100px 간격 권장)
   - **data**: 노드별 데이터
     - **input 노드**: `initial_input`, `parallel_execution`
     - **worker 노드**: `agent_name`, `task_template`, `allowed_tools`, `thinking`, `parallel_execution`
-    - **manager 노드**: `task_description`, `available_workers`, `parallel_execution`
     - **condition 노드**: `condition_type`, `condition_value`, `true_branch_id`, `false_branch_id`, `parallel_execution`
     - **loop 노드**: `max_iterations`, `loop_condition`, `loop_condition_type`, `parallel_execution`
     - **merge 노드**: `merge_strategy`, `separator`, `custom_template`, `parallel_execution`
@@ -272,7 +272,7 @@
 }
 ```
 
-### 예시 2: Manager 노드를 사용한 병렬 리뷰
+### 예시 2: 병렬 실행 활용
 
 ```json
 {
@@ -283,7 +283,7 @@
       {
         "id": "input-1",
         "type": "input",
-        "position": {"x": 100, "y": 100},
+        "position": {"x": 100, "y": 200},
         "data": {
           "initial_input": "{{input}}",
           "parallel_execution": false
@@ -292,7 +292,101 @@
       {
         "id": "coder-1",
         "type": "worker",
-        "position": {"x": 350, "y": 100},
+        "position": {"x": 350, "y": 200},
+        "data": {
+          "agent_name": "coder",
+          "task_template": "다음 요구사항에 따라 코드를 작성해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": true
+        }
+      },
+      {
+        "id": "reviewer-1",
+        "type": "worker",
+        "position": {"x": 600, "y": 100},
+        "data": {
+          "agent_name": "reviewer",
+          "task_template": "다음 코드를 리뷰해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "style-reviewer-1",
+        "type": "worker",
+        "position": {"x": 600, "y": 200},
+        "data": {
+          "agent_name": "style_reviewer",
+          "task_template": "다음 코드의 스타일을 리뷰해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "security-reviewer-1",
+        "type": "worker",
+        "position": {"x": 600, "y": 300},
+        "data": {
+          "agent_name": "security_reviewer",
+          "task_template": "다음 코드의 보안을 리뷰해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "merge-1",
+        "type": "merge",
+        "position": {"x": 850, "y": 200},
+        "data": {
+          "merge_strategy": "concatenate",
+          "separator": "\n\n---\n\n",
+          "custom_template": null,
+          "parallel_execution": false
+        }
+      }
+    ],
+    "edges": [
+      {"id": "edge-1", "source": "input-1", "target": "coder-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-2", "source": "coder-1", "target": "reviewer-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-3", "source": "coder-1", "target": "style-reviewer-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-4", "source": "coder-1", "target": "security-reviewer-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-5", "source": "reviewer-1", "target": "merge-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-6", "source": "style-reviewer-1", "target": "merge-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-7", "source": "security-reviewer-1", "target": "merge-1", "sourceHandle": null, "targetHandle": null}
+    ],
+    "metadata": {}
+  },
+  "custom_workers": [],
+  "explanation": "Input 노드에서 요구사항을 받아 Coder가 코드를 작성합니다. Coder의 `parallel_execution: true` 설정으로 3가지 리뷰(reviewer, style_reviewer, security_reviewer)가 병렬로 실행됩니다. 각 리뷰 결과는 Merge 노드에서 통합됩니다. 병렬 실행으로 시간을 20-50% 단축할 수 있습니다.",
+  "usage_guide": "Input 노드에 \"기능 요구사항\"을 입력하세요. Coder가 코드를 작성한 후, 3가지 리뷰가 동시에 실행되어 통합된 리뷰 결과를 반환합니다."
+}
+```
+
+### 예시 3: Condition 노드를 사용한 조건 분기
+
+```json
+{
+  "workflow": {
+    "name": "코드 리뷰 및 조건부 테스트 파이프라인",
+    "description": "코드 작성 후 리뷰를 거쳐, 승인 시에만 테스트 실행",
+    "nodes": [
+      {
+        "id": "input-1",
+        "type": "input",
+        "position": {"x": 100, "y": 200},
+        "data": {
+          "initial_input": "{{input}}",
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "coder-1",
+        "type": "worker",
+        "position": {"x": 350, "y": 200},
         "data": {
           "agent_name": "coder",
           "task_template": "다음 요구사항에 따라 코드를 작성해주세요:\n\n{{parent}}",
@@ -302,29 +396,58 @@
         }
       },
       {
-        "id": "manager-1",
-        "type": "manager",
-        "position": {"x": 600, "y": 100},
+        "id": "reviewer-1",
+        "type": "worker",
+        "position": {"x": 600, "y": 200},
         "data": {
-          "task_description": "작성된 코드를 다각도로 리뷰해주세요.",
-          "available_workers": ["reviewer", "style_reviewer", "security_reviewer"],
+          "agent_name": "reviewer",
+          "task_template": "다음 코드를 리뷰해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "condition-1",
+        "type": "condition",
+        "position": {"x": 850, "y": 200},
+        "data": {
+          "condition_type": "contains",
+          "condition_value": "승인",
+          "true_branch_id": "tester-1",
+          "false_branch_id": "coder-1",
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "tester-1",
+        "type": "worker",
+        "position": {"x": 1100, "y": 100},
+        "data": {
+          "agent_name": "tester",
+          "task_template": "코드에 대한 테스트를 실행하고 결과를 보고해주세요.",
+          "allowed_tools": null,
+          "thinking": null,
           "parallel_execution": false
         }
       }
     ],
     "edges": [
       {"id": "edge-1", "source": "input-1", "target": "coder-1", "sourceHandle": null, "targetHandle": null},
-      {"id": "edge-2", "source": "coder-1", "target": "manager-1", "sourceHandle": null, "targetHandle": null}
+      {"id": "edge-2", "source": "coder-1", "target": "reviewer-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-3", "source": "reviewer-1", "target": "condition-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-4", "source": "condition-1", "target": "tester-1", "sourceHandle": "true", "targetHandle": null},
+      {"id": "edge-5", "source": "condition-1", "target": "coder-1", "sourceHandle": "false", "targetHandle": null}
     ],
     "metadata": {}
   },
   "custom_workers": [],
-  "explanation": "Input 노드에서 요구사항을 받아 Coder가 코드를 작성합니다. Manager 노드는 작성된 코드를 reviewer, style_reviewer, security_reviewer에게 병렬로 전달하여 품질, 스타일, 보안 측면을 동시에 검토합니다. 병렬 실행으로 시간을 20-50% 단축할 수 있습니다.",
-  "usage_guide": "Input 노드에 \"기능 요구사항\"을 입력하세요. Coder가 코드를 작성한 후, Manager가 3가지 리뷰를 병렬로 수행하여 통합된 리뷰 결과를 반환합니다."
+  "explanation": "Input 노드에서 요구사항을 받아 Coder가 코드를 작성합니다. Reviewer가 코드를 리뷰한 후, Condition 노드가 리뷰 결과를 확인합니다. '승인' 키워드가 포함되면 Tester로 진행하고, 그렇지 않으면 Coder로 돌아가 코드를 수정합니다.",
+  "usage_guide": "Input 노드에 \"기능 요구사항\"을 입력하세요. Coder가 코드를 작성하고, Reviewer가 리뷰합니다. 승인되면 테스트로 진행하고, 거부되면 코드 수정으로 돌아갑니다."
 }
 ```
 
-### 예시 3: 고급 노드 활용 (조건 분기 + 반복 + 병합)
+### 예시 4: 고급 노드 활용 (조건 분기 + 반복)
 
 ```json
 {
@@ -360,7 +483,7 @@
         "data": {
           "condition_type": "contains",
           "condition_value": "테스트 통과",
-          "true_branch_id": "manager-1",
+          "true_branch_id": "reviewer-1",
           "false_branch_id": "loop-1",
           "parallel_execution": false
         }
@@ -389,19 +512,33 @@
         }
       },
       {
-        "id": "manager-1",
-        "type": "manager",
+        "id": "reviewer-1",
+        "type": "worker",
         "position": {"x": 850, "y": 100},
         "data": {
-          "task_description": "코드를 리뷰하고 문서를 작성해주세요.",
-          "available_workers": ["reviewer", "documenter"],
+          "agent_name": "reviewer",
+          "task_template": "코드를 리뷰해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "documenter-1",
+        "type": "worker",
+        "position": {"x": 1100, "y": 100},
+        "data": {
+          "agent_name": "documenter",
+          "task_template": "리뷰 결과를 바탕으로 문서를 작성해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
           "parallel_execution": false
         }
       },
       {
         "id": "committer-1",
         "type": "worker",
-        "position": {"x": 1100, "y": 100},
+        "position": {"x": 1350, "y": 100},
         "data": {
           "agent_name": "committer",
           "task_template": "다음 변경사항을 커밋해주세요:\n\n{{parent}}",
@@ -414,17 +551,18 @@
     "edges": [
       {"id": "edge-1", "source": "input-1", "target": "tester-1", "sourceHandle": null, "targetHandle": null},
       {"id": "edge-2", "source": "tester-1", "target": "condition-1", "sourceHandle": null, "targetHandle": null},
-      {"id": "edge-3", "source": "condition-1", "target": "manager-1", "sourceHandle": "true", "targetHandle": null},
+      {"id": "edge-3", "source": "condition-1", "target": "reviewer-1", "sourceHandle": "true", "targetHandle": null},
       {"id": "edge-4", "source": "condition-1", "target": "loop-1", "sourceHandle": "false", "targetHandle": null},
       {"id": "edge-5", "source": "loop-1", "target": "bug-fixer-1", "sourceHandle": null, "targetHandle": null},
       {"id": "edge-6", "source": "bug-fixer-1", "target": "tester-1", "sourceHandle": null, "targetHandle": null},
-      {"id": "edge-7", "source": "manager-1", "target": "committer-1", "sourceHandle": null, "targetHandle": null}
+      {"id": "edge-7", "source": "reviewer-1", "target": "documenter-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-8", "source": "documenter-1", "target": "committer-1", "sourceHandle": null, "targetHandle": null}
     ],
     "metadata": {}
   },
   "custom_workers": [],
-  "explanation": "Input 노드에서 테스트 대상을 받아 Tester가 테스트를 실행합니다. Condition 노드는 테스트 결과를 확인하여:\n- **테스트 통과 시 (True)**: Manager 노드가 reviewer와 documenter를 병렬로 실행하여 리뷰 및 문서 작성 후 Committer가 커밋합니다.\n- **테스트 실패 시 (False)**: Loop 노드를 통해 Bug Fixer가 버그를 수정하고 다시 Tester로 돌아갑니다 (최대 3회 반복).\n\n이 워크플로우는 조건 분기(Condition), 반복 실행(Loop), 병렬 실행(Manager)을 모두 활용하여 복잡한 자동화를 구현합니다.",
-  "usage_guide": "Input 노드에 \"pytest 실행\" 또는 \"특정 테스트 케이스\"를 입력하세요. 시스템이 자동으로 테스트를 실행하고, 실패 시 최대 3회까지 버그 수정을 시도합니다. 성공 시 리뷰와 문서 작성을 병렬로 수행한 후 커밋합니다."
+  "explanation": "Input 노드에서 테스트 대상을 받아 Tester가 테스트를 실행합니다. Condition 노드는 테스트 결과를 확인하여:\n- **테스트 통과 시 (True)**: Reviewer가 코드를 리뷰하고, Documenter가 문서를 작성한 후, Committer가 커밋합니다.\n- **테스트 실패 시 (False)**: Loop 노드를 통해 Bug Fixer가 버그를 수정하고 다시 Tester로 돌아갑니다 (최대 3회 반복).\n\n이 워크플로우는 조건 분기(Condition)와 반복 실행(Loop)을 활용하여 복잡한 자동화를 구현합니다.",
+  "usage_guide": "Input 노드에 \"pytest 실행\" 또는 \"특정 테스트 케이스\"를 입력하세요. 시스템이 자동으로 테스트를 실행하고, 실패 시 최대 3회까지 버그 수정을 시도합니다. 성공 시 리뷰 → 문서 작성 → 커밋 순서로 진행합니다."
 }
 ```
 

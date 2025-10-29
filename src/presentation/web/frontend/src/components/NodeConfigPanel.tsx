@@ -6,7 +6,6 @@
  * 이 파일은 리팩토링 후 라우터 역할만 수행합니다 (기존 1500줄 → 100줄).
  * 각 노드 타입별 설정은 node-config/ 디렉토리의 컴포넌트에서 관리합니다:
  * - InputNodeConfig.tsx (Input 노드)
- * - ManagerNodeConfig.tsx (Manager 노드)
  * - WorkerNodeConfig.tsx (Worker 노드)
  */
 
@@ -14,7 +13,6 @@ import React from 'react'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { Settings } from 'lucide-react'
 import { InputNodeConfig } from './node-config/InputNodeConfig'
-import { ManagerNodeConfig } from './node-config/ManagerNodeConfig'
 import { WorkerNodeConfig } from './node-config/WorkerNodeConfig'
 import { ConditionNodeConfig } from './node-config/ConditionNodeConfig'
 import { LoopNodeConfig } from './node-config/LoopNodeConfig'
@@ -44,9 +42,6 @@ export const NodeConfigPanel: React.FC = () => {
   switch (selectedNode.type) {
     case 'input':
       return <InputNodeConfig node={selectedNode} />
-
-    case 'manager':
-      return <ManagerNodeConfig node={selectedNode} />
 
     case 'worker':
       return <WorkerNodeConfig node={selectedNode} />

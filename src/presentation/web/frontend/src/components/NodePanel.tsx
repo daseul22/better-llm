@@ -2,7 +2,6 @@
  * 노드 패널 컴포넌트
  *
  * Agent 목록을 표시하고, 드래그 앤 드롭으로 캔버스에 추가합니다.
- * Manager 노드도 추가할 수 있습니다.
  */
 
 import React, { useEffect, useState, useRef } from 'react'
@@ -20,7 +19,7 @@ export const NodePanel: React.FC = () => {
   const [customWorkers, setCustomWorkers] = useState<CustomWorkerInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'manager', 'advanced', 'general', 'specialized', 'custom']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'advanced', 'general', 'specialized', 'custom']))
   const [isCustomWorkerModalOpen, setIsCustomWorkerModalOpen] = useState(false)
   const [isWorkflowDesignerModalOpen, setIsWorkflowDesignerModalOpen] = useState(false)
   const [projectPath, setProjectPath] = useState<string | null>(null)
@@ -209,25 +208,6 @@ export const NodePanel: React.FC = () => {
     addNode(newNode)
   }
 
-  // Manager 노드를 캔버스에 추가
-  const handleAddManager = () => {
-    // 노드 위치 계산
-    const x = 100 + (nodes.length % 3) * 300
-    const y = 100 + Math.floor(nodes.length / 3) * 150
-
-    const newNode: WorkflowNode = {
-      id: `manager-${Date.now()}`,
-      type: 'manager',
-      position: { x, y },
-      data: {
-        task_description: '작업 설명을 입력하세요',
-        available_workers: [],
-      },
-    }
-
-    addNode(newNode)
-  }
-
   // Input 노드를 캔버스에 추가
   const handleAddInput = () => {
     // 노드 위치 계산
@@ -409,44 +389,6 @@ export const NodePanel: React.FC = () => {
                   <span className="font-medium text-emerald-700">Input</span>
                   <span className="text-xs text-muted-foreground">
                     워크플로우 시작점
-                  </span>
-                </div>
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Manager 노드 섹션 */}
-        <div className="border rounded-lg overflow-hidden bg-purple-50/50">
-          <button
-            onClick={() => toggleSection('manager')}
-            className="w-full flex items-center justify-between p-3 hover:bg-purple-100/50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-purple-600" />
-              <span className="font-semibold text-sm text-purple-700">Manager 노드</span>
-              <span className="text-xs px-2 py-0.5 bg-purple-200 text-purple-700 rounded-full">1</span>
-            </div>
-            {expandedSections.has('manager') ? (
-              <ChevronUp className="h-4 w-4 text-purple-600" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-purple-600" />
-            )}
-          </button>
-          {expandedSections.has('manager') && (
-            <div className="p-3 pt-0 space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start text-left border-purple-300 hover:bg-purple-50 bg-white cursor-grab active:cursor-grabbing"
-                onClick={handleAddManager}
-                draggable
-                onDragStart={(e) => onDragStart(e, 'manager', { task_description: '작업 설명을 입력하세요', available_workers: [] })}
-              >
-                <Plus className="mr-2 h-4 w-4 text-purple-600" />
-                <div className="flex flex-col items-start">
-                  <span className="font-medium text-purple-700">Manager</span>
-                  <span className="text-xs text-muted-foreground">
-                    워커 오케스트레이터
                   </span>
                 </div>
               </Button>

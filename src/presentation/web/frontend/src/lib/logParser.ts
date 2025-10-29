@@ -260,10 +260,25 @@ function parseJSONMessage(message: string): ParsedLogMessage | null {
       const blocks = Array.isArray(data.content) ? data.content : [data.content]
 
       for (const block of blocks) {
+        // TextBlock
         if (block.type === 'text' && block.text) {
           return {
             type: 'user_message',
             content: block.text,
+          }
+        }
+
+        // ToolResultBlock
+        if (block.type === 'tool_result') {
+          const content = typeof block.content === 'string' ? block.content : JSON.stringify(block.content, null, 2)
+          return {
+            type: 'tool_result',
+            content,
+            toolUse: {
+              toolName: '도구 결과',
+              input: { tool_use_id: block.tool_use_id },
+              output: content,
+            }
           }
         }
       }

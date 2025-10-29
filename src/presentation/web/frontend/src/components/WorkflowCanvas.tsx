@@ -23,7 +23,6 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 
 import { WorkerNode } from './WorkerNode'
-import { ManagerNode } from './ManagerNode'
 import { InputNode } from './InputNode'
 import { ConditionNode } from './ConditionNode'
 import { LoopNode } from './LoopNode'
@@ -34,7 +33,6 @@ import { WorkflowNode, WorkflowEdge, validateWorkflow } from '@/lib/api'
 // 커스텀 노드 타입 등록
 const nodeTypes: NodeTypes = {
   worker: WorkerNode,
-  manager: ManagerNode,
   input: InputNode,
   condition: ConditionNode,
   loop: LoopNode,

@@ -119,6 +119,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
                 node_id,
                 elapsed_time,
                 token_usage,
+                has_worker_logs: !!eventData.worker_logs,
               })
 
               if (elapsed_time !== undefined) {

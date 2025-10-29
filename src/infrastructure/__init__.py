@@ -6,8 +6,7 @@ External dependency implementations
 Structure:
 - config: Configuration loaders (JSON-based)
 - storage: Repositories (Session, Context)
-- claude: Claude SDK client (Manager, Worker)
-- mcp: MCP Server (Worker Tools)
+- claude: Claude SDK client (Worker)
 - template: Template engine and repository
 """
 
@@ -23,15 +22,7 @@ from .storage import (
     JsonContextRepository,
 )
 from .claude import (
-    ManagerAgent,
     WorkerAgent,
-)
-from .mcp import (
-    initialize_workers,
-    create_worker_tools_server,
-    get_error_statistics,
-    reset_error_statistics,
-    log_error_summary,
 )
 from .template import (
     Jinja2TemplateEngine,
@@ -50,14 +41,7 @@ __all__ = [
     "JsonSessionRepository",
     "JsonContextRepository",
     # Claude
-    "ManagerAgent",
     "WorkerAgent",
-    # MCP
-    "initialize_workers",
-    "create_worker_tools_server",
-    "get_error_statistics",
-    "reset_error_statistics",
-    "log_error_summary",
     # Template
     "Jinja2TemplateEngine",
     "FileBasedTemplateRepository",

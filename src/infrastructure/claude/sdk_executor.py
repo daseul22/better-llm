@@ -181,6 +181,41 @@ class SDKResponseHandler(ABC):
                     }, ensure_ascii=False)
                     text_parts.append(tool_json)
 
+                # ToolResultBlock: 도구 실행 결과 (JSON 형식)
+                elif isinstance(content_block, ToolResultBlock):
+                    logger.debug(f"Found ToolResultBlock #{i}: tool_use_id={content_block.tool_use_id}")
+                    import json
+
+                    # Tool 결과 추출
+                    tool_result = None
+                    if hasattr(content_block, 'content'):
+                        # content가 리스트인 경우 (TextBlock 등)
+                        if isinstance(content_block.content, list):
+                            result_parts = []
+                            for result_block in content_block.content:
+                                if isinstance(result_block, TextBlock):
+                                    result_parts.append(result_block.text)
+                                elif hasattr(result_block, 'text'):
+                                    result_parts.append(result_block.text)
+                            tool_result = '\n'.join(result_parts) if result_parts else None
+                        # content가 문자열인 경우
+                        elif isinstance(content_block.content, str):
+                            tool_result = content_block.content
+
+                    # 결과가 없으면 빈 문자열
+                    if tool_result is None:
+                        tool_result = ""
+
+                    tool_result_json = json.dumps({
+                        "role": "user",
+                        "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": content_block.tool_use_id,
+                            "content": tool_result
+                        }]
+                    }, ensure_ascii=False)
+                    text_parts.append(tool_result_json)
+
                 # 폴백: hasattr로 type='tool_use' 체크 (하위 호환성)
                 elif hasattr(content_block, 'type') and content_block.type == 'tool_use':
                     logger.debug(f"Found tool_use block (fallback) #{i}")
@@ -248,6 +283,38 @@ class SDKResponseHandler(ABC):
                     if isinstance(content_block, TextBlock):
                         logger.debug(f"Extracted text from UserMessage TextBlock #{i}")
                         text_parts.append(content_block.text)
+
+                    # ToolResultBlock: 도구 실행 결과 (UserMessage에 포함될 수 있음)
+                    elif isinstance(content_block, ToolResultBlock):
+                        logger.debug(f"Found ToolResultBlock in UserMessage #{i}: tool_use_id={content_block.tool_use_id}")
+                        import json
+
+                        # Tool 결과 추출
+                        tool_result = None
+                        if hasattr(content_block, 'content'):
+                            if isinstance(content_block.content, list):
+                                result_parts = []
+                                for result_block in content_block.content:
+                                    if isinstance(result_block, TextBlock):
+                                        result_parts.append(result_block.text)
+                                    elif hasattr(result_block, 'text'):
+                                        result_parts.append(result_block.text)
+                                tool_result = '\n'.join(result_parts) if result_parts else None
+                            elif isinstance(content_block.content, str):
+                                tool_result = content_block.content
+
+                        if tool_result is None:
+                            tool_result = ""
+
+                        tool_result_json = json.dumps({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": content_block.tool_use_id,
+                                "content": tool_result
+                            }]
+                        }, ensure_ascii=False)
+                        text_parts.append(tool_result_json)
 
                 if text_parts:
                     return '\n'.join(text_parts)
@@ -358,127 +425,6 @@ class SDKResponseHandler(ABC):
         else:
             logger.info(f"⚠️  [{context}] Failed to extract usage from: {type(usage_obj)}")
             return None
-
-
-class ManagerResponseHandler(SDKResponseHandler):
-    """
-    Manager Client용 응답 핸들러.
-
-    ClaudeSDKClient의 receive_response()에서 반환된 응답을 처리합니다.
-
-    처리 흐름:
-    1. ResultMessage → usage 정보 추출 → 콜백 호출 → 종료
-    2. AssistantMessage → usage 정보 추출 → 콜백 호출 → 텍스트 추출 → yield
-    3. 알 수 없는 타입 → 폴백 처리
-    """
-
-    def __init__(self, usage_callback: Optional[Callable[[dict], None]] = None):
-        """초기화.
-
-        Args:
-            usage_callback: 토큰 사용량 정보를 받을 콜백 함수
-        """
-        self.usage_callback = usage_callback
-
-    async def process_response(self, response: Any) -> AsyncIterator[str]:
-        """
-        SDK 응답 처리 (Manager용).
-
-        Args:
-            response: ClaudeSDKClient.receive_response()의 응답 객체
-
-        Yields:
-            str: 추출된 텍스트 청크
-        """
-        # ====================================================================
-        # [1단계] ResultMessage 처리 (스트리밍 종료, usage 정보만 존재)
-        # ====================================================================
-        if isinstance(response, ResultMessage):
-            logger.debug("[Manager] Processing ResultMessage (usage info)")
-
-            # usage 정보 추출 및 콜백 호출
-            if response.usage and self.usage_callback:
-                usage_dict = self.extract_usage_info(response.usage, context="Manager")
-                if usage_dict:
-                    logger.info(f"[Manager] Token usage (ResultMessage): {usage_dict}")
-                    self.usage_callback(usage_dict)
-
-            # ResultMessage는 텍스트가 없으므로 여기서 종료
-            return
-
-        # ====================================================================
-        # [2단계] AssistantMessage 처리 (Claude의 응답, 텍스트 + usage 포함)
-        # ====================================================================
-        if isinstance(response, AssistantMessage):
-            logger.debug("[Manager] Processing AssistantMessage")
-
-            # (2-1) usage 정보 추출 및 콜백 호출
-            if hasattr(response, 'usage') and response.usage and self.usage_callback:
-                usage_dict = self.extract_usage_info(response.usage, context="Manager")
-                if usage_dict:
-                    logger.info(f"[Manager] Token usage (AssistantMessage): {usage_dict}")
-                    self.usage_callback(usage_dict)
-
-            # (2-2) 텍스트 추출 및 yield
-            text = self.extract_text_from_response(response)
-            if text:
-                yield text
-            return
-
-        # ====================================================================
-        # [3단계] UserMessage 처리 (사용자 입력 메시지)
-        # ====================================================================
-        if isinstance(response, UserMessage):
-            logger.debug("[Manager] Processing UserMessage")
-
-            # UserMessage는 usage 정보가 없을 수 있으므로 확인 후 처리
-            if hasattr(response, 'usage') and response.usage and self.usage_callback:
-                usage_dict = self.extract_usage_info(response.usage, context="Manager")
-                if usage_dict:
-                    logger.info(f"[Manager] Token usage (UserMessage): {usage_dict}")
-                    self.usage_callback(usage_dict)
-
-            # 텍스트 추출 및 yield
-            text = self.extract_text_from_response(response)
-            if text:
-                yield text
-            return
-
-        # ====================================================================
-        # [4단계] SystemMessage 처리 (시스템 메타데이터)
-        # ====================================================================
-        if isinstance(response, SystemMessage):
-            logger.debug("[Manager] Processing SystemMessage")
-
-            # SystemMessage는 usage 정보가 없을 수 있으므로 확인 후 처리
-            if hasattr(response, 'usage') and response.usage and self.usage_callback:
-                usage_dict = self.extract_usage_info(response.usage, context="Manager")
-                if usage_dict:
-                    logger.info(f"[Manager] Token usage (SystemMessage): {usage_dict}")
-                    self.usage_callback(usage_dict)
-
-            # 텍스트 추출 및 yield
-            text = self.extract_text_from_response(response)
-            if text:
-                yield text
-            return
-
-        # ====================================================================
-        # [5단계] 폴백 처리 (알 수 없는 응답 타입)
-        # ====================================================================
-        logger.info(f"⚠️  [Manager] Unknown response type: {type(response).__name__}")
-
-        # (3-1) usage 정보 추출 시도
-        if hasattr(response, 'usage') and response.usage and self.usage_callback:
-            usage_dict = self.extract_usage_info(response.usage, context="Manager")
-            if usage_dict:
-                logger.info(f"[Manager] Token usage (fallback): {usage_dict}")
-                self.usage_callback(usage_dict)
-
-        # (3-2) 텍스트 추출 시도
-        text = self.extract_text_from_response(response)
-        if text:
-            yield text
 
 
 class WorkerResponseHandler(SDKResponseHandler):
@@ -619,216 +565,6 @@ class WorkerResponseHandler(SDKResponseHandler):
             except Exception:
                 # JSON 변환 실패 시 문자열로 폴백
                 yield str(response)
-
-
-class ManagerSDKExecutor:
-    """Manager용 SDK 실행 래퍼.
-
-    ClaudeSDKClient를 사용하여 스트리밍 응답을 처리합니다.
-    """
-
-    def __init__(
-        self,
-        config: SDKExecutionConfig,
-        mcp_servers: dict,
-        allowed_tools: list[str],
-        response_handler: ManagerResponseHandler,
-        session_id: Optional[str] = None,
-        hooks: Optional[dict] = None
-    ):
-        """초기화.
-
-        Args:
-            config: SDK 실행 설정
-            mcp_servers: MCP 서버 딕셔너리
-            allowed_tools: 허용된 도구 목록
-            response_handler: 응답 핸들러
-            session_id: 세션 ID (로깅용)
-            hooks: Agent SDK Hooks (선택, {"PreToolUse": [...], "PostToolUse": [...]})
-        """
-        self.config = config
-        self.mcp_servers = mcp_servers
-        self.allowed_tools = allowed_tools
-        self.response_handler = response_handler
-        self.hooks = hooks or {}
-        self.logger = get_logger(__name__, session_id=session_id or "unknown")
-
-    async def execute_stream(self, prompt: str) -> AsyncIterator[str]:
-        """스트림 실행.
-
-        Args:
-            prompt: 프롬프트
-
-        Yields:
-            str: 응답 텍스트 청크
-
-        Raises:
-            WorkerExecutionError: SDK 실행 중 에러 발생 시
-        """
-        from claude_agent_sdk import ClaudeSDKClient
-        from claude_agent_sdk.types import ClaudeAgentOptions
-
-        client = None
-        cleanup_done = False
-
-        try:
-            self.logger.debug(
-                "Starting Claude Agent SDK call (Manager)",
-                model=self.config.model,
-                allowed_tools_count=len(self.allowed_tools)
-            )
-
-            # ClaudeAgentOptions 생성
-            options_dict = {
-                "model": self.config.model,
-                "mcp_servers": self.mcp_servers,
-                "allowed_tools": self.allowed_tools,
-                "cli_path": self.config.cli_path,
-                "permission_mode": self.config.permission_mode
-            }
-
-            # 선택적 컨텍스트 관리 옵션 추가 (None이 아니면)
-            if self.config.max_turns is not None:
-                options_dict["max_turns"] = self.config.max_turns
-            if self.config.continue_conversation:
-                options_dict["continue_conversation"] = self.config.continue_conversation
-            if self.config.setting_sources:
-                options_dict["setting_sources"] = self.config.setting_sources
-
-            # System Prompt 명시적 설정 (SDK Best Practice)
-            # ClaudeAgentOptions에서 system_prompt를 직접 지원하지 않으므로
-            # 프롬프트에 포함하여 전달 (현재 방식 유지)
-            # 참고: system_prompt는 query() 호출 시 프롬프트에 포함됨
-
-            # Hooks 추가 (비어있지 않으면)
-            if self.hooks:
-                options_dict["hooks"] = self.hooks
-                self.logger.debug(
-                    "Hooks enabled",
-                    hook_events=list(self.hooks.keys())
-                )
-
-            options = ClaudeAgentOptions(**options_dict)
-
-            # Client 생성 및 연결
-            client = ClaudeSDKClient(options=options)
-            await client.connect()
-
-            # 프롬프트 전송
-            await client.query(prompt)
-
-            # 응답 수신 (스트리밍)
-            async for response in client.receive_response():
-                async for text in self.response_handler.process_response(response):
-                    yield text
-
-            self.logger.debug("Claude Agent SDK call completed (Manager)")
-
-            # 스트리밍 완료 후 client 객체에서 usage 확인
-            self.logger.info(f"[Manager] Checking client for usage after streaming...")
-            self.logger.info(f"[Manager] Client type: {type(client).__name__}")
-            client_attrs = [attr for attr in dir(client) if not attr.startswith('_') and 'usage' in attr.lower()]
-            self.logger.info(f"[Manager] Client usage-related attributes: {client_attrs}")
-
-            # client 객체에 usage 정보가 있는지 확인
-            if hasattr(client, 'usage'):
-                self.logger.info(f"[Manager] client.usage: {client.usage}")
-                if client.usage and self.response_handler.usage_callback:
-                    usage_dict = {}
-
-                    # usage가 dict인 경우와 object인 경우 모두 지원
-                    if isinstance(client.usage, dict):
-                        usage_dict['input_tokens'] = client.usage.get('input_tokens', 0)
-                        usage_dict['output_tokens'] = client.usage.get('output_tokens', 0)
-                        usage_dict['cache_read_tokens'] = client.usage.get('cache_read_input_tokens', 0)
-                        usage_dict['cache_creation_tokens'] = client.usage.get('cache_creation_input_tokens', 0)
-                    else:
-                        # hasattr 체크 후 None이 아닌지도 확인
-                        if hasattr(client.usage, 'input_tokens') and client.usage.input_tokens is not None:
-                            usage_dict['input_tokens'] = client.usage.input_tokens
-                        if hasattr(client.usage, 'output_tokens') and client.usage.output_tokens is not None:
-                            usage_dict['output_tokens'] = client.usage.output_tokens
-                        if hasattr(client.usage, 'cache_read_tokens') and client.usage.cache_read_tokens is not None:
-                            usage_dict['cache_read_tokens'] = client.usage.cache_read_tokens
-                        if hasattr(client.usage, 'cache_creation_tokens') and client.usage.cache_creation_tokens is not None:
-                            usage_dict['cache_creation_tokens'] = client.usage.cache_creation_tokens
-
-                    if usage_dict:
-                        self.logger.info(f"[Manager] Found usage in client: {usage_dict}")
-                        self.response_handler.usage_callback(usage_dict)
-
-        except GeneratorExit:
-            # Generator가 중간에 종료될 때는 cleanup 하지 않음
-            self.logger.debug("Generator exit - cleanup skipped")
-            raise
-
-        except asyncio.CancelledError:
-            # 작업 취소는 정상 종료로 간주 (에러 로깅 없이 조용히 종료)
-            self.logger.debug("Task cancelled by user")
-            return
-
-        except Exception as e:
-            from src.infrastructure.logging import log_exception_silently
-
-            # SDK 예외를 구체적으로 처리
-            if isinstance(e, CLINotFoundError):
-                self.logger.error("Claude Code CLI가 설치되지 않았습니다")
-                yield (
-                    "\n[시스템 오류] Claude Code CLI가 설치되지 않았습니다.\n"
-                    "설치 방법: npm install -g @anthropic-ai/claude-code"
-                )
-
-            elif isinstance(e, ProcessError):
-                exit_code = getattr(e, 'exit_code', 'unknown')
-                self.logger.error(
-                    f"Claude CLI 프로세스 실행 실패: exit_code={exit_code}"
-                )
-                yield (
-                    f"\n[시스템 오류] Claude CLI 프로세스 실행 실패 "
-                    f"(exit_code: {exit_code})\n에러 로그를 확인해주세요."
-                )
-
-            elif isinstance(e, CLIJSONDecodeError):
-                self.logger.error(f"Claude CLI 응답 파싱 실패: {e}")
-                yield (
-                    "\n[시스템 오류] Claude CLI 응답을 파싱할 수 없습니다. "
-                    "CLI 버전을 확인해주세요."
-                )
-
-            elif isinstance(e, ClaudeSDKError):
-                log_exception_silently(
-                    self.logger,
-                    e,
-                    "Claude SDK 에러 발생",
-                    model=self.config.model
-                )
-                yield (
-                    "\n[시스템 오류] Claude SDK 실행 중 오류가 발생했습니다. "
-                    "에러 로그를 확인해주세요."
-                )
-
-            else:
-                # 기타 예상하지 못한 에러
-                log_exception_silently(
-                    self.logger,
-                    e,
-                    "Manager SDK execution failed (unknown error)",
-                    model=self.config.model
-                )
-                yield (
-                    f"\n[시스템 오류] 예상하지 못한 오류가 발생했습니다: "
-                    f"{type(e).__name__}"
-                )
-
-        finally:
-            # 리소스 정리
-            if client is not None and not cleanup_done:
-                try:
-                    await client.disconnect()
-                    cleanup_done = True
-                    self.logger.debug("Client connection closed successfully")
-                except Exception as e:
-                    self.logger.debug("Client disconnect failed (ignored)", error=str(e))
 
 
 class WorkerSDKExecutor:

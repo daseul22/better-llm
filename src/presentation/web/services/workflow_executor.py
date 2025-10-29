@@ -15,7 +15,6 @@ from pathlib import Path
 from src.domain.models import AgentConfig, Message
 from src.infrastructure.config import JsonConfigLoader, get_project_root
 from src.infrastructure.claude.worker_client import WorkerAgent
-from src.infrastructure.claude.manager_client import ManagerAgent
 from src.infrastructure.storage.custom_worker_repository import CustomWorkerRepository
 from src.infrastructure.logging import get_logger, add_session_file_handlers, remove_session_file_handlers
 from src.presentation.web.schemas.workflow import (
@@ -24,7 +23,6 @@ from src.presentation.web.schemas.workflow import (
     WorkflowEdge,
     WorkflowNodeExecutionEvent,
     WorkerNodeData,
-    ManagerNodeData,
     InputNodeData,
     ConditionNodeData,
     LoopNodeData,
@@ -844,189 +842,6 @@ class WorkflowExecutor:
 
         return merged_output
 
-    async def _execute_manager_node(
-        self,
-        node: WorkflowNode,
-        node_outputs: Dict[str, str],
-        initial_input: str,
-        session_id: str,
-        project_path: Optional[str] = None,
-    ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
-        """
-        Manager 노드 실행 (병렬 워커 호출)
-
-        Manager 노드는 등록된 워커들을 병렬로 실행하여 결과를 통합합니다.
-
-        Args:
-            node: Manager 노드
-            node_outputs: 이전 노드 출력들
-            initial_input: 초기 입력
-            session_id: 세션 ID
-            project_path: 프로젝트 디렉토리 경로 (CLAUDE.md 로드용)
-
-        Yields:
-            WorkflowNodeExecutionEvent: 노드 실행 이벤트
-        """
-        node_id = node.id
-
-        # 노드 데이터 추출 (Pydantic 모델과 딕셔너리 모두 처리)
-        if hasattr(node.data, "task_description"):
-            task_description = node.data.task_description
-            available_workers = node.data.available_workers
-        elif isinstance(node.data, dict):
-            task_description = node.data.get("task_description", "")
-            available_workers = node.data.get("available_workers", [])
-        else:
-            raise ValueError(f"Manager 노드 데이터 형식이 잘못되었습니다: {type(node.data)}")
-
-        logger.info(
-            f"[{session_id}] Manager 노드 실행: {node_id} "
-            f"(워커: {available_workers})"
-        )
-
-        # 노드 시작 시간 기록
-        start_time = time.time()
-
-        # 노드 시작 이벤트
-        start_event = WorkflowNodeExecutionEvent(
-            event_type="node_start",
-            node_id=node_id,
-            data={
-                "node_type": "manager",
-                "available_workers": available_workers,
-                "input": task_description,  # 노드 입력 추가 (디버깅용)
-            },
-            timestamp=datetime.now().isoformat(),
-        )
-        yield start_event
-
-        try:
-            # ManagerAgent 사용 (지능형 오케스트레이터)
-            from src.infrastructure.claude.manager_client import ManagerAgent
-            from src.domain.models import Message
-
-            # Worker Tools MCP 서버 가져오기
-            from src.infrastructure.mcp.worker_tools import get_worker_tools_server
-            worker_tools_server = get_worker_tools_server()
-
-            # ManagerAgent 생성
-            manager_agent = ManagerAgent(
-                worker_tools_server=worker_tools_server,
-                model="claude-sonnet-4-5-20250929",
-                project_dir=project_path,
-                session_id=session_id,
-                auto_commit_enabled=False,  # Manager 노드는 커밋하지 않음
-            )
-
-            # available_workers를 allowed_tools로 변환
-            # 각 워커에 대해 execute_{worker}_task 형식의 MCP 도구 이름 생성
-            allowed_tools = [
-                f"mcp__workers__execute_{worker}_task"
-                for worker in available_workers
-            ] + [
-                "read",
-                "mcp__workers__ask_user",
-                "mcp__workers__execute_parallel_tasks"  # 병렬 실행 Tool 추가
-            ]
-
-            # Manager 노드 전용 시스템 지침 추가
-            manager_instruction = f"""당신은 Manager 노드로 실행되고 있습니다.
-
-**등록된 워커**: {', '.join(available_workers)}
-
-**역할**:
-1. 작업 요구사항을 분석하여 필요한 워커를 선택
-2. 등록된 워커만 사용 가능 (다른 워커는 사용 불가)
-3. **독립적인 작업들은 반드시 병렬로 실행**
-
-**병렬 실행 방법**:
-- 독립적인 워커들은 **한 번에 여러 Tool을 동시에 호출**
-- 예시 (Reviewer + Tester 병렬):
-  ```xml
-  <tool_use>
-    <tool_name>execute_reviewer_task</tool_name>
-    <parameters>...</parameters>
-  </tool_use>
-  <tool_use>
-    <tool_name>execute_tester_task</tool_name>
-    <parameters>...</parameters>
-  </tool_use>
-  ```
-- 이렇게 하면 자동으로 병렬 실행됩니다
-
-**중요**: 순차 호출하지 말고, 독립적인 워커는 **한 응답에 모두 포함**하세요!
-
-**실제 작업**:
-{task_description}"""
-
-            # 대화 히스토리 생성 (Manager 지침 + 사용자 메시지)
-            history = [
-                Message(role="user", content=manager_instruction)
-            ]
-
-            logger.info(
-                f"[{session_id}] Manager 노드: ManagerAgent 실행 시작 "
-                f"(available_workers: {available_workers})"
-            )
-
-            # 스트리밍 출력 수집 (allowed_tools 전달)
-            output_chunks = []
-            async for chunk in manager_agent.analyze_and_plan_stream(
-                history,
-                allowed_tools_override=allowed_tools
-            ):
-                output_chunks.append(chunk)
-                # 스트리밍 출력
-                yield WorkflowNodeExecutionEvent(
-                    event_type="node_output",
-                    node_id=node_id,
-                    data={"chunk": chunk},
-                )
-
-            integrated_output = "".join(output_chunks)
-
-            # 실행 시간 계산
-            elapsed_time = time.time() - start_time
-
-            # 노드 완료 이벤트 (output 포함)
-            complete_event = WorkflowNodeExecutionEvent(
-                event_type="node_complete",
-                node_id=node_id,
-                data={
-                    "node_type": "manager",
-                    "workers_executed": list(worker_results.keys()),
-                    "output_length": len(integrated_output),
-                    "output": integrated_output,  # 통합 결과 포함
-                },
-                timestamp=datetime.now().isoformat(),
-                elapsed_time=elapsed_time,
-            )
-            yield complete_event
-
-            logger.info(
-                f"[{session_id}] Manager 노드 완료: {node_id} "
-                f"(출력 길이: {len(integrated_output)})"
-            )
-
-        except Exception as e:
-            error_msg = f"Manager 노드 실행 실패: {str(e)}"
-            logger.error(f"[{session_id}] {node_id}: {error_msg}", exc_info=True)
-
-            # 실행 시간 계산 (에러 발생까지의 시간)
-            elapsed_time = time.time() - start_time
-
-            # 노드 에러 이벤트
-            error_event = WorkflowNodeExecutionEvent(
-                event_type="node_error",
-                node_id=node_id,
-                data={"error": error_msg},
-                timestamp=datetime.now().isoformat(),
-                elapsed_time=elapsed_time,
-            )
-            yield error_event
-
-            raise
-
     async def _execute_single_node(
         self,
         node: WorkflowNode,
@@ -1092,15 +907,6 @@ class WorkflowExecutor:
                 f"(출력 길이: {len(input_value)})"
             )
             return
-
-        # Manager 노드
-        elif node.type == "manager":
-            async for event in self._execute_manager_node(
-                node, node_outputs, initial_input, session_id, project_path
-            ):
-                if event.event_type == "node_complete":
-                    node_outputs[node_id] = event.data.get("output", "")
-                yield event
 
         # Condition 노드
         elif node.type == "condition":

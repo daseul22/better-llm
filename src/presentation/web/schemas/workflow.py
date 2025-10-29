@@ -45,39 +45,6 @@ class WorkerNodeData(BaseModel):
     )
 
 
-class ManagerNodeData(BaseModel):
-    """
-    Manager 노드의 데이터 (오케스트레이터)
-
-    Manager 노드는 등록된 Worker들을 조율하여 작업을 수행합니다.
-    - TUI의 Manager Agent와 동일하게 동작
-    - 등록된 워커만 호출 가능
-    - 병렬 워커 호출 지원
-
-    Attributes:
-        task_description: 초기 작업 설명 (Manager에게 전달)
-        available_workers: 사용 가능한 워커 이름 목록 (등록된 워커만 호출 가능)
-        parallel_execution: 자식 노드를 병렬로 실행할지 여부 (기본: false)
-        config: 추가 설정 (옵션)
-    """
-    task_description: str = Field(
-        ...,
-        description="Manager에게 전달할 초기 작업 설명"
-    )
-    available_workers: List[str] = Field(
-        ...,
-        description="사용 가능한 워커 이름 목록 (예: ['planner', 'coder', 'reviewer'])"
-    )
-    parallel_execution: Optional[bool] = Field(
-        default=False,
-        description="자식 노드를 병렬로 실행할지 여부 (기본: false)"
-    )
-    config: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="추가 설정 (옵션)"
-    )
-
-
 class InputNodeData(BaseModel):
     """
     Input 노드의 데이터 (워크플로우 시작점)
@@ -197,7 +164,6 @@ class MergeNodeData(BaseModel):
 # Union 타입으로 모든 노드 타입 포함
 WorkflowNodeData = Union[
     WorkerNodeData,
-    ManagerNodeData,
     InputNodeData,
     ConditionNodeData,
     LoopNodeData,
@@ -211,14 +177,14 @@ class WorkflowNode(BaseModel):
 
     Attributes:
         id: 노드 고유 ID
-        type: 노드 타입 (worker, manager, input, condition, loop, merge)
+        type: 노드 타입 (worker, input, condition, loop, merge)
         position: 캔버스 상의 위치 {x, y}
-        data: 노드 데이터 (WorkerNodeData, ManagerNodeData, InputNodeData, ConditionNodeData, LoopNodeData, MergeNodeData)
+        data: 노드 데이터 (WorkerNodeData, InputNodeData, ConditionNodeData, LoopNodeData, MergeNodeData)
     """
     id: str = Field(..., description="노드 고유 ID")
     type: str = Field(
         default="worker",
-        description="노드 타입 (worker, manager, input, condition, loop, merge)"
+        description="노드 타입 (worker, input, condition, loop, merge)"
     )
     position: Dict[str, float] = Field(
         ...,
@@ -227,7 +193,6 @@ class WorkflowNode(BaseModel):
     )
     data: Union[
         WorkerNodeData,
-        ManagerNodeData,
         InputNodeData,
         ConditionNodeData,
         LoopNodeData,
