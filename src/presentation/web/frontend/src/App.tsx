@@ -119,8 +119,8 @@ function App() {
           console.log('🔄 세션 복원 시도:', lastSessionId)
           const session = await getWorkflowSession(lastSessionId)
 
-          // 세션이 아직 실행 중이거나 최근 완료된 경우 복원
-          if (session.status === 'running' || session.status === 'completed') {
+          // 실행 중인 세션만 복원 (완료된 세션은 복구하지 않음)
+          if (session.status === 'running') {
             // 1️⃣ 세션에서 프로젝트 경로 복원 (세션에 저장된 project_path 사용)
             if (session.project_path) {
               try {
@@ -138,9 +138,8 @@ function App() {
             restoreFromSession(session)
             console.log('✅ 세션 복원 완료:', session.session_id)
 
-            // 3️⃣ 실행 중인 세션이면 자동으로 스트림 재접속
-            if (session.status === 'running') {
-              console.log('🔌 실행 중인 세션 감지 - 스트림 자동 재접속 시작')
+            // 3️⃣ 자동으로 스트림 재접속
+            console.log('🔌 실행 중인 세션 감지 - 스트림 자동 재접속 시작')
 
               // 현재 로그 개수 확인 (중복 방지용)
               const lastEventIndex = session.logs.length > 0 ? session.logs.length - 1 : undefined
@@ -236,10 +235,6 @@ function App() {
                   addToast('error', `스트림 재접속 실패: ${err.message}`)
                 })
               })
-            } else {
-              // completed 상태면 토스트만 표시
-              addToast('success', '이전 워크플로우 세션이 복원되었습니다')
-            }
 
             return // 세션 복원 성공 시 워크플로우 로드 스킵
           } else {
