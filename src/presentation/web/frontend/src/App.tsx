@@ -87,6 +87,11 @@ function App() {
     }
   }
 
+  // Display 설정 로드 (앱 시작 시 항상 실행)
+  useEffect(() => {
+    loadDisplaySettings()
+  }, [])
+
   // 앱 시작 시 프로젝트 자동 로드 및 세션 복원 (한 번만 실행)
   useEffect(() => {
     // 이미 로드되었으면 스킵
@@ -246,9 +251,6 @@ function App() {
             loadWorkflow(data.workflow)
             console.log(`✅ 프로젝트 워크플로우 자동 로드: ${lastProjectPath}`)
           }
-
-          // Display 설정 로드
-          await loadDisplaySettings()
         } catch (err) {
           console.warn('프로젝트 자동 로드 실패:', err)
           // 실패 시 localStorage 정리
