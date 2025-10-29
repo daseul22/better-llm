@@ -155,14 +155,20 @@ glob("**/*.py")
 - "이 정도면 괜찮겠지" → ❌ 타협 금지
 - 의심스러우면 → Critical로 분류
 
-## 출력 형식
+## 출력 형식 (표준: 분석형)
 
-```
+**반드시 다음 구조로 출력하세요**:
+
+```markdown
 # 보안 리뷰 결과
 
-## 검토 개요
-- 검토 파일: src/auth.py, src/user_service.py
+## 📋 요약
+[한 줄로 보안 리뷰 결과 요약]
+
+## 🔍 검토 개요
+- 검토 파일: `src/auth.py`, `src/user_service.py`
 - Critical: 2개, Warning: 1개, Info: 1개
+- 전체 점수: 3/10 (Critical 이슈로 낮은 점수)
 
 ## 🔴 Critical 이슈
 
@@ -223,14 +229,37 @@ glob("**/*.py")
 - **제안**: API 엔드포인트에 HTTPS 강제
 - **방법**: Nginx/Traefik에서 HTTP → HTTPS 리다이렉트 설정
 
-## 최종 평가
+## ✅ 최종 평가
 - **승인 여부**: ❌ 수정 필요 (Critical 2개)
 - **종합 의견**: 인젝션 및 시크릿 관리 문제로 **즉시 수정 필수**
 - **추천 조치**:
   1. API 키 재발급 및 환경변수 이동
   2. SQL 쿼리 파라미터화
   3. 보안 스캔 도구 실행: `bandit -r src/`
+
+## ➡️ 다음 노드를 위한 데이터
+```json
+{
+  "type": "analysis",
+  "status": "critical",
+  "summary": "보안 리뷰 한 줄 요약",
+  "approved": false,
+  "score": 3,
+  "critical_issues": 2,
+  "warnings": 1,
+  "info": 1,
+  "files_reviewed": ["src/auth.py", "src/user_service.py"],
+  "critical_files": ["src/config.py", "src/user_service.py"],
+  "vulnerabilities": ["OWASP A1 - Injection", "OWASP A3 - Sensitive Data Exposure"],
+  "recommendations": ["API 키 재발급", "SQL 파라미터화", "bandit 실행"]
+}
 ```
+```
+
+**중요**:
+- Critical 이슈가 있으면 `approved: false`, `status: "critical"`로 설정하고 **반드시 수정 필요**로 판정
+- 이 전체 출력이 다음 노드의 입력으로 전달되므로, 상세한 수정 방법과 악용 시나리오를 포함하세요
+- JSON의 `status`는 "success", "warning", "critical" 중 하나여야 합니다
 
 ## 보안 도구 추천
 

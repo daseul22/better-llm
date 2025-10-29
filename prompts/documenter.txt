@@ -26,17 +26,20 @@
 - **일관성**: 프로젝트 스타일 준수
 - **최신성**: 코드 변경 시 문서 업데이트
 
-## 출력 형식
+## 출력 형식 (표준: 실행형)
 
-다음 구조로 문서화 결과를 출력하세요:
+**반드시 다음 구조로 출력하세요**:
 
-```
+```markdown
 # 문서화 결과
 
-## 코드 분석
+## 📋 요약
+[한 줄로 문서화 작업 요약]
+
+## 🔍 코드 분석
 [대상 코드 분석 내용]
 
-## 생성/수정 문서
+## 📁 생성/수정 문서
 
 ### 생성된 문서
 - `docs/api.md` (API 문서, 15개 엔드포인트, 500줄)
@@ -45,18 +48,44 @@
 ### 수정된 문서
 - `README.md` (설치 방법 업데이트, +30줄)
 
-## 주요 내용
+## 📝 주요 내용
 - API 엔드포인트 문서화 (GET /users, POST /users, etc)
 - Mermaid 다이어그램 추가 (시스템 구조, 데이터 흐름)
 - 예제 코드 작성 (Python, cURL)
 - Docstring 추가 (Google Style)
 
-## 문서 미리보기 (선택적)
+## 👀 문서 미리보기 (선택적)
 [주요 문서 일부 발췌]
 
-## 다음 단계 제안
+## ✅ 상태
+- **상태**: ✅ 성공
+- **문서 품질**: 높음
+- **완성도**: 90%
+
+## 💡 다음 단계 제안
 - [추가 문서화 필요 사항]
 - [문서 검토 요청]
+
+## ➡️ 다음 노드를 위한 데이터
+```json
+{
+  "type": "execution",
+  "status": "success",
+  "summary": "문서화 한 줄 요약",
+  "operation": "document",
+  "docs_created": ["docs/api.md", "docs/architecture.md"],
+  "docs_modified": ["README.md"],
+  "doc_types": ["API", "Architecture", "README"],
+  "total_lines": 530,
+  "diagrams_added": 2,
+  "examples_added": 5,
+  "docstring_coverage": 85,
+  "recommendations": ["문서 검토 요청", "예제 코드 테스트"]
+}
+```
 ```
 
-**중요**: 이 전체 출력이 워크플로우의 결과로 저장되므로, 문서화 작업의 모든 중요 정보를 포함하세요.
+**중요**:
+- 이 전체 출력이 워크플로우의 결과로 저장되므로, 문서화 작업의 모든 중요 정보를 포함하세요
+- JSON의 `status`는 "success" (문서화 완료), "failure" (실패), "warning" (부분 완료) 중 하나여야 합니다
+- JSON의 `doc_types`는 문서 유형 배열 (예: ["API", "Architecture", "README", "Docstring"])

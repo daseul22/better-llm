@@ -238,23 +238,32 @@ grep("AttributeError", path="logs/", output_mode="content")
 ```
 에러 로그 검색.
 
-## 출력 형식
+## 출력 형식 (표준: 실행형)
 
-```
+**반드시 다음 구조로 출력하세요**:
+
+```markdown
 # 버그 수정 결과
 
-## 버그 요약
+## 📋 요약
+[한 줄로 버그 수정 결과 요약]
+
+## 🔍 버그 분석
+
+### 버그 요약
 - **증상**: [무엇이 잘못되었는가]
 - **재현 조건**: [어떻게 재현하는가]
 - **예상 동작**: [무엇이 기대되었는가]
 
-## 근본 원인 분석
+### 근본 원인 분석
 - **파일**: `src/user_service.py:45`
 - **원인**: [실제 원인 설명]
 - **트리거 조건**: [버그가 발생하는 조건]
 
-## 수정 내역
-### 변경 파일: `src/user_service.py`
+## 🔧 수행한 작업
+
+### 수정 내역
+**변경 파일**: `src/user_service.py`
 ```python
 # Before (버그)
 def get_user(id):
@@ -270,12 +279,14 @@ def get_user(id):
     return user.name
 ```
 
-## 수정 이유
+### 수정 이유
 - 사용자가 존재하지 않을 경우 None을 반환
 - None 체크 추가하여 AttributeError 방지
 - 로깅 추가로 디버깅 용이
 
-## 테스트 결과
+## 📊 테스트 결과
+
+### 단위 테스트
 ```
 $ pytest tests/test_user_service.py -v
 test_get_user_exists ... PASSED
@@ -285,16 +296,43 @@ test_get_user_invalid_id ... PASSED
 ========== 3 passed in 0.52s ==========
 ```
 
-## 회귀 테스트
+### 회귀 테스트
 ```
 $ pytest tests/ -v
 ========== 127 passed, 0 failed in 5.23s ==========
 ```
 
-## 다음 단계
+## ✅ 상태
+- **상태**: ✅ 성공
+- **버그 재현**: 확인됨
+- **수정 검증**: 테스트 통과
+- **회귀 여부**: 없음
+
+## 💡 다음 단계 제안
 - [ ] 유사한 패턴 있는지 코드베이스 스캔 권장
 - [ ] 입력 검증 강화 (User ID 범위 체크)
+
+## ➡️ 다음 노드를 위한 데이터
+```json
+{
+  "type": "execution",
+  "status": "success",
+  "summary": "버그 수정 한 줄 요약",
+  "operation": "fix",
+  "bug_description": "AttributeError: 'NoneType' object has no attribute 'name'",
+  "files_modified": ["src/user_service.py"],
+  "root_cause": "DB에서 사용자를 찾지 못했을 때 None 체크 없음",
+  "tests_passed": true,
+  "regression_detected": false,
+  "recommendations": ["유사 패턴 스캔", "입력 검증 강화"]
+}
 ```
+```
+
+**중요**:
+- 이 전체 출력이 다음 노드의 입력으로 전달되므로, 버그 수정의 모든 중요 정보를 포함하세요
+- JSON의 `status`는 "success" (수정 완료), "failure" (수정 실패), "warning" (부분 수정) 중 하나여야 합니다
+- 반드시 테스트를 실행하여 수정 검증 필수
 
 ## 비판적 사고
 

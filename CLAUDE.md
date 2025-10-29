@@ -120,13 +120,100 @@ config/
 └── system_config.json        # 시스템 설정 (max_turns, hooks, permission)
 
 prompts/                       # Worker Agent 시스템 프롬프트
-├── planner.txt               # 계획 수립 (read, glob만)
-├── coder.txt                 # 코드 작성 (read, write, edit, glob, grep)
-├── reviewer.txt              # 코드 리뷰 (read, glob, grep만)
-├── tester.txt                # 테스트 실행 (read, bash, glob)
-├── committer.txt             # Git 커밋 (bash, read)
+├── planner.txt               # 계획 수립 (read, glob만) - 계획형
+├── product_manager.txt       # 제품 기획 (read, glob) - 계획형
+├── ideator.txt               # 아이디어 생성 (read, glob) - 계획형
+├── coder.txt                 # 코드 작성 (read, write, edit, glob, grep) - 실행형
+├── reviewer.txt              # 코드 리뷰 (read, glob, grep만) - 분석형
+├── style_reviewer.txt        # 스타일 리뷰 (read, glob, grep) - 분석형
+├── security_reviewer.txt     # 보안 리뷰 (read, glob, grep) - 분석형
+├── architecture_reviewer.txt # 아키텍처 리뷰 (read, glob, grep) - 분석형
+├── tester.txt                # 테스트 실행 (read, bash, glob) - 실행형
+├── bug_fixer.txt             # 버그 수정 (read, write, edit, bash, grep) - 실행형
+├── committer.txt             # Git 커밋 (bash, read) - 실행형
+├── documenter.txt            # 문서화 (read, write, edit, glob, bash) - 실행형
+├── log_analyzer.txt          # 로그 분석 (read, bash, glob, grep) - 분석형
+├── summarizer.txt            # 텍스트 요약 (read, glob) - 분석형
 ├── worker_prompt_engineer.txt # 커스텀 워커 프롬프트 생성
 └── workflow_designer.txt     # 워크플로우 자동 설계 및 생성
+```
+
+### Worker 출력 형식 표준화
+
+**모든 Worker는 표준화된 출력 형식을 사용합니다** (Markdown + JSON):
+
+#### 3가지 출력 형식
+
+| 형식 | Worker 예시 | 특징 |
+|------|-------------|------|
+| **계획형** (Planning) | Planner, Product Manager, Ideator | 계획/아이디어 제시, 다음 단계 제안 |
+| **분석형** (Analysis) | Reviewer, Security Reviewer, Log Analyzer | 분석/평가 결과, 승인 여부, 점수 |
+| **실행형** (Execution) | Coder, Tester, Bug Fixer, Committer | 작업 수행 결과, 파일 변경, 상태 |
+
+#### 표준 출력 구조
+
+모든 Worker는 다음 구조를 따릅니다:
+
+```markdown
+# [작업] 결과
+
+## 📋 요약
+[한 줄 요약]
+
+## 🔍 [작업명] 개요
+[상세 정보]
+
+## [작업 내용 섹션들]
+...
+
+## ✅ 최종 평가
+- **승인 여부** / **상태**: ✅ 성공 / ❌ 실패
+- **종합 의견**: [평가]
+- **추천 조치**: [다음 단계]
+
+## ➡️ 다음 노드를 위한 데이터
+```json
+{
+  "type": "planning|analysis|execution",
+  "status": "success|warning|critical|failure",
+  "summary": "한 줄 요약",
+  ... (워커별 필드)
+}
+```
+```
+
+**JSON 블록의 역할**:
+- 다음 노드가 구조화된 데이터를 쉽게 파싱 가능
+- 워크플로우 자동화 및 조건부 분기 지원
+- 상태(`status`), 승인 여부(`approved`), 점수(`score`) 등 표준 필드 제공
+
+**예시**:
+```json
+// 계획형 (Planner)
+{
+  "type": "planning",
+  "status": "success",
+  "total_tasks": 5,
+  "files_to_modify": ["file1.py", "file2.py"]
+}
+
+// 분석형 (Reviewer)
+{
+  "type": "analysis",
+  "status": "critical",
+  "approved": false,
+  "critical_issues": 2,
+  "recommendations": ["SQL 파라미터화", "에러 처리 개선"]
+}
+
+// 실행형 (Coder)
+{
+  "type": "execution",
+  "status": "success",
+  "operation": "create",
+  "files_created": ["src/new.py"],
+  "quality_score": 8.5
+}
 ```
 
 ---

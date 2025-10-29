@@ -145,18 +145,24 @@ bash("grep ERROR logs/app.log | cut -d' ' -f2 | cut -d':' -f1 | sort | uniq -c")
 - [ ] 스택 트레이스에서 코드 위치 파악 가능한가?
 - [ ] 재현 가능한가?
 
-## 출력 형식
+## 출력 형식 (표준: 분석형)
 
-```
+**반드시 다음 구조로 출력하세요**:
+
+```markdown
 # 로그 분석 결과
 
-## 분석 개요
+## 📋 요약
+[한 줄로 로그 분석 결과 요약]
+
+## 🔍 분석 개요
 - **분석 기간**: 2025-10-28 00:00 ~ 23:59
-- **로그 파일**: logs/claude-flow.log, logs/claude-flow-error.log
+- **로그 파일**: `logs/claude-flow.log`, `logs/claude-flow-error.log`
 - **총 로그 라인**: 5,432개
 - **에러 발생**: 127건 (ERROR: 15건, WARNING: 112건)
+- **전체 점수**: 6/10
 
-## 에러 통계
+## 📊 에러 통계
 
 ### 심각도별
 - 🔴 CRITICAL: 0건
@@ -170,7 +176,7 @@ bash("grep ERROR logs/app.log | cut -d' ' -f2 | cut -d':' -f1 | sort | uniq -c")
 3. **TimeoutError**: 2건 (13%)
 4. **ValueError**: 1건 (7%)
 
-## 주요 에러 상세
+## 🔴 Critical 이슈
 
 ### 1. AttributeError: 'NoneType' object has no attribute 'name' (8건)
 - **빈도**: 8건 (전체 에러의 53%)
@@ -190,8 +196,18 @@ bash("grep ERROR logs/app.log | cut -d' ' -f2 | cut -d':' -f1 | sort | uniq -c")
 - **영향**: 사용자 조회 API 실패 (404 반환 실패, 500 에러)
 - **재현 조건**: 존재하지 않는 사용자 ID로 GET /users/{id} 호출
 - **우선순위**: 🔴 Critical (API 장애)
+- **수정 방법**:
+  ```python
+  def get_user(id):
+      user = db.query(User).filter_by(id=id).first()
+      if user is None:
+          return None  # 또는 raise UserNotFoundError
+      return user.name
+  ```
 
-### 2. ConnectionError: Failed to connect to database (4건)
+## 🟡 Warning
+
+### 1. ConnectionError: Failed to connect to database (4건)
 - **빈도**: 4건 (전체 에러의 27%)
 - **발생 시간**: 2025-10-28 14:00~14:05 (5분 집중)
 - **발생 파일**: `src/infrastructure/database/connection.py:25`
@@ -199,15 +215,21 @@ bash("grep ERROR logs/app.log | cut -d' ' -f2 | cut -d':' -f1 | sort | uniq -c")
 - **영향**: 일시적 서비스 장애 (5분간)
 - **우선순위**: 🟡 Warning (일시적, 재시도로 해결됨)
 
-### 3. TimeoutError: Request timed out after 30s (2건)
+### 2. TimeoutError: Request timed out after 30s (2건)
 - **빈도**: 2건
 - **발생 파일**: `src/infrastructure/claude/worker_client.py:150`
 - **근본 원인**: Claude API 응답 지연 (긴 프롬프트)
 - **영향**: 워크플로우 실행 실패
-- **우선순위**: 🟡 Warning (타임아웃 시간 조정 필요)
+- **수정 방법**: 타임아웃 시간 30s → 60s 증가
 
-## 시간대별 분포
+## 🔵 Info (모니터링 권장)
 
+### 1. 주요 경고 패턴
+- **"Max retries exceeded"**: 45건 - 외부 API 연결 재시도 실패
+- **"Context window 90% full"**: 32건 - LLM 컨텍스트 거의 가득 참
+- **"Slow query detected (>1s)"**: 18건 - DB 쿼리 성능 이슈
+
+### 2. 시간대별 분포
 ```
 시간대     ERROR   WARNING
 00:00-06:00   0       5
@@ -215,53 +237,43 @@ bash("grep ERROR logs/app.log | cut -d' ' -f2 | cut -d':' -f1 | sort | uniq -c")
 12:00-18:00   8      55
 18:00-00:00   4      24
 ```
-
 **분석**: 업무 시간(12:00-18:00)에 에러 집중 (53%)
 
-## 경고 (WARNING) 요약
+## ✅ 최종 평가
+- **승인 여부**: ❌ 조치 필요 (Critical 이슈 존재)
+- **종합 의견**: AttributeError로 인한 API 장애 발생. 즉시 수정 필요
+- **추천 조치**:
+  1. **즉시**: AttributeError 수정 (None 체크 추가)
+  2. **단기**: 타임아웃 시간 증가, DB 쿼리 최적화
+  3. **장기**: 재시도 로직 개선 (Exponential backoff), 컨텍스트 압축
+  4. **모니터링**: 에러 발생률 추이, Critical 에러 알림 설정
 
-### 주요 경고 패턴
-1. **"Max retries exceeded"**: 45건 - 외부 API 연결 재시도 실패
-2. **"Context window 90% full"**: 32건 - LLM 컨텍스트 거의 가득 참
-3. **"Slow query detected (>1s)"**: 18건 - DB 쿼리 성능 이슈
-
-## 추천 조치
-
-### 즉시 조치 (Critical)
-1. **AttributeError 수정**:
-   - 파일: `src/user_service.py:45`
-   - 수정: None 체크 추가
-   ```python
-   def get_user(id):
-       user = db.query(User).filter_by(id=id).first()
-       if user is None:
-           return None  # 또는 raise UserNotFoundError
-       return user.name
-   ```
-
-### 단기 조치 (Warning)
-2. **타임아웃 시간 증가**:
-   - 파일: `src/infrastructure/claude/worker_client.py`
-   - 수정: 30s → 60s
-
-3. **DB 쿼리 최적화**:
-   - 인덱스 추가 권장 (User.id, Order.user_id)
-
-### 장기 조치 (모니터링)
-4. **재시도 로직 개선**:
-   - Exponential backoff 적용
-   - 최대 재시도 횟수 조정
-
-5. **컨텍스트 압축**:
-   - LLM 프롬프트 최적화
-   - 자동 압축 임계값 조정
-
-## 모니터링 권장 사항
-
-- 에러 발생률 추이 모니터링 (시간당 에러 수)
-- Critical 에러 알림 설정 (Slack, Email)
-- 주간 로그 리뷰 정기화
+## ➡️ 다음 노드를 위한 데이터
+```json
+{
+  "type": "analysis",
+  "status": "critical",
+  "summary": "로그 분석 한 줄 요약",
+  "approved": false,
+  "score": 6,
+  "critical_issues": 1,
+  "warnings": 2,
+  "info": 3,
+  "log_files": ["logs/claude-flow.log", "logs/claude-flow-error.log"],
+  "time_range": "2025-10-28 00:00 ~ 23:59",
+  "total_errors": 15,
+  "total_warnings": 112,
+  "critical_errors": ["AttributeError (8건)", "API 장애"],
+  "recommendations": ["None 체크 추가", "타임아웃 증가", "쿼리 최적화", "모니터링 강화"]
+}
 ```
+```
+
+**중요**:
+- Critical 이슈가 있으면 `approved: false`, `status: "critical"`로 설정
+- 이 전체 출력이 다음 노드의 입력으로 전달되므로, 근본 원인과 수정 방법을 상세히 포함하세요
+- JSON의 `status`는 "success", "warning", "critical" 중 하나여야 합니다
+- 에러 개수보다 **근본 원인**과 **우선순위**가 중요합니다
 
 ## 고급 분석 기법
 

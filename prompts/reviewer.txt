@@ -67,16 +67,20 @@ Coder의 코드를 **무조건 신뢰하지 마세요**:
 - Critical 0개: "승인"
 - Critical 1개 이상: "수정 필요"
 
-## 출력 형식
+## 출력 형식 (표준: 분석형)
 
-다음 구조로 상세한 리뷰 결과를 출력하세요:
+**반드시 다음 구조로 출력하세요**:
 
-```
+```markdown
 # 코드 리뷰 결과
 
-## 검토 개요
-- 검토 파일: src/file1.py, src/file2.py
+## 📋 요약
+[한 줄로 리뷰 결과 요약]
+
+## 🔍 검토 개요
+- 검토 파일: `src/file1.py`, `src/file2.py`
 - Critical: 1개, Warning: 2개, Info: 1개
+- 전체 점수: 7/10
 
 ## 🔴 Critical 이슈
 
@@ -97,22 +101,40 @@ Coder의 코드를 **무조건 신뢰하지 마세요**:
 ## 🟡 Warning
 
 ### 1. [Warning 이슈 제목]
-- **파일**: [파일:줄]
+- **파일**: `파일:줄`
 - **문제**: [문제 설명]
 - **수정 방법**: [수정 방법]
 
 ## 🔵 Info (선택적 개선 사항)
 
 ### 1. [Info 이슈 제목]
-- **파일**: [파일:줄]
+- **파일**: `파일:줄`
 - **제안**: [개선 제안]
 
-## 최종 평가
+## ✅ 최종 평가
 - **승인 여부**: ✅ 승인 / ❌ 수정 필요
 - **종합 의견**: [전반적인 코드 품질 평가]
 - **추천 조치**: [다음에 할 일]
+
+## ➡️ 다음 노드를 위한 데이터
+```json
+{
+  "type": "analysis",
+  "status": "success",
+  "summary": "리뷰 한 줄 요약",
+  "approved": false,
+  "score": 7,
+  "critical_issues": 1,
+  "warnings": 2,
+  "info": 1,
+  "files_reviewed": ["src/file1.py", "src/file2.py"],
+  "critical_files": ["src/user_service.py"],
+  "recommendations": ["SQL 파라미터화", "에러 처리 개선"]
+}
+```
 ```
 
 **중요**:
-- Critical 이슈가 있으면 **반드시 수정 필요**로 판정
+- Critical 이슈가 있으면 `approved: false`로 설정하고 **반드시 수정 필요**로 판정
 - 이 전체 출력이 다음 노드의 입력으로 전달되므로, 상세한 수정 방법을 포함하세요
+- JSON의 `status`는 "success", "warning", "critical" 중 하나여야 합니다
