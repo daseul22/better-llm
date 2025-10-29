@@ -567,6 +567,13 @@ class WorkflowExecutor:
             f"(최대 반복: {node_data.max_iterations}, 조건: {node_data.loop_condition})"
         )
 
+        # 부모 노드 출력 가져오기 (입력으로 사용)
+        parent_nodes = self._get_parent_nodes(node_id, edges)
+        loop_input = initial_input  # 기본값
+        if parent_nodes:
+            parent_id = parent_nodes[0]
+            loop_input = node_outputs.get(parent_id, initial_input)
+
         # 노드 시작 시간 기록
         start_time = time.time()
 
@@ -577,6 +584,9 @@ class WorkflowExecutor:
             data={
                 "node_type": "loop",
                 "max_iterations": node_data.max_iterations,
+                "input": loop_input,
+                "loop_condition_type": node_data.loop_condition_type,
+                "loop_condition": node_data.loop_condition,
             },
             timestamp=datetime.now().isoformat(),
         )
@@ -1019,10 +1029,24 @@ class WorkflowExecutor:
         elif node.type == "condition":
             start_time = time.time()
 
+            # 부모 노드 출력 가져오기 (입력으로 사용)
+            parent_nodes = self._get_parent_nodes(node_id, edges)
+            parent_output = ""
+            if parent_nodes:
+                parent_id = parent_nodes[0]
+                parent_output = node_outputs.get(parent_id, "")
+
+            node_data: ConditionNodeData = node.data  # type: ignore
+
             yield WorkflowNodeExecutionEvent(
                 event_type="node_start",
                 node_id=node_id,
-                data={"node_type": "condition"},
+                data={
+                    "node_type": "condition",
+                    "input": parent_output,
+                    "condition_type": node_data.condition_type,
+                    "condition_value": node_data.condition_value,
+                },
                 timestamp=datetime.now().isoformat(),
             )
 
@@ -1080,10 +1104,28 @@ class WorkflowExecutor:
         elif node.type == "merge":
             start_time = time.time()
 
+            # 부모 노드 출력들 가져오기 (입력으로 사용)
+            parent_nodes = self._get_parent_nodes(node_id, edges)
+            parent_outputs_list = []
+            for pid in parent_nodes:
+                parent_outputs_list.append(node_outputs.get(pid, ""))
+
+            node_data: MergeNodeData = node.data  # type: ignore
+
+            # 입력 요약 (각 부모 노드의 출력 길이)
+            input_summary = {
+                f"parent_{i+1}": len(output) for i, output in enumerate(parent_outputs_list)
+            }
+
             yield WorkflowNodeExecutionEvent(
                 event_type="node_start",
                 node_id=node_id,
-                data={"node_type": "merge"},
+                data={
+                    "node_type": "merge",
+                    "input": "\n\n---\n\n".join(parent_outputs_list),
+                    "input_summary": input_summary,
+                    "merge_strategy": node_data.merge_strategy,
+                },
                 timestamp=datetime.now().isoformat(),
             )
 

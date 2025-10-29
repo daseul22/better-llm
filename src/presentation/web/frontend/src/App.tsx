@@ -22,7 +22,7 @@ import {
   loadDisplayConfig,
   saveDisplayConfig,
 } from './lib/api'
-import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate, Settings, Trash2, FileText } from 'lucide-react'
+import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate, Settings, Trash2, FileText, Save } from 'lucide-react'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
 import { ToastContainer, ToastType } from './components/Toast'
 import { TemplateGallery } from './components/TemplateGallery'
@@ -31,7 +31,16 @@ const STORAGE_KEY_PROJECT_PATH = 'claude-flow-last-project-path'
 const STORAGE_KEY_SESSION_ID = 'claude-flow-workflow-session-id'
 
 function App() {
-  const { getWorkflow: getCurrentWorkflow, loadWorkflow, workflowName, setWorkflowName, nodes, edges, restoreFromSession } = useWorkflowStore()
+  const {
+    getWorkflow: getCurrentWorkflow,
+    loadWorkflow,
+    workflowName,
+    setWorkflowName,
+    nodes,
+    edges,
+    restoreFromSession,
+    execution,
+  } = useWorkflowStore()
 
   // 프로젝트 관련 상태
   const [currentProjectPath, setCurrentProjectPath] = useState<string | null>(null)
@@ -294,6 +303,32 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showProjectMenu])
 
+  // 수동 저장 핸들러
+  const handleManualSave = useCallback(() => {
+    // 실행 중일 때는 저장 금지
+    if (execution.isExecuting) {
+      addToast('warning', '워크플로우 실행 중에는 저장할 수 없습니다')
+      return
+    }
+
+    if (currentProjectPath && nodes.length > 0) {
+      setSaveStatus('saving')
+      const workflow = getCurrentWorkflow()
+      saveProjectWorkflow(workflow)
+        .then(() => {
+          setSaveStatus('saved')
+          addToast('success', '워크플로우가 저장되었습니다')
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        })
+        .catch((err) => {
+          setSaveStatus('idle')
+          addToast('error', `저장 실패: ${err}`)
+        })
+    } else {
+      addToast('warning', '저장할 프로젝트 또는 노드가 없습니다')
+    }
+  }, [execution.isExecuting, currentProjectPath, nodes, getCurrentWorkflow, addToast])
+
   // 전역 키보드 단축키 핸들링
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -303,18 +338,7 @@ function App() {
       // Cmd/Ctrl + S: 수동 저장
       if (cmdOrCtrl && e.key === 's') {
         e.preventDefault()
-        if (currentProjectPath && nodes.length > 0) {
-          const workflow = getCurrentWorkflow()
-          saveProjectWorkflow(workflow)
-            .then(() => {
-              addToast('success', '워크플로우가 수동 저장되었습니다')
-            })
-            .catch((err) => {
-              addToast('error', `저장 실패: ${err}`)
-            })
-        } else {
-          addToast('warning', '저장할 프로젝트 또는 노드가 없습니다')
-        }
+        handleManualSave()
       }
 
       // Del/Backspace: 선택된 노드 삭제
@@ -336,7 +360,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentProjectPath, nodes, showProjectDialog, getCurrentWorkflow, addToast])
+  }, [showProjectDialog, handleManualSave, addToast])
 
   // 노드/엣지 변경 시 자동 저장 (debounce)
   useEffect(() => {
@@ -346,6 +370,12 @@ function App() {
       if (nodes.length > 0 && !currentProjectPath) {
         console.warn('⚠️  프로젝트가 선택되지 않았습니다. 자동 저장을 건너뜁니다.')
       }
+      return
+    }
+
+    // 실행 중일 때는 자동 저장 스킵
+    if (execution.isExecuting) {
+      console.log('⏸️  워크플로우 실행 중이므로 자동 저장을 건너뜁니다.')
       return
     }
 
@@ -369,10 +399,10 @@ function App() {
           const errorMsg = err instanceof Error ? err.message : String(err)
           addToast('error', `자동 저장 실패: ${errorMsg}`)
         })
-    }, 2000) // 2초 debounce
+    }, 5000) // 5초 debounce
 
     return () => clearTimeout(timer)
-  }, [nodes, edges, workflowName, currentProjectPath, getCurrentWorkflow, addToast])
+  }, [nodes, edges, workflowName, currentProjectPath, execution.isExecuting, getCurrentWorkflow, addToast])
 
   // Display 설정 변경 시 자동 저장 (debounce)
   useEffect(() => {
@@ -538,6 +568,15 @@ function App() {
             </div>
 
             <div className="flex gap-2">
+              <Button
+                onClick={handleManualSave}
+                variant="outline"
+                disabled={!currentProjectPath || nodes.length === 0 || saveStatus === 'saving' || execution.isExecuting}
+                title={execution.isExecuting ? '워크플로우 실행 중에는 저장할 수 없습니다' : '워크플로우 저장'}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                저장
+              </Button>
               <Button onClick={() => setShowTemplateGallery(true)} variant="outline">
                 <BookTemplate className="mr-2 h-4 w-4" />
                 템플릿
