@@ -326,9 +326,13 @@ class WorkflowExecutor:
             if node_id not in reachable_nodes:
                 continue
 
-            # 모든 부모 노드가 처리되었는지 확인
+            # 모든 부모 노드가 처리되었는지 확인 (백엣지 제외)
             parents_ready = True
             for edge in valid_edges:
+                # 백엣지는 부모 의존성 체크에서 제외 (피드백 루프)
+                if (edge.source, edge.target) in back_edges:
+                    continue
+
                 if edge.target == node_id and edge.source in reachable_nodes:
                     if edge.source not in visited:
                         parents_ready = False
