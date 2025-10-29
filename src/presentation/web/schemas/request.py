@@ -180,3 +180,26 @@ class CustomWorkerListResponse(BaseModel):
     """커스텀 워커 목록 응답 스키마"""
 
     workers: List[CustomWorkerInfo] = Field(..., description="커스텀 워커 목록")
+
+
+class WorkflowDesignRequest(BaseModel):
+    """워크플로우 설계 요청 스키마"""
+
+    requirements: str = Field(
+        ...,
+        description="원하는 워크플로우의 요구사항 설명",
+        min_length=10,
+        max_length=2000,
+    )
+    session_id: Optional[str] = Field(
+        None,
+        description="세션 ID (선택적, 미제공 시 자동 생성)",
+    )
+
+    @field_validator("requirements")
+    @classmethod
+    def validate_requirements(cls, v: str) -> str:
+        """요구사항 검증"""
+        if not v.strip():
+            raise ValueError("워크플로우 요구사항은 비어있을 수 없습니다")
+        return v.strip()

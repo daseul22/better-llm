@@ -186,6 +186,18 @@
       ],
       "model": "claude-sonnet-4-5-20250929",
       "thinking": true
+    },
+    {
+      "name": "workflow_designer",
+      "role": "워크플로우 자동 설계 및 생성",
+      "system_prompt_file": "prompts/workflow_designer.txt",
+      "allowed_tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
     }
   ]
 }

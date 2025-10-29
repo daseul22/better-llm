@@ -124,7 +124,9 @@ prompts/                       # Worker Agent 시스템 프롬프트
 ├── coder.txt                 # 코드 작성 (read, write, edit, glob, grep)
 ├── reviewer.txt              # 코드 리뷰 (read, glob, grep만)
 ├── tester.txt                # 테스트 실행 (read, bash, glob)
-└── committer.txt             # Git 커밋 (bash, read)
+├── committer.txt             # Git 커밋 (bash, read)
+├── worker_prompt_engineer.txt # 커스텀 워커 프롬프트 생성
+└── workflow_designer.txt     # 워크플로우 자동 설계 및 생성
 ```
 
 ---
@@ -183,6 +185,8 @@ Worker별 도구 제한으로 역할 경계 명확화:
 | **Reviewer** | read, glob, grep | 코드 리뷰 (읽기만) |
 | **Tester** | read, bash, glob | 테스트 실행 (write 제외) |
 | **Committer** | bash, read | Git 커밋만 |
+| **Worker Prompt Engineer** | read, glob | 커스텀 워커 프롬프트 생성 |
+| **Workflow Designer** | read, glob, grep | 워크플로우 설계 및 생성 |
 
 ### system_config.json - 주요 설정
 
@@ -400,6 +404,39 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 ---
 
 ## 최근 작업 (2025-10-29)
+
+### feat: Workflow Designer 워커 추가 (완료)
+- **날짜**: 2025-10-29 15:00 (Asia/Seoul)
+- **목적**: 사용자 요구사항으로부터 워크플로우를 자동으로 설계 및 생성하는 워커 추가
+- **변경사항**:
+  - **config/agent_config.json**:
+    - `workflow_designer` 워커 추가 (read, glob, grep 도구 사용)
+    - model: claude-sonnet-4-5-20250929, thinking: true
+  - **prompts/workflow_designer.txt**:
+    - 워크플로우 설계 전문가 프롬프트 작성
+    - 노드 타입 (input, worker, manager, condition, loop, merge) 설명
+    - 사용 가능한 기본 워커 목록 (15개)
+    - 노드 연결 규칙 및 템플릿 변수 설명
+    - JSON 출력 형식 정의:
+      * `workflow`: Workflow 객체 (nodes, edges, metadata)
+      * `custom_workers`: 필요 시 커스텀 워커 정의 배열
+      * `explanation`: 워크플로우 설명
+      * `usage_guide`: 사용 방법 가이드
+    - 예시 2개 추가 (순차 워크플로우, Manager 병렬 실행)
+  - **CLAUDE.md**:
+    - prompts 섹션에 workflow_designer.txt 추가
+    - agent_config.json 섹션에 Workflow Designer 워커 추가
+- **출력 활용**:
+  - `workflow` 부분: Web UI 워크플로우 캔버스에 직접 로드 가능
+  - `custom_workers` 부분: agent_config.json 및 prompts/ 디렉토리에 추가 가능
+- **영향범위**: 워크플로우 자동 생성, 사용자 생산성 향상
+- **사용법**:
+  1. Web UI에서 "Workflow Designer" 워커를 노드로 추가
+  2. 요구사항 입력 (예: "코드 리뷰 후 테스트 실행하는 워크플로우")
+  3. 생성된 JSON의 `workflow` 부분을 복사하여 워크플로우 캔버스에 로드
+  4. 필요 시 `custom_workers` 부분을 프로젝트에 추가
+- **테스트**: 구문 검사 통과 (agent_config.json)
+- **후속 조치**: Web UI에서 실제 워크플로우 생성 테스트
 
 ### fix: InputNode 로그 파싱 개선 - ParsedContent 사용 (완료)
 - **날짜**: 2025-10-29 14:00 (Asia/Seoul)

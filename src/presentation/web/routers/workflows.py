@@ -27,6 +27,10 @@ from src.presentation.web.schemas.workflow import (
     WorkflowValidateResponse,
     WorkflowValidationError,
 )
+from src.presentation.web.schemas.request import WorkflowDesignRequest
+from src.infrastructure.claude.worker_client import WorkerAgent
+from src.domain.models import AgentConfig
+from typing import AsyncIterator
 from src.presentation.web.services.workflow_executor import WorkflowExecutor
 from src.presentation.web.services.workflow_validator import WorkflowValidator
 from src.presentation.web.services.workflow_session_store import (
@@ -762,3 +766,262 @@ async def delete_session(session_id: str) -> Dict[str, str]:
             status_code=500,
             detail=f"세션 삭제 실패: {str(e)}"
         )
+
+
+# ==================== 워크플로우 설계 (workflow_designer) ====================
+
+# 활성 설계 세션 관리 (메모리)
+_active_design_sessions: Dict[str, dict] = {}
+
+
+def get_design_session_dir(session_id: str) -> Path:
+    """설계 세션 디렉토리 경로 반환"""
+    from src.infrastructure.config import get_data_dir
+    data_dir = get_data_dir()
+    session_dir = data_dir / "workflow_design_sessions" / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    return session_dir
+
+
+def save_design_session_state(session_id: str, state: dict):
+    """설계 세션 상태를 파일에 저장"""
+    session_dir = get_design_session_dir(session_id)
+    state_file = session_dir / "state.json"
+    with open(state_file, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def load_design_session_state(session_id: str) -> dict | None:
+    """설계 세션 상태를 파일에서 로드"""
+    session_dir = get_design_session_dir(session_id)
+    state_file = session_dir / "state.json"
+    if state_file.exists():
+        with open(state_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
+
+def append_design_session_output(session_id: str, chunk: str):
+    """설계 세션 출력을 파일에 추가"""
+    session_dir = get_design_session_dir(session_id)
+    output_file = session_dir / "output.txt"
+    with open(output_file, 'a', encoding='utf-8') as f:
+        f.write(chunk)
+
+
+def read_design_session_output(session_id: str) -> str:
+    """설계 세션 출력을 파일에서 읽기"""
+    session_dir = get_design_session_dir(session_id)
+    output_file = session_dir / "output.txt"
+    if output_file.exists():
+        with open(output_file, 'r', encoding='utf-8') as f:
+            return f.read()
+    return ""
+
+
+def get_workflow_designer_config() -> AgentConfig:
+    """
+    workflow_designer 설정 로드
+
+    Returns:
+        AgentConfig: workflow_designer 설정
+
+    Raises:
+        HTTPException: 설정 로드 실패 시
+    """
+    try:
+        config_loader = JsonConfigLoader(get_project_root())
+        agent_configs = config_loader.load_agent_configs()
+
+        config = next(
+            (cfg for cfg in agent_configs if cfg.name == "workflow_designer"),
+            None,
+        )
+
+        if not config:
+            raise HTTPException(
+                status_code=500,
+                detail="workflow_designer 설정을 찾을 수 없습니다",
+            )
+
+        return config
+
+    except Exception as e:
+        logger.error(f"workflow_designer 설정 로드 실패: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"워크플로우 디자이너 설정 로드 실패: {str(e)}",
+        )
+
+
+async def _execute_workflow_designer(
+    requirements: str, session_id: str
+) -> AsyncIterator[str]:
+    """
+    workflow_designer 실행 (스트리밍)
+
+    Args:
+        requirements: 워크플로우 요구사항
+        session_id: 세션 ID
+
+    Yields:
+        str: Worker 출력 청크
+    """
+    try:
+        config = get_workflow_designer_config()
+
+        # claude-flow 프로젝트를 working directory로 설정
+        # 기존 워커 정보 및 프롬프트를 참고하기 위함
+        claude_flow_project_dir = str(get_project_root())
+
+        worker = WorkerAgent(
+            config=config,
+            project_dir=claude_flow_project_dir
+        )
+
+        logger.info(
+            f"[{session_id}] workflow_designer 실행 시작 "
+            f"(working_dir: {claude_flow_project_dir})"
+        )
+
+        async for chunk in worker.execute_task(requirements):
+            yield chunk
+
+        logger.info(f"[{session_id}] workflow_designer 실행 완료")
+
+    except Exception as e:
+        error_msg = f"워크플로우 디자이너 실행 실패: {str(e)}"
+        logger.error(f"[{session_id}] {error_msg}", exc_info=True)
+        raise
+
+
+@router.post("/design")
+async def design_workflow(request: WorkflowDesignRequest):
+    """
+    워크플로우 설계 (SSE 스트리밍)
+
+    workflow_designer를 실행하여 요구사항으로부터 워크플로우를 자동 설계합니다.
+    세션 ID로 재접속하면 이전 출력부터 이어서 볼 수 있습니다.
+
+    Args:
+        request: 워크플로우 설계 요청 (requirements, session_id)
+
+    Returns:
+        EventSourceResponse: SSE 스트리밍 응답
+
+    Example:
+        POST /api/workflows/design
+        Body: {
+            "requirements": "코드 리뷰 후 테스트 실행하는 워크플로우",
+            "session_id": "optional-session-id"
+        }
+
+    SSE Response:
+        data: 생성된 워크플로우 JSON 청크 1
+        data: 생성된 워크플로우 JSON 청크 2
+        ...
+        data: [DONE]
+    """
+    session_id = request.session_id or str(uuid.uuid4())
+
+    # 기존 세션 확인
+    existing_state = load_design_session_state(session_id)
+    is_reconnect = existing_state is not None and existing_state.get("status") in ["generating", "completed"]
+
+    if is_reconnect:
+        logger.info(f"[{session_id}] 설계 세션 재접속 (상태: {existing_state.get('status')})")
+    else:
+        logger.info(
+            f"[{session_id}] 워크플로우 설계 요청 "
+            f"(요구사항 길이: {len(request.requirements)})"
+        )
+        # 새 세션 상태 저장
+        save_design_session_state(session_id, {
+            "session_id": session_id,
+            "status": "generating",
+            "requirements": request.requirements,
+            "created_at": datetime.now().isoformat(),
+        })
+
+    async def event_generator():
+        try:
+            # 재접속: 이전 출력 먼저 스트리밍
+            if is_reconnect:
+                previous_output = read_design_session_output(session_id)
+                if previous_output:
+                    logger.info(f"[{session_id}] 이전 출력 복원 (길이: {len(previous_output)})")
+                    yield {"data": previous_output}
+
+                # 이미 완료된 세션이면 [DONE] 전송
+                if existing_state.get("status") == "completed":
+                    logger.info(f"[{session_id}] 세션 이미 완료됨")
+                    yield {"data": "[DONE]"}
+                    return
+
+            # 이미 실행 중인 세션이면 대기만 (중복 실행 방지)
+            if session_id in _active_design_sessions:
+                logger.info(f"[{session_id}] 이미 실행 중인 세션 - 출력 대기")
+                # 실행 중인 세션의 새 출력을 기다림
+                while session_id in _active_design_sessions:
+                    await asyncio.sleep(0.5)
+                # 완료 후 남은 출력 전송
+                yield {"data": "[DONE]"}
+                return
+
+            # 새로운 실행: 워커 실행
+            _active_design_sessions[session_id] = {"started_at": datetime.now().isoformat()}
+
+            chunk_count = 0
+            accumulated_output = ""
+
+            async for chunk in _execute_workflow_designer(
+                request.requirements, session_id
+            ):
+                chunk_count += 1
+                accumulated_output += chunk
+                append_design_session_output(session_id, chunk)  # 파일에 저장
+                logger.debug(f"[{session_id}] SSE Chunk #{chunk_count}: len={len(chunk)}")
+                yield {"data": chunk}
+
+            logger.info(f"[{session_id}] SSE 스트림 완료 (총 {chunk_count}개 청크)")
+            logger.info(f"[{session_id}] 📊 전체 출력 길이: {len(accumulated_output)} characters")
+
+            # 세션 완료 상태 저장
+            save_design_session_state(session_id, {
+                "session_id": session_id,
+                "status": "completed",
+                "requirements": request.requirements,
+                "created_at": existing_state.get("created_at") if existing_state else datetime.now().isoformat(),
+                "completed_at": datetime.now().isoformat(),
+            })
+
+            yield {"data": "[DONE]"}
+
+        except Exception as e:
+            error_msg = f"ERROR: {str(e)}"
+            logger.error(f"[{session_id}] {error_msg}", exc_info=True)
+
+            # 에러 상태 저장
+            save_design_session_state(session_id, {
+                "session_id": session_id,
+                "status": "error",
+                "error": str(e),
+                "created_at": existing_state.get("created_at") if existing_state else datetime.now().isoformat(),
+            })
+
+            yield {"data": error_msg}
+            yield {"data": "[DONE]"}
+
+        finally:
+            # 활성 세션에서 제거
+            if session_id in _active_design_sessions:
+                del _active_design_sessions[session_id]
+
+    return EventSourceResponse(
+        event_generator(),
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "X-Session-Id": session_id,  # 세션 ID 헤더로 반환
+        }
+    )

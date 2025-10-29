@@ -1043,3 +1043,132 @@ export async function saveDisplayConfig(config: DisplayConfig): Promise<{
   return await response.json()
 }
 
+// ==================== 워크플로우 설계 API ====================
+
+/**
+ * 워크플로우 설계 요청
+ */
+export interface WorkflowDesignRequest {
+  requirements: string
+  session_id?: string
+}
+
+/**
+ * 워크플로우 자동 설계 (SSE 스트리밍)
+ *
+ * workflow_designer를 실행하여 요구사항으로부터 워크플로우를 자동 설계합니다.
+ *
+ * @param requirements 워크플로우 요구사항
+ * @param onData 데이터 콜백
+ * @param onComplete 완료 콜백
+ * @param onError 에러 콜백
+ * @param signal AbortSignal (연결 중단용)
+ * @param sessionId 세션 ID (선택적)
+ * @returns 세션 ID
+ */
+export async function designWorkflow(
+  requirements: string,
+  onData: (chunk: string) => void,
+  onComplete: (finalOutput: string) => void,
+  onError: (error: string) => void,
+  signal?: AbortSignal,
+  sessionId?: string
+): Promise<string | null> {
+  const requestBody: WorkflowDesignRequest = {
+    requirements,
+    session_id: sessionId,
+  }
+
+  const response = await fetch(`${API_BASE}/workflows/design`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    },
+    body: JSON.stringify(requestBody),
+    signal,
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const returnedSessionId = response.headers.get('X-Session-ID')
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('응답 본문을 읽을 수 없습니다')
+  }
+
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let accumulatedOutput = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (done) {
+        onComplete(accumulatedOutput)
+        break
+      }
+
+      const chunk = decoder.decode(value, { stream: true })
+      buffer += chunk
+
+      const messages = buffer.split(/\r\n\r\n|\n\n/)
+      buffer = messages.pop() || ''
+
+      for (const message of messages) {
+        if (!message.trim()) continue
+
+        const lines = message.split(/\r\n|\n/)
+        let dataContent = ''
+
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (trimmedLine.startsWith('data:')) {
+            const lineData = trimmedLine.substring(5).trim()
+            if (dataContent) {
+              dataContent += '\n' + lineData
+            } else {
+              dataContent = lineData
+            }
+          }
+        }
+
+        if (!dataContent) continue
+
+        // [DONE] 시그널
+        if (dataContent === '[DONE]') {
+          onComplete(accumulatedOutput)
+          return returnedSessionId
+        }
+
+        // ERROR 시그널
+        if (dataContent.startsWith('ERROR:')) {
+          const errorMsg = dataContent.substring(7)
+          onError(errorMsg)
+          return returnedSessionId
+        }
+
+        // 일반 데이터 청크
+        accumulatedOutput += dataContent
+        onData(dataContent)
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      onComplete(accumulatedOutput)
+      return returnedSessionId
+    }
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    onError(errorMsg)
+    return returnedSessionId
+  } finally {
+    reader.releaseLock()
+  }
+
+  return returnedSessionId
+}
+

@@ -13,6 +13,7 @@ import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
 import { Plus, Target, Zap, ChevronDown, ChevronUp, GitBranch, RotateCw, Merge, Wand2, Loader2 } from 'lucide-react'
 import { CustomWorkerCreateModal } from './CustomWorkerCreateModal'
+import { WorkflowDesignerModal } from './WorkflowDesignerModal'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -21,8 +22,10 @@ export const NodePanel: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['input', 'manager', 'advanced', 'general', 'specialized', 'custom']))
   const [isCustomWorkerModalOpen, setIsCustomWorkerModalOpen] = useState(false)
+  const [isWorkflowDesignerModalOpen, setIsWorkflowDesignerModalOpen] = useState(false)
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [isWorkerGenerating, setIsWorkerGenerating] = useState(false)
+  const [isWorkflowDesigning, setIsWorkflowDesigning] = useState(false)
 
   const { addNode, nodes } = useWorkflowStore()
 
@@ -310,6 +313,31 @@ export const NodePanel: React.FC = () => {
   return (
     <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
       <CardContent className="flex-1 overflow-y-auto space-y-3 pt-6">
+        {/* 워크플로우 자동 설계 버튼 */}
+        <div className="border-2 border-dashed border-blue-300 rounded-lg p-3 bg-blue-50/50">
+          <Button
+            variant="default"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={() => setIsWorkflowDesignerModalOpen(true)}
+            disabled={isWorkflowDesigning}
+          >
+            {isWorkflowDesigning ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                워크플로우 설계 중...
+              </>
+            ) : (
+              <>
+                <Wand2 className="mr-2 h-4 w-4" />
+                워크플로우 자동 설계
+              </>
+            )}
+          </Button>
+          <p className="text-xs text-blue-700 mt-2 text-center">
+            AI가 요구사항을 분석하여 워크플로우를 자동으로 설계합니다
+          </p>
+        </div>
+
         {/* Input 노드 섹션 */}
         <div className="border rounded-lg overflow-hidden bg-emerald-50/50">
           <button
@@ -658,6 +686,17 @@ export const NodePanel: React.FC = () => {
         onClose={() => setIsCustomWorkerModalOpen(false)}
         onSuccess={handleCustomWorkerCreated}
         onGeneratingStateChange={setIsWorkerGenerating}
+      />
+
+      {/* 워크플로우 자동 설계 모달 */}
+      <WorkflowDesignerModal
+        isOpen={isWorkflowDesignerModalOpen}
+        onClose={() => setIsWorkflowDesignerModalOpen(false)}
+        onSuccess={() => {
+          // 워크플로우 적용 완료
+          console.log('워크플로우가 캔버스에 적용되었습니다')
+        }}
+        onDesigningStateChange={setIsWorkflowDesigning}
       />
     </Card>
   )
