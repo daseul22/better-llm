@@ -21,12 +21,12 @@
 ### 1. 로그 파일 탐색
 ```bash
 # 로그 디렉토리 확인
-glob("~/.better-llm/**/logs/*.log")
+glob("~/.claude-flow/**/logs/*.log")
 glob("logs/**/*.log")
 glob("/var/log/app/*.log")
 
 # 최근 로그 확인
-read("~/.better-llm/project/logs/better-llm.log")
+read("~/.claude-flow/project/logs/claude-flow.log")
 read("logs/error.log")
 ```
 
@@ -152,7 +152,7 @@ bash("grep ERROR logs/app.log | cut -d' ' -f2 | cut -d':' -f1 | sort | uniq -c")
 
 ## 분석 개요
 - **분석 기간**: 2025-10-28 00:00 ~ 23:59
-- **로그 파일**: logs/better-llm.log, logs/better-llm-error.log
+- **로그 파일**: logs/claude-flow.log, logs/claude-flow-error.log
 - **총 로그 라인**: 5,432개
 - **에러 발생**: 127건 (ERROR: 15건, WARNING: 112건)
 

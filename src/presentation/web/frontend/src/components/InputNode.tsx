@@ -73,7 +73,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
       abortControllerRef.current = abortController
 
       // 재접속 로직: localStorage에서 세션 ID 확인
-      const STORAGE_KEY_SESSION_ID = 'better-llm-workflow-session-id'
+      const STORAGE_KEY_SESSION_ID = 'claude-flow-workflow-session-id'
       const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION_ID)
 
       // Zustand store에서 현재 로그 개수 확인 (중복 방지용)
@@ -170,7 +170,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
 
       // 세션 ID를 localStorage에 저장 (새로고침 후 복원용)
       if (sessionId) {
-        localStorage.setItem('better-llm-workflow-session-id', sessionId)
+        localStorage.setItem('claude-flow-workflow-session-id', sessionId)
         console.log('[InputNode] 세션 ID 저장:', sessionId)
       }
     } catch (err) {

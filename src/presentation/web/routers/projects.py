@@ -39,10 +39,10 @@ def get_config_path(project_path: str) -> Path:
         project_path: 프로젝트 디렉토리 경로
 
     Returns:
-        Path: .better-llm/workflow-config.json 경로
+        Path: .claude-flow/workflow-config.json 경로
     """
     project_dir = Path(project_path)
-    config_dir = project_dir / ".better-llm"
+    config_dir = project_dir / ".claude-flow"
     return config_dir / "workflow-config.json"
 
 
@@ -54,10 +54,10 @@ def get_display_config_path(project_path: str) -> Path:
         project_path: 프로젝트 디렉토리 경로
 
     Returns:
-        Path: .better-llm/display-config.json 경로
+        Path: .claude-flow/display-config.json 경로
     """
     project_dir = Path(project_path)
-    config_dir = project_dir / ".better-llm"
+    config_dir = project_dir / ".claude-flow"
     return config_dir / "display-config.json"
 
 
@@ -193,7 +193,7 @@ async def save_project_workflow(
 
         Response: {
             "message": "워크플로우가 저장되었습니다",
-            "config_path": "/Users/username/my-project/.better-llm/workflow-config.json"
+            "config_path": "/Users/username/my-project/.claude-flow/workflow-config.json"
         }
     """
     # 프로젝트 경로 결정 (요청에 포함되지 않으면 현재 프로젝트 사용)
@@ -356,7 +356,7 @@ async def clear_sessions() -> Dict[str, Any]:
     """
     현재 프로젝트의 웹 워크플로우 세션 데이터 비우기
 
-    {project_path}/.better-llm/web-sessions/ 디렉토리의 모든 세션 파일을 삭제합니다.
+    {project_path}/.claude-flow/web-sessions/ 디렉토리의 모든 세션 파일을 삭제합니다.
 
     Returns:
         Dict[str, Any]: 삭제 결과 (삭제된 파일 수, 확보된 용량)
@@ -376,9 +376,9 @@ async def clear_sessions() -> Dict[str, Any]:
             detail="프로젝트가 선택되지 않았습니다."
         )
 
-    # 웹 세션 디렉토리 경로: {project_path}/.better-llm/web-sessions/
+    # 웹 세션 디렉토리 경로: {project_path}/.claude-flow/web-sessions/
     project_dir = Path(_current_project_path)
-    web_sessions_dir = project_dir / ".better-llm" / "web-sessions"
+    web_sessions_dir = project_dir / ".claude-flow" / "web-sessions"
 
     if not web_sessions_dir.exists():
         logger.info(f"웹 세션 디렉토리가 존재하지 않습니다: {web_sessions_dir}")
@@ -429,8 +429,8 @@ async def clear_logs() -> Dict[str, Any]:
     현재 프로젝트의 로그 파일 비우기
 
     다음 위치의 로그 파일을 모두 삭제합니다:
-    1. {project_path}/.better-llm/logs/ (프로젝트 내 로그)
-    2. ~/.better-llm/{project-name}/logs/ (홈 디렉토리 로그)
+    1. {project_path}/.claude-flow/logs/ (프로젝트 내 로그)
+    2. ~/.claude-flow/{project-name}/logs/ (홈 디렉토리 로그)
 
     Returns:
         Dict[str, Any]: 삭제 결과 (삭제된 파일 수, 확보된 용량)
@@ -456,8 +456,8 @@ async def clear_logs() -> Dict[str, Any]:
 
     # 로그 디렉토리 목록
     log_dirs = [
-        project_dir / ".better-llm" / "logs",  # 프로젝트 내 로그
-        home_dir / ".better-llm" / project_name / "logs",  # 홈 디렉토리 로그
+        project_dir / ".claude-flow" / "logs",  # 프로젝트 내 로그
+        home_dir / ".claude-flow" / project_name / "logs",  # 홈 디렉토리 로그
     ]
 
     total_size = 0
@@ -621,7 +621,7 @@ async def save_display_config(
 
         Response: {
             "message": "Display 설정이 저장되었습니다",
-            "config_path": "/project/.better-llm/display-config.json"
+            "config_path": "/project/.claude-flow/display-config.json"
         }
     """
     if not _current_project_path:

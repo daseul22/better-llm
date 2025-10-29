@@ -1,7 +1,7 @@
 """
 커스텀 워커 저장소
 
-프로젝트별 커스텀 워커를 .better-llm/worker/ 폴더에 저장/로드
+프로젝트별 커스텀 워커를 .claude-flow/worker/ 폴더에 저장/로드
 """
 
 import json
@@ -18,7 +18,7 @@ class CustomWorkerRepository:
     """
     커스텀 워커 저장소
 
-    {project_path}/.better-llm/worker/ 구조:
+    {project_path}/.claude-flow/worker/ 구조:
     - {worker_name}.txt: 시스템 프롬프트
     - ../worker-config.json: 워커 설정 (agent_config.json 형식)
     """
@@ -29,8 +29,8 @@ class CustomWorkerRepository:
             project_path: 프로젝트 루트 경로
         """
         self.project_path = Path(project_path)
-        self.worker_dir = self.project_path / ".better-llm" / "worker"
-        self.config_path = self.project_path / ".better-llm" / "worker-config.json"
+        self.worker_dir = self.project_path / ".claude-flow" / "worker"
+        self.config_path = self.project_path / ".claude-flow" / "worker-config.json"
 
     def _ensure_directories(self):
         """필요한 디렉토리 생성"""

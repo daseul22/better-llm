@@ -21,7 +21,7 @@ class TemplateManager:
 
     내장 템플릿(builtin)과 사용자 정의 템플릿(user)을 분리 관리합니다.
     - 내장 템플릿: templates/ 디렉토리 (읽기 전용, 삭제 불가)
-    - 사용자 템플릿: ~/.better-llm/templates/ 디렉토리 (읽기/쓰기/삭제 가능)
+    - 사용자 템플릿: ~/.claude-flow/templates/ 디렉토리 (읽기/쓰기/삭제 가능)
 
     Attributes:
         builtin_templates_dir: 내장 템플릿 디렉토리
@@ -49,7 +49,7 @@ class TemplateManager:
 
         # 사용자 템플릿 디렉토리 (~/.better-llm/templates)
         if user_templates_dir is None:
-            self.user_templates_dir = Path.home() / ".better-llm" / "templates"
+            self.user_templates_dir = Path.home() / ".claude-flow" / "templates"
         else:
             self.user_templates_dir = user_templates_dir
 

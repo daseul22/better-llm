@@ -123,18 +123,18 @@ async def _execute_worker_prompt_engineer(
     try:
         config = get_worker_prompt_engineer_config()
 
-        # better-llm 프로젝트를 working directory로 설정
+        # claude-flow 프로젝트를 working directory로 설정
         # 다른 워커 프롬프트들을 참고하기 위함
-        better_llm_project_dir = str(get_project_root())
+        claude_flow_project_dir = str(get_project_root())
 
         worker = WorkerAgent(
             config=config,
-            project_dir=better_llm_project_dir
+            project_dir=claude_flow_project_dir
         )
 
         logger.info(
             f"[{session_id}] worker_prompt_engineer 실행 시작 "
-            f"(working_dir: {better_llm_project_dir})"
+            f"(working_dir: {claude_flow_project_dir})"
         )
 
         async for chunk in worker.execute_task(requirements):
@@ -287,7 +287,7 @@ async def save_custom_worker(request: CustomWorkerSaveRequest):
     """
     커스텀 워커 저장
 
-    생성된 커스텀 워커를 프로젝트 경로의 .better-llm/worker/ 폴더에 저장합니다.
+    생성된 커스텀 워커를 프로젝트 경로의 .claude-flow/worker/ 폴더에 저장합니다.
 
     Args:
         request: 워커 저장 요청 (project_path, worker_name, role, prompt_content, allowed_tools, model, thinking)
@@ -310,7 +310,7 @@ async def save_custom_worker(request: CustomWorkerSaveRequest):
     Response: {
         "success": true,
         "message": "커스텀 워커 저장 완료",
-        "prompt_path": "/path/to/project/.better-llm/worker/data_analyzer.txt"
+        "prompt_path": "/path/to/project/.claude-flow/worker/data_analyzer.txt"
     }
     """
     try:
@@ -361,7 +361,7 @@ async def list_custom_workers(
     """
     커스텀 워커 목록 조회
 
-    프로젝트 경로의 .better-llm/worker/ 폴더에서 커스텀 워커 목록을 조회합니다.
+    프로젝트 경로의 .claude-flow/worker/ 폴더에서 커스텀 워커 목록을 조회합니다.
 
     Args:
         project_path: 프로젝트 경로 (Query 파라미터)
@@ -445,7 +445,7 @@ async def delete_custom_worker(
     """
     커스텀 워커 삭제
 
-    프로젝트 경로의 .better-llm/worker/ 폴더에서 커스텀 워커를 삭제합니다.
+    프로젝트 경로의 .claude-flow/worker/ 폴더에서 커스텀 워커를 삭제합니다.
 
     Args:
         worker_name: 삭제할 워커 이름 (Path 파라미터)

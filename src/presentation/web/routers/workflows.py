@@ -43,7 +43,7 @@ router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
 # 워크플로우 저장 디렉토리
-WORKFLOWS_DIR = Path.home() / ".better-llm" / "workflows"
+WORKFLOWS_DIR = Path.home() / ".claude-flow" / "workflows"
 WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
 
 

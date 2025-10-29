@@ -4,8 +4,8 @@
 워크플로우 실행 상태를 파일로 저장하여 새로고침 후에도 복구 가능하도록 합니다.
 
 저장 경로:
-- 프로젝트 선택 시: {project_path}/.better-llm/web-sessions/{session_id}.json
-- 프로젝트 미선택 시: ~/.better-llm/web-sessions/{session_id}.json (fallback)
+- 프로젝트 선택 시: {project_path}/.claude-flow/web-sessions/{session_id}.json
+- 프로젝트 미선택 시: ~/.claude-flow/web-sessions/{session_id}.json (fallback)
 """
 
 import json
@@ -108,10 +108,10 @@ class WorkflowSessionStore:
         WorkflowSessionStore 초기화
 
         Args:
-            sessions_dir: 세션 저장 디렉토리 (기본값: ~/.better-llm/web-sessions/)
+            sessions_dir: 세션 저장 디렉토리 (기본값: ~/.claude-flow/web-sessions/)
         """
         if sessions_dir is None:
-            sessions_dir = Path.home() / ".better-llm" / "web-sessions"
+            sessions_dir = Path.home() / ".claude-flow" / "web-sessions"
 
         self.sessions_dir = sessions_dir
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -375,8 +375,8 @@ def get_session_store(project_path: Optional[str] = None) -> WorkflowSessionStor
         WorkflowSessionStore: 프로젝트별 세션 저장소 인스턴스
 
     Note:
-        - 프로젝트 선택 시: {project_path}/.better-llm/web-sessions/
-        - 프로젝트 미선택 시: ~/.better-llm/web-sessions/ (fallback)
+        - 프로젝트 선택 시: {project_path}/.claude-flow/web-sessions/
+        - 프로젝트 미선택 시: ~/.claude-flow/web-sessions/ (fallback)
     """
     # project_path가 명시되지 않으면 전역 _current_project_path 사용
     if project_path is None:
@@ -390,12 +390,12 @@ def get_session_store(project_path: Optional[str] = None) -> WorkflowSessionStor
 
     # 세션 디렉토리 결정
     if project_path:
-        # 프로젝트별 세션 디렉토리: {project_path}/.better-llm/web-sessions/
-        sessions_dir = Path(project_path) / ".better-llm" / "web-sessions"
+        # 프로젝트별 세션 디렉토리: {project_path}/.claude-flow/web-sessions/
+        sessions_dir = Path(project_path) / ".claude-flow" / "web-sessions"
         cache_key = str(sessions_dir)
     else:
         # Fallback: 홈 디렉토리 세션 디렉토리
-        sessions_dir = Path.home() / ".better-llm" / "web-sessions"
+        sessions_dir = Path.home() / ".claude-flow" / "web-sessions"
         cache_key = "~default"
 
     # 캐시에서 인스턴스 반환 (없으면 새로 생성)

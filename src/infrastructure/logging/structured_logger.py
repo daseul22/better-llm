@@ -21,7 +21,7 @@ JSONSerializable = Union[str, int, float, bool, None, dict, list]
 
 def _get_default_log_dir() -> str:
     """
-    기본 로그 디렉토리 경로 반환 (~/.better-llm/{project-name}/logs)
+    기본 로그 디렉토리 경로 반환 (~/.claude-flow/{project-name}/logs)
 
     Returns:
         로그 디렉토리 경로 (문자열)
@@ -43,7 +43,7 @@ def configure_structlog(
     structlog를 설정합니다.
 
     Args:
-        log_dir: 로그 파일 디렉토리 (None이면 ~/.better-llm/{project-name}/logs 사용)
+        log_dir: 로그 파일 디렉토리 (None이면 ~/.claude-flow/{project-name}/logs 사용)
         log_level: 로그 레벨 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         enable_json: JSON 형식 출력 활성화 여부 (False시 콘솔 형식)
 
@@ -99,7 +99,7 @@ def configure_structlog(
         level=getattr(logging, log_level.upper()),
         handlers=[
             logging.handlers.RotatingFileHandler(
-                str(log_path / "better-llm.log"),
+                str(log_path / "claude-flow.log"),
                 maxBytes=10 * 1024 * 1024,  # 10MB
                 backupCount=5,
                 encoding="utf-8"
@@ -111,7 +111,7 @@ def configure_structlog(
 
     # 에러 로그 전용 핸들러 추가
     error_handler = logging.handlers.RotatingFileHandler(
-        str(log_path / "better-llm-error.log"),
+        str(log_path / "claude-flow-error.log"),
         maxBytes=5 * 1024 * 1024,  # 5MB
         backupCount=3,
         encoding="utf-8"
@@ -122,7 +122,7 @@ def configure_structlog(
     # DEBUG 레벨이 활성화된 경우 디버그 로그 파일 추가
     if log_level.upper() == "DEBUG":
         debug_handler = logging.handlers.RotatingFileHandler(
-            str(log_path / "better-llm-debug.log"),
+            str(log_path / "claude-flow-debug.log"),
             maxBytes=20 * 1024 * 1024,  # 20MB
             backupCount=3,
             encoding="utf-8"

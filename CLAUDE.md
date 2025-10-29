@@ -43,7 +43,7 @@ pipx install -e .
 export CLAUDE_CODE_OAUTH_TOKEN='your-token-here'
 
 # Web UI 실행
-better-llm-web
+claude-flow-web
 # → http://localhost:5173
 ```
 
@@ -83,7 +83,7 @@ pytest --cov=src --cov-report=html
 
 ```bash
 # 처음 한 번만 (pytest, black, ruff 등)
-pipx inject better-llm pytest pytest-asyncio black ruff
+pipx inject claude-flow pytest pytest-asyncio black ruff
 ```
 
 ---
@@ -221,10 +221,10 @@ Worker Agent 초기화 시 자동 로드:
 
 ```bash
 # 실시간 모니터링
-tail -f ~/.better-llm/{project-name}/logs/better-llm.log
+tail -f ~/.claude-flow/{project-name}/logs/claude-flow.log
 
 # 에러만
-tail -50 ~/.better-llm/{project-name}/logs/better-llm-error.log
+tail -50 ~/.claude-flow/{project-name}/logs/claude-flow-error.log
 
 # 상세 로깅 활성화
 export LOG_LEVEL=DEBUG
@@ -235,8 +235,8 @@ export WORKER_DEBUG_INFO=true
 
 ```bash
 # 세션 확인
-ls -la ~/.better-llm/{project-name}/sessions/
-cat ~/.better-llm/{project-name}/sessions/{session-id}.json
+ls -la ~/.claude-flow/{project-name}/sessions/
+cat ~/.claude-flow/{project-name}/sessions/{session-id}.json
 
 # Web UI에서:
 # - 워크플로우 저장 시 자동 검증 (순환 참조, 노드 연결)
@@ -295,7 +295,7 @@ export CLAUDE_CODE_OAUTH_TOKEN='your-token-here'
 ```
 
 ### "워크플로우 실행 실패"
-1. 로그 확인: `tail -f ~/.better-llm/{project}/logs/better-llm.log`
+1. 로그 확인: `tail -f ~/.claude-flow/{project}/logs/claude-flow.log`
 2. Worker 설정 확인: `config/agent_config.json`
 3. 프롬프트 파일 존재 확인: `prompts/*.txt`
 4. 노드 연결 확인: Input 노드에서 도달 가능한지
@@ -311,7 +311,7 @@ export CLAUDE_CODE_OAUTH_TOKEN='your-token-here'
 lsof -i :5173
 
 # 백엔드 로그
-tail -f ~/.better-llm/{project}/logs/better-llm.log
+tail -f ~/.claude-flow/{project}/logs/claude-flow.log
 ```
 
 ---

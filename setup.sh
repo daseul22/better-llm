@@ -1,5 +1,5 @@
 #!/bin/bash
-# better-llm 설치 스크립트 (pipx 글로벌 설치)
+# claude-flow 설치 스크립트 (pipx 글로벌 설치)
 
 set -e  # 에러 발생 시 즉시 종료
 
@@ -31,7 +31,7 @@ print_error() {
 print_header() {
     echo ""
     echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}      Better-LLM Web UI 설치              ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}      Claude Flow Web UI 설치              ${CYAN}║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -111,10 +111,10 @@ choose_install_mode() {
     echo ""
     print_info "설치 모드를 선택하세요:"
     echo ""
-    echo "  ${CYAN}1)${NC} 일반 모드 - 일반 사용자용 (권장)"
+    echo -e "  ${CYAN}1)${NC} 일반 모드 - 일반 사용자용 (권장)"
     echo "     코드가 고정되어 안정적으로 동작합니다."
     echo ""
-    echo "  ${CYAN}2)${NC} 개발 모드 - 개발자용"
+    echo -e "  ${CYAN}2)${NC} 개발 모드 - 개발자용"
     echo "     소스 코드 변경사항이 바로 반영됩니다."
     echo ""
 
@@ -132,24 +132,24 @@ choose_install_mode() {
     esac
 }
 
-# 4. better-llm 설치
-install_better_llm() {
+# 4. claude-flow 설치
+install_claude_flow() {
     echo ""
-    print_info "better-llm 설치 중 (Python $PYTHON_VERSION 사용)..."
+    print_info "claude-flow 설치 중 (Python $PYTHON_VERSION 사용)..."
 
     # 기존 설치 확인
-    if pipx list 2>/dev/null | grep -q "better-llm"; then
+    if pipx list 2>/dev/null | grep -q "claude-flow"; then
         print_warning "기존 설치를 제거하고 재설치합니다..."
-        pipx uninstall better-llm || true
+        pipx uninstall claude-flow || true
     fi
 
     # 설치 모드에 따라 설치 (올바른 Python 버전 명시)
     if [ "$INSTALL_MODE" = "editable" ]; then
         pipx install --python "$PYTHON_CMD" -e .
-        print_success "better-llm 설치 완료 (개발 모드)"
+        print_success "claude-flow 설치 완료 (개발 모드)"
     else
         pipx install --python "$PYTHON_CMD" .
-        print_success "better-llm 설치 완료 (일반 모드)"
+        print_success "claude-flow 설치 완료 (일반 모드)"
     fi
 }
 
@@ -158,7 +158,7 @@ setup_environment() {
     echo ""
     print_info "환경변수 설정이 필요합니다:"
     echo ""
-    echo "  ${CYAN}CLAUDE_CODE_OAUTH_TOKEN${NC} - Claude Code OAuth 토큰"
+    echo -e "  ${CYAN}CLAUDE_CODE_OAUTH_TOKEN${NC} - Claude Code OAuth 토큰"
     echo ""
 
     # .env 파일에서 토큰 로드 시도
@@ -179,16 +179,16 @@ setup_environment() {
         echo ""
         echo "다음 명령어로 설정하세요:"
         echo ""
-        echo "  ${GREEN}export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'${NC}"
+        echo -e "  ${GREEN}export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token-here'${NC}"
         echo ""
         echo "영구 설정 (권장):"
         echo ""
         if [ -f ~/.zshrc ]; then
-            echo "  ${GREEN}echo \"export CLAUDE_CODE_OAUTH_TOKEN='your-token'\" >> ~/.zshrc${NC}"
-            echo "  ${GREEN}source ~/.zshrc${NC}"
+            echo -e "  ${GREEN}echo \"export CLAUDE_CODE_OAUTH_TOKEN='your-token'\" >> ~/.zshrc${NC}"
+            echo -e "  ${GREEN}source ~/.zshrc${NC}"
         elif [ -f ~/.bashrc ]; then
-            echo "  ${GREEN}echo \"export CLAUDE_CODE_OAUTH_TOKEN='your-token'\" >> ~/.bashrc${NC}"
-            echo "  ${GREEN}source ~/.bashrc${NC}"
+            echo -e "  ${GREEN}echo \"export CLAUDE_CODE_OAUTH_TOKEN='your-token'\" >> ~/.bashrc${NC}"
+            echo -e "  ${GREEN}source ~/.bashrc${NC}"
         fi
         echo ""
 
@@ -265,11 +265,11 @@ verify_installation() {
     echo ""
     print_info "설치 검증 중..."
 
-    # better-llm-web 명령어 확인
-    if command -v better-llm-web &> /dev/null; then
-        print_success "better-llm-web 명령어 사용 가능"
+    # claude-flow-web 명령어 확인
+    if command -v claude-flow-web &> /dev/null; then
+        print_success "claude-flow-web 명령어 사용 가능"
     else
-        print_error "better-llm-web 명령어를 찾을 수 없습니다."
+        print_error "claude-flow-web 명령어를 찾을 수 없습니다."
         echo ""
         echo "셸을 재시작하고 다시 시도하세요:"
         echo "  exec \$SHELL"
@@ -277,12 +277,16 @@ verify_installation() {
         exit 1
     fi
 
-    # Web UI 빌드 확인
-    FRONTEND_DIST="src/presentation/web/frontend/dist"
-    if [ -d "$FRONTEND_DIST" ]; then
+    # Web UI 빌드 확인 (static-react 디렉토리)
+    FRONTEND_DIST="src/presentation/web/static-react"
+    if [ -d "$FRONTEND_DIST" ] && [ -f "$FRONTEND_DIST/index.html" ]; then
         print_success "Web UI 빌드 파일 확인됨"
     else
         print_warning "Web UI 빌드 파일을 찾을 수 없습니다. 수동 빌드가 필요할 수 있습니다."
+        echo ""
+        echo "  수동 빌드 방법:"
+        echo "    cd src/presentation/web/frontend"
+        echo "    npm run build"
     fi
 }
 
@@ -296,7 +300,7 @@ print_completion() {
     print_info "사용 방법:"
     echo ""
     echo -e "  ${CYAN}# Web UI 시작 (드래그 앤 드롭 워크플로우 에디터)${NC}"
-    echo "  better-llm-web"
+    echo "  claude-flow-web"
     echo ""
     echo -e "  ${CYAN}# 웹 브라우저에서 접속${NC}"
     echo "  http://localhost:5173"
@@ -324,7 +328,7 @@ main() {
     check_python
     install_pipx
     choose_install_mode
-    install_better_llm
+    install_claude_flow
     install_web_frontend
     setup_environment
     verify_installation

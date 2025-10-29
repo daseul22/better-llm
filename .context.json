@@ -1,5 +1,5 @@
 {
-  "project_name": "better-llm",
+  "project_name": "claude-flow",
   "language": "python",
   "framework": "claude-agent-sdk",
   "architecture": "Clean Architecture (4-Layer)",

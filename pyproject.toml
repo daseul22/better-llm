@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "better-llm"
+name = "claude-flow"
 version = "4.0.0"
 description = "그룹 챗 오케스트레이션 시스템 - Manager Agent가 전문화된 Worker Agent들을 조율하여 복잡한 소프트웨어 개발 작업을 자동화"
 readme = "README.md"
@@ -38,7 +38,7 @@ dev = [
 ]
 
 [project.scripts]
-better-llm-web = "src.presentation.web.app:main"
+claude-flow-web = "src.presentation.web.app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

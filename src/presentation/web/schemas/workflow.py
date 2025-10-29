@@ -417,7 +417,7 @@ class ProjectConfig(BaseModel):
     """
     프로젝트 워크플로우 설정
 
-    프로젝트 디렉토리의 .better-llm/workflow-config.json에 저장됩니다.
+    프로젝트 디렉토리의 .claude-flow/workflow-config.json에 저장됩니다.
 
     Attributes:
         project_path: 프로젝트 디렉토리 절대 경로
@@ -536,7 +536,7 @@ class DisplayConfig(BaseModel):
     """
     웹 UI Display 설정
 
-    프로젝트 디렉토리의 .better-llm/display-config.json에 저장됩니다.
+    프로젝트 디렉토리의 .claude-flow/display-config.json에 저장됩니다.
 
     Attributes:
         left_sidebar_open: 왼쪽 사이드바 열림 상태

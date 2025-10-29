@@ -1,4 +1,4 @@
-# Better-LLM Workflow Canvas (React Frontend)
+# Claude Flow Workflow Canvas (React Frontend)
 
 React + React Flow 기반 워크플로우 캔버스 UI입니다.
 
@@ -92,7 +92,7 @@ app.mount("/", StaticFiles(directory="src/presentation/web/static-react", html=T
 
 ### 3. 워크플로우 저장/불러오기
 
-- **저장**: 상단 "저장" 버튼 클릭 (파일로 저장: `~/.better-llm/workflows/`)
+- **저장**: 상단 "저장" 버튼 클릭 (파일로 저장: `~/.claude-flow/workflows/`)
 - **불러오기**: 상단 "불러오기" 버튼 클릭 → 목록에서 선택
 
 ## 디렉토리 구조
@@ -142,7 +142,7 @@ HTTP 500: Internal Server Error
 **해결책**:
 - 백엔드 서버가 실행 중인지 확인 (`./run-web-dev.sh`)
 - 환경변수 `CLAUDE_CODE_OAUTH_TOKEN` 설정 확인
-- 백엔드 로그 확인: `~/.better-llm/better-llm/logs/better-llm.log`
+- 백엔드 로그 확인: `~/.claude-flow/claude-flow/logs/claude-flow.log`
 
 ### 2. 노드가 캔버스에 표시되지 않음
 
@@ -167,4 +167,4 @@ HTTP 500: Internal Server Error
 
 ## 라이센스
 
-MIT License (Better-LLM 프로젝트와 동일)
+MIT License (Claude Flow 프로젝트와 동일)

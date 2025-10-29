@@ -48,7 +48,7 @@ Thumbs.db
 sessions/*.json
 sessions/*.txt
 
-# SQLite Database (should be in ~/.better-llm/)
+# SQLite Database (should be in ~/.claude-flow/)
 data/
 
 # Logs
@@ -72,4 +72,4 @@ workspace/*coverage.xml
 **/static-react/*
 !**/static-react/.gitkeep
 
-.better-llm
+.claude-flow

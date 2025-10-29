@@ -19,11 +19,11 @@ def get_project_name() -> str:
     3. 현재 작업 디렉토리 이름
 
     Returns:
-        프로젝트 이름 (예: "better-llm")
+        프로젝트 이름 (예: "claude-flow")
 
     Examples:
         >>> get_project_name()
-        'better-llm'
+        'claude-flow'
     """
     try:
         # 1. Git remote URL에서 프로젝트 이름 추출 시도
@@ -38,8 +38,8 @@ def get_project_name() -> str:
         if result.returncode == 0:
             remote_url = result.stdout.strip()
             # URL에서 프로젝트 이름 추출
-            # 예: https://github.com/user/better-llm.git -> better-llm
-            # 예: git@github.com:user/better-llm.git -> better-llm
+            # 예: https://github.com/user/claude-flow.git -> claude-flow
+            # 예: git@github.com:user/claude-flow.git -> claude-flow
             if remote_url:
                 # .git 확장자 제거
                 if remote_url.endswith(".git"):
@@ -78,7 +78,7 @@ def get_data_dir(subdir: str = "") -> Path:
     """
     프로젝트별 데이터 디렉토리 경로를 반환합니다.
 
-    경로 형식: ~/.better-llm/{project-name}/{subdir}/
+    경로 형식: ~/.claude-flow/{project-name}/{subdir}/
 
     디렉토리가 없으면 자동으로 생성합니다.
 
@@ -91,13 +91,13 @@ def get_data_dir(subdir: str = "") -> Path:
 
     Examples:
         >>> get_data_dir("sessions")
-        Path('/Users/username/.better-llm/my-project/sessions')
+        Path('/Users/username/.claude-flow/my-project/sessions')
 
         >>> get_data_dir("logs")
-        Path('/Users/username/.better-llm/my-project/logs')
+        Path('/Users/username/.claude-flow/my-project/logs')
 
         >>> get_data_dir()
-        Path('/Users/username/.better-llm/my-project')
+        Path('/Users/username/.claude-flow/my-project')
 
     Notes:
         - 프로젝트 이름은 get_project_name()으로 자동 감지됩니다.
@@ -107,9 +107,9 @@ def get_data_dir(subdir: str = "") -> Path:
     # 프로젝트 이름 자동 감지
     project_name = get_project_name()
 
-    # 기본 데이터 디렉토리: ~/.better-llm/{project-name}/
+    # 기본 데이터 디렉토리: ~/.claude-flow/{project-name}/
     home = Path.home()
-    base_dir = home / ".better-llm" / project_name
+    base_dir = home / ".claude-flow" / project_name
 
     # 하위 디렉토리가 지정되면 추가
     if subdir:

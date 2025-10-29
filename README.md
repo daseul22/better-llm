@@ -1,4 +1,4 @@
-# Better-LLM
+# Claude Flow
 
 > 여러 Claude 에이전트가 협업하여 복잡한 소프트웨어 개발 작업을 자동화하는 오케스트레이션 시스템
 
@@ -52,8 +52,8 @@
 **pipx를 사용한 글로벌 설치 (권장):**
 
 ```bash
-git clone https://github.com/simdaseul/better-llm.git
-cd better-llm
+git clone https://github.com/simdaseul/claude-flow.git
+cd claude-flow
 ./setup.sh
 ```
 
@@ -61,7 +61,7 @@ cd better-llm
 - Python 3.10+ 버전 확인
 - pipx 설치 (필요시)
 - 설치 모드 선택 (일반/개발)
-- better-llm 설치
+- claude-flow 설치
 - 환경 변수 설정 안내
 - 설치 검증
 
@@ -73,7 +73,7 @@ brew install pipx  # macOS
 # 또는
 python3 -m pip install --user pipx
 
-# better-llm 설치
+# claude-flow 설치
 pipx install .           # 일반 모드
 pipx install -e .        # 개발 모드 (코드 변경 시 바로 반영)
 ```
@@ -95,7 +95,7 @@ echo "CLAUDE_CODE_OAUTH_TOKEN=your-oauth-token-here" > .env
 #### TUI (Terminal User Interface) - 권장
 
 ```bash
-better-llm
+claude-flow
 ```
 
 **특징**: 대화형 터미널 UI, 실시간 로그 표시, 세션 관리
@@ -104,7 +104,7 @@ better-llm
 
 ```bash
 # 하나의 명령어로 모든 것 실행 (백엔드 + 프론트엔드)
-better-llm-web
+claude-flow-web
 ```
 
 **특징**:
@@ -121,7 +121,7 @@ better-llm-web
 #### CLI (Command Line Interface)
 
 ```bash
-better-llm-cli "FastAPI로 /users CRUD 엔드포인트 구현해줘"
+claude-flow-cli "FastAPI로 /users CRUD 엔드포인트 구현해줘"
 ```
 
 **특징**: 스크립트 자동화, 단일 명령 실행
@@ -135,7 +135,7 @@ better-llm-cli "FastAPI로 /users CRUD 엔드포인트 구현해줘"
 ### 빠른 링크
 
 - [**🎨 Workflow Canvas 가이드**](docs/workflow-canvas-guide.md) - **NEW!** 웹 UI 워크플로우 에디터
-- [**🌐 웹 사용 가이드**](docs/web-usage.md) - **NEW!** better-llm-web 사용법 (워크플로우 캔버스 + 레거시 UI)
+- [**🌐 웹 사용 가이드**](docs/web-usage.md) - **NEW!** claude-flow-web 사용법 (워크플로우 캔버스 + 레거시 UI)
 - [**⚡ 빠른 시작 (웹)**](docs/quickstart-web.md) - **NEW!** 5분 안에 시작하기
 - [**🚀 고급 기능 (Advanced Features)**](ADVANCED_FEATURES.md) - LLM 기반 요약, Performance Metrics, Context Metadata
 - [**설치 가이드**](docs/guides/installation.md) - 상세한 설치 방법
@@ -158,7 +158,7 @@ better-llm-cli "FastAPI로 /users CRUD 엔드포인트 구현해줘"
 ### 신규 기능 개발
 
 ```bash
-better-llm-cli "FastAPI로 JWT 기반 사용자 인증 시스템 구현해줘. /login, /register, /me 엔드포인트 필요해."
+claude-flow-cli "FastAPI로 JWT 기반 사용자 인증 시스템 구현해줘. /login, /register, /me 엔드포인트 필요해."
 ```
 
 **워크플로우:**
@@ -171,13 +171,13 @@ better-llm-cli "FastAPI로 JWT 기반 사용자 인증 시스템 구현해줘. /
 ### 버그 수정
 
 ```bash
-better-llm-cli "로그인 API에서 500 에러 발생. routes/auth.py의 login 함수에서 NoneType 에러. 원인 찾고 수정해줘."
+claude-flow-cli "로그인 API에서 500 에러 발생. routes/auth.py의 login 함수에서 NoneType 에러. 원인 찾고 수정해줘."
 ```
 
 ### 코드 리팩토링
 
 ```bash
-better-llm-cli "payment.py 모듈을 클래스 기반으로 리팩토링해줘. 단일 책임 원칙 적용하고, 테스트도 같이 리팩토링해야 해."
+claude-flow-cli "payment.py 모듈을 클래스 기반으로 리팩토링해줘. 단일 책임 원칙 적용하고, 테스트도 같이 리팩토링해야 해."
 ```
 
 ---
@@ -195,7 +195,7 @@ better-llm-cli "payment.py 모듈을 클래스 기반으로 리팩토링해줘. 
 ## 🏗️ 프로젝트 구조
 
 ```
-better-llm/
+claude-flow/
 ├── src/                    # 소스 코드
 │   ├── domain/            # Domain Layer (순수 Python)
 │   ├── application/       # Application Layer (Use Cases)
@@ -225,7 +225,7 @@ better-llm/
 
 ## 🤝 기여하기
 
-Better-LLM은 오픈소스 프로젝트입니다. 기여를 환영합니다!
+Claude Flow는 오픈소스 프로젝트입니다. 기여를 환영합니다!
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
@@ -245,8 +245,8 @@ Better-LLM은 오픈소스 프로젝트입니다. 기여를 환영합니다!
 
 ## 📞 문의 및 지원
 
-- **GitHub Issues**: [https://github.com/simdaseul/better-llm/issues](https://github.com/simdaseul/better-llm/issues)
-- **Discussions**: [https://github.com/simdaseul/better-llm/discussions](https://github.com/simdaseul/better-llm/discussions)
+- **GitHub Issues**: [https://github.com/simdaseul/claude-flow/issues](https://github.com/simdaseul/claude-flow/issues)
+- **Discussions**: [https://github.com/simdaseul/claude-flow/discussions](https://github.com/simdaseul/claude-flow/discussions)
 
 ---
 

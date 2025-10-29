@@ -67,8 +67,8 @@ def is_hidden_or_ignored(name: str) -> bool:
     """
     # 숨김 파일 (점으로 시작)
     if name.startswith('.') and name not in {'.', '..'}:
-        # .better-llm은 허용
-        if name == '.better-llm':
+        # .claude-flow은 허용
+        if name == '.claude-flow':
             return False
         return True
 

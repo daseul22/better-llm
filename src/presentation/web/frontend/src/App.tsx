@@ -1,5 +1,5 @@
 /**
- * Better-LLM 워크플로우 캔버스 앱
+ * Claude Flow 워크플로우 캔버스 앱
  *
  * 메인 레이아웃 및 컴포넌트 조합
  */
@@ -27,8 +27,8 @@ import { DirectoryBrowser } from './components/DirectoryBrowser'
 import { ToastContainer, ToastType } from './components/Toast'
 import { TemplateGallery } from './components/TemplateGallery'
 
-const STORAGE_KEY_PROJECT_PATH = 'better-llm-last-project-path'
-const STORAGE_KEY_SESSION_ID = 'better-llm-workflow-session-id'
+const STORAGE_KEY_PROJECT_PATH = 'claude-flow-last-project-path'
+const STORAGE_KEY_SESSION_ID = 'claude-flow-workflow-session-id'
 
 function App() {
   const { getWorkflow: getCurrentWorkflow, loadWorkflow, workflowName, setWorkflowName, nodes, edges, restoreFromSession } = useWorkflowStore()
@@ -744,7 +744,7 @@ function App() {
                         placeholder="/Users/username/my-project"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        설정은 <code className="bg-gray-100 px-1 py-0.5 rounded">.better-llm/workflow-config.json</code>에 저장됩니다.
+                        설정은 <code className="bg-gray-100 px-1 py-0.5 rounded">.claude-flow/workflow-config.json</code>에 저장됩니다.
                       </p>
                     </div>
 
