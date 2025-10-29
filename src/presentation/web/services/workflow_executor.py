@@ -175,13 +175,60 @@ class WorkflowExecutor:
             input_node_ids = [node.id for node in input_nodes]
             logger.info(f"모든 Input 노드에서 시작: {input_node_ids}")
 
+        # Condition 노드의 max_iterations가 설정된 경우 피드백 루프 허용
+        # 백엣지(back-edge) 식별: Condition 노드에서 나가는 엣지가 이미 방문한 노드로 가는 경우
+        condition_nodes_with_iterations = set()
+        for node in nodes:
+            if node.type == "condition":
+                max_iterations = None
+                if hasattr(node.data, "max_iterations"):
+                    max_iterations = node.data.max_iterations
+                elif isinstance(node.data, dict):
+                    max_iterations = node.data.get("max_iterations")
+
+                if max_iterations is not None:
+                    condition_nodes_with_iterations.add(node.id)
+
+        # 백엣지 식별 (DFS로 방문 순서 파악)
+        back_edges = set()
+        visited_dfs = set()
+        rec_stack = set()
+
+        def identify_back_edges(node_id: str, path: List[str]):
+            """DFS로 백엣지 식별"""
+            visited_dfs.add(node_id)
+            rec_stack.add(node_id)
+            path.append(node_id)
+
+            for edge in valid_edges:
+                if edge.source == node_id:
+                    target = edge.target
+
+                    # 이미 방문 스택에 있으면 백엣지
+                    if target in rec_stack:
+                        # Condition 노드에서 나가는 백엣지만 허용
+                        if node_id in condition_nodes_with_iterations:
+                            back_edges.add((edge.source, edge.target))
+                            logger.info(f"피드백 루프 감지 (허용): {edge.source} → {edge.target}")
+                    elif target not in visited_dfs:
+                        identify_back_edges(target, path.copy())
+
+            rec_stack.remove(node_id)
+
+        # 모든 Input 노드에서 DFS 시작하여 백엣지 식별
+        for input_id in input_node_ids:
+            if input_id not in visited_dfs:
+                identify_back_edges(input_id, [])
+
         # 인접 리스트 (노드 ID → 자식 노드 ID 목록)
         adjacency: Dict[str, List[str]] = {node.id: [] for node in nodes}
         in_degree: Dict[str, int] = {node.id: 0 for node in nodes}
 
         for edge in valid_edges:
-            adjacency[edge.source].append(edge.target)
-            in_degree[edge.target] += 1
+            # 백엣지는 위상 정렬에서 제외 (피드백 루프)
+            if (edge.source, edge.target) not in back_edges:
+                adjacency[edge.source].append(edge.target)
+                in_degree[edge.target] += 1
 
         # Input 노드에서 도달 가능한 노드만 필터링 (BFS)
         reachable_nodes = set(input_node_ids)
@@ -219,7 +266,7 @@ class WorkflowExecutor:
                 stuck_nodes = [nid for nid, count in stuck_counter.items() if count > 5]
                 raise ValueError(
                     f"위상 정렬 중 무한 루프 감지. 교착 상태 노드: {stuck_nodes}. "
-                    f"Loop 노드를 통한 피드백 루프가 아닌 실제 순환 참조가 있을 수 있습니다."
+                    f"Condition 노드 + max_iterations를 통한 피드백 루프가 아닌 실제 순환 참조가 있을 수 있습니다."
                 )
 
             node_id = queue.popleft()
