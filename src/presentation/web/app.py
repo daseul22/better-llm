@@ -1,4 +1,4 @@
-"""FastAPI 앱 - Better-LLM 워크플로우 캔버스"""
+"""FastAPI 앱 - Claude Flow 워크플로우 캔버스"""
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     startup 및 shutdown 이벤트를 처리합니다.
     """
     # Startup
-    logger.info(f"🚀 Better-LLM 시작 (React: {(Path(__file__).parent / 'static-react').exists()})")
+    logger.info(f"🚀 Claude Flow 시작 (React: {(Path(__file__).parent / 'static-react').exists()})")
 
     # 환경변수 확인
     if not os.getenv("CLAUDE_CODE_OAUTH_TOKEN"):
@@ -43,12 +43,12 @@ async def lifespan(app: FastAPI):
     yield  # 애플리케이션 실행 중
 
     # Shutdown
-    logger.info("🛑 Better-LLM 종료 중...")
+    logger.info("🛑 Claude Flow 종료 중...")
     # 필요한 경우 리소스 정리 작업 추가 (DB 연결 종료, 캐시 정리 등)
-    logger.info("✅ Better-LLM 종료 완료")
+    logger.info("✅ Claude Flow 종료 완료")
 
 
-app = FastAPI(title="Better-LLM", version="4.0.0", lifespan=lifespan)
+app = FastAPI(title="Claude Flow", version="4.0.0", lifespan=lifespan)
 
 origins = os.getenv("WEB_ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -84,7 +84,7 @@ def main():
     port = int(os.getenv("WEB_PORT", "8000"))
 
     print("╔════════════════════════════════════════════╗")
-    print("║   Better-LLM Workflow Canvas               ║")
+    print("║   Claude Flow Workflow Canvas              ║")
     print("╚════════════════════════════════════════════╝")
     print()
     print(f"🚀 웹 서버: http://{host}:{port}")
