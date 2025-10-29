@@ -665,9 +665,9 @@ class WorkflowExecutor:
 
         # Haiku 모델로 빠른 판단
         options = ClaudeAgentOptions(
-            model="claude-haiku-4-20250514",
+            model="haiku",
             allowed_tools=[],  # 도구 사용 안함
-            permission_mode="default",
+            permission_mode="bypassPermissions",  # 자동 실행을 위해 승인 우회
         )
 
         # LLM에게 전달할 전체 프롬프트

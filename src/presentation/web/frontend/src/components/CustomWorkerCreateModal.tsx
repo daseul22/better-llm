@@ -13,159 +13,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { generateCustomWorker, saveCustomWorker, getTools, Tool, getCurrentProject } from '@/lib/api'
-import { Loader2, Send, Save, X, Sparkles, ArrowDown, ChevronDown, ChevronRight, Brain } from 'lucide-react'
-import { parseLogMessage } from '@/lib/logParser'
+import { Loader2, Send, Save, X, Sparkles, ArrowDown } from 'lucide-react'
+import { ParsedContent } from './ParsedContent'
 
 interface CustomWorkerCreateModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
   onGeneratingStateChange?: (isGenerating: boolean) => void
-}
-
-/**
- * 단일 출력 청크 렌더링 컴포넌트 (InputNodeConfig의 LogItem 방식)
- */
-const OutputChunkItem: React.FC<{ chunk: string; index: number }> = ({ chunk }) => {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const parsed = parseLogMessage(chunk)
-
-  // 파싱된 메시지 타입별 렌더링
-  const renderParsedContent = () => {
-    switch (parsed.type) {
-      case 'assistant_message':
-        return (
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-purple-700">🤖 워커 응답</div>
-            <div className="text-sm whitespace-pre-wrap bg-white p-3 rounded border leading-relaxed">
-              {parsed.content}
-            </div>
-          </div>
-        )
-
-      case 'tool_use':
-        return (
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded"
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              )}
-              <div className="text-xs font-semibold text-orange-700 overflow-hidden text-ellipsis whitespace-nowrap">
-                🔧 도구 호출: {parsed.toolUse?.toolName}
-              </div>
-            </div>
-
-            {isExpanded && parsed.toolUse && (
-              <div className="ml-5 bg-white border rounded p-2 space-y-2 max-h-[300px] overflow-y-auto">
-                {Object.keys(parsed.toolUse.input).length > 0 && (
-                  <div>
-                    <div className="text-xs font-medium text-gray-700 mb-1">입력:</div>
-                    <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto break-words whitespace-pre-wrap">
-                      {JSON.stringify(parsed.toolUse.input, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!isExpanded && (
-              <div className="ml-5 text-xs text-gray-600 overflow-hidden text-ellipsis whitespace-nowrap">
-                {Object.keys(parsed.toolUse?.input || {}).length}개 파라미터
-              </div>
-            )}
-          </div>
-        )
-
-      case 'tool_result':
-        return (
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded"
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              )}
-              <div className="text-xs font-semibold text-green-700 overflow-hidden text-ellipsis whitespace-nowrap">
-                ✅ 도구 결과: {parsed.toolUse?.toolName}
-              </div>
-            </div>
-
-            {isExpanded && (
-              <div className="ml-5 bg-white border rounded p-2 space-y-2 max-h-[300px] overflow-y-auto">
-                <div>
-                  <div className="text-xs font-medium text-gray-700 mb-1">결과:</div>
-                  <div className="text-xs whitespace-pre-wrap bg-gray-50 p-2 rounded break-words">
-                    {parsed.content}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!isExpanded && (
-              <div className="ml-5 text-xs text-gray-600 overflow-hidden text-ellipsis whitespace-nowrap">
-                {parsed.content.substring(0, 100)}...
-              </div>
-            )}
-          </div>
-        )
-
-      case 'thinking':
-        return (
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 cursor-pointer hover:bg-purple-50 p-1 rounded transition-colors"
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-3 w-3 text-purple-600 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-purple-600 flex-shrink-0" />
-              )}
-              <Brain className="h-3.5 w-3.5 text-purple-600 flex-shrink-0" />
-              <div className="text-xs font-semibold text-purple-700 overflow-hidden text-ellipsis whitespace-nowrap">
-                사고 과정 (Extended Thinking)
-              </div>
-            </div>
-
-            {isExpanded && (
-              <div className="ml-5 bg-purple-50 border border-purple-200 rounded p-3 max-h-[300px] overflow-y-auto">
-                <div className="text-xs whitespace-pre-wrap break-words text-purple-900">
-                  {parsed.content}
-                </div>
-              </div>
-            )}
-
-            {!isExpanded && (
-              <div className="ml-5 text-xs text-purple-600 italic overflow-hidden text-ellipsis whitespace-nowrap">
-                {parsed.content.substring(0, 80)}...
-              </div>
-            )}
-          </div>
-        )
-
-      case 'text':
-      default:
-        return (
-          <div className="text-sm whitespace-pre-wrap break-words leading-relaxed text-gray-800 bg-white p-3 rounded border">
-            {parsed.content}
-          </div>
-        )
-    }
-  }
-
-  return (
-    <div className="space-y-1">
-      {renderParsedContent()}
-    </div>
-  )
 }
 
 export const CustomWorkerCreateModal: React.FC<CustomWorkerCreateModalProps> = ({
@@ -809,13 +664,9 @@ export const CustomWorkerCreateModal: React.FC<CustomWorkerCreateModalProps> = (
                   </div>
                 )}
 
-                {/* 청크별로 파싱된 출력 */}
-                {outputChunks.length > 0 ? (
-                  <div className="space-y-2">
-                    {outputChunks.map((chunk, index) => (
-                      <OutputChunkItem key={index} chunk={chunk} index={index} />
-                    ))}
-                  </div>
+                {/* 파싱된 출력 */}
+                {generatedOutput.trim() ? (
+                  <ParsedContent content={generatedOutput} />
                 ) : (
                   <div className="text-gray-500 italic text-sm">
                     워커 프롬프트 엔지니어가 작업 중입니다...

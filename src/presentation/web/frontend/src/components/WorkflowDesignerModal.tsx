@@ -10,8 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { designWorkflow } from '@/lib/api'
-import { Loader2, Send, Check, X, Wand2, ArrowDown, ChevronDown, ChevronRight, Brain } from 'lucide-react'
-import { parseLogMessage } from '@/lib/logParser'
+import { Loader2, Send, Check, X, Wand2, ArrowDown } from 'lucide-react'
+import { ParsedContent } from './ParsedContent'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { layoutWorkflow } from '@/lib/layoutNodes'
 import type { Workflow } from '@/lib/api'
@@ -21,96 +21,6 @@ interface WorkflowDesignerModalProps {
   onClose: () => void
   onSuccess: () => void
   onDesigningStateChange?: (isDesigning: boolean) => void
-}
-
-/**
- * 단일 출력 청크 렌더링 컴포넌트
- */
-const OutputChunkItem: React.FC<{ chunk: string; index: number }> = ({ chunk }) => {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const parsed = parseLogMessage(chunk)
-
-  const renderParsedContent = () => {
-    switch (parsed.type) {
-      case 'assistant_message':
-        return (
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-purple-700">🤖 워커 응답</div>
-            <div className="text-sm whitespace-pre-wrap bg-white p-3 rounded border leading-relaxed">
-              {parsed.content}
-            </div>
-          </div>
-        )
-
-      case 'tool_use':
-        return (
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded"
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              )}
-              <div className="text-xs font-semibold text-orange-700 overflow-hidden text-ellipsis whitespace-nowrap">
-                🔧 도구 호출: {parsed.toolUse?.toolName}
-              </div>
-            </div>
-            {isExpanded && parsed.toolUse && (
-              <div className="ml-5 bg-white border rounded p-2 space-y-2 max-h-[300px] overflow-y-auto">
-                {Object.keys(parsed.toolUse.input).length > 0 && (
-                  <div>
-                    <div className="text-xs font-medium text-gray-700 mb-1">입력:</div>
-                    <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto break-words whitespace-pre-wrap">
-                      {JSON.stringify(parsed.toolUse.input, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )
-
-      case 'thinking':
-        return (
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 cursor-pointer hover:bg-purple-50 p-1 rounded transition-colors"
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-3 w-3 text-purple-600 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-purple-600 flex-shrink-0" />
-              )}
-              <Brain className="h-3.5 w-3.5 text-purple-600 flex-shrink-0" />
-              <div className="text-xs font-semibold text-purple-700 overflow-hidden text-ellipsis whitespace-nowrap">
-                사고 과정 (Extended Thinking)
-              </div>
-            </div>
-            {isExpanded && (
-              <div className="ml-5 bg-purple-50 border border-purple-200 rounded p-3 max-h-[300px] overflow-y-auto">
-                <div className="text-xs whitespace-pre-wrap break-words text-purple-900">
-                  {parsed.content}
-                </div>
-              </div>
-            )}
-          </div>
-        )
-
-      case 'text':
-      default:
-        return (
-          <div className="text-sm whitespace-pre-wrap break-words leading-relaxed text-gray-800 bg-white p-3 rounded border">
-            {parsed.content}
-          </div>
-        )
-    }
-  }
-
-  return <div className="space-y-1">{renderParsedContent()}</div>
 }
 
 export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
@@ -644,12 +554,8 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
                   </div>
                 )}
 
-                {outputChunks.length > 0 ? (
-                  <div className="space-y-2">
-                    {outputChunks.map((chunk, index) => (
-                      <OutputChunkItem key={index} chunk={chunk} index={index} />
-                    ))}
-                  </div>
+                {generatedOutput.trim() ? (
+                  <ParsedContent content={generatedOutput} />
                 ) : (
                   <div className="text-gray-500 italic text-sm">
                     워크플로우 디자이너가 작업 중입니다...
