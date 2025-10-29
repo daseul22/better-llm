@@ -462,7 +462,11 @@ class WorkflowValidator:
             # Loop 노드 데이터 추출
             max_iterations = None
 
-            if isinstance(node.data, dict):
+            # Pydantic 모델 객체인 경우
+            if hasattr(node.data, "max_iterations"):
+                max_iterations = node.data.max_iterations
+            # 딕셔너리인 경우
+            elif isinstance(node.data, dict):
                 max_iterations = node.data.get("max_iterations")
 
             # max_iterations 설정 확인
@@ -489,24 +493,23 @@ class WorkflowValidator:
                 ))
 
             # Loop 노드가 실제 순환 경로에 포함되어 있는지 확인
-            # (Loop 노드에서 출발하여 다시 돌아올 수 있는지)
-            visited = set()
-            def can_reach_self(current: str, target: str, visited_in_path: Set[str]) -> bool:
-                if current == target and current in visited_in_path:
+            # (Loop 노드의 이웃에서 출발하여 다시 Loop 노드로 돌아올 수 있는지)
+            def can_reach_target(current: str, target: str, visited: Set[str]) -> bool:
+                """DFS로 current에서 target까지 도달 가능한지 확인"""
+                if current == target:
                     return True
                 if current in visited:
                     return False
                 visited.add(current)
-                visited_in_path.add(current)
                 for neighbor in graph.get(current, []):
-                    if can_reach_self(neighbor, target, visited_in_path.copy()):
+                    if can_reach_target(neighbor, target, visited):
                         return True
                 return False
 
             # Loop 노드에서 출발하여 자기 자신으로 돌아올 수 있는지 확인
             is_in_cycle = False
             for neighbor in graph.get(node.id, []):
-                if can_reach_self(neighbor, node.id, set()):
+                if can_reach_target(neighbor, node.id, set()):
                     is_in_cycle = True
                     break
 

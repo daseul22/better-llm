@@ -522,6 +522,40 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
+### fix: Loop 노드 검증 버그 수정 (완료)
+- **날짜**: 2025-10-29 17:00 (Asia/Seoul)
+- **문제**:
+  - Loop 노드에 `max_iterations: 3`이 설정되어 있는데도 "max_iterations 설정이 없습니다" 에러 발생
+  - Loop 노드가 순환 경로에 포함되어 있는데도 "순환 경로에 포함되지 않음" 경고 발생
+- **원인**:
+  - **원인 1**: `workflow_validator.py:465`에서 `isinstance(node.data, dict)` 체크 실패
+    * `node.data`는 Pydantic 모델 객체 (`LoopNodeData`)이므로 딕셔너리가 아님
+    * `max_iterations` 추출 실패하여 항상 `None` 반환
+  - **원인 2**: `can_reach_self` 함수 로직 버그
+    * 499줄: `if current == target and current in visited_in_path` 조건이 절대 True가 될 수 없음
+    * 첫 호출 시 `current`는 `visited_in_path`에 아직 추가되지 않았으므로
+- **해결**:
+  - **수정 1**: Pydantic 모델과 딕셔너리 모두 처리하도록 로직 개선
+    ```python
+    # Pydantic 모델 객체인 경우
+    if hasattr(node.data, "max_iterations"):
+        max_iterations = node.data.max_iterations
+    # 딕셔너리인 경우
+    elif isinstance(node.data, dict):
+        max_iterations = node.data.get("max_iterations")
+    ```
+  - **수정 2**: 순환 경로 검사 함수 단순화
+    ```python
+    def can_reach_target(current: str, target: str, visited: Set[str]) -> bool:
+        if current == target:
+            return True
+        # ... DFS 탐색
+    ```
+- **파일**: `src/presentation/web/services/workflow_validator.py`
+- **영향범위**: Loop 노드 검증, 피드백 루프 워크플로우
+- **테스트**: 구문 검사 통과
+- **후속 조치**: Web UI에서 실제 워크플로우 검증 확인
+
 ### feat: Workflow Designer 백그라운드 실행 및 세션 복구 (완료)
 - **날짜**: 2025-10-29 16:30 (Asia/Seoul)
 - **목적**: 워크플로우 설계 중 백그라운드 전환 및 새로고침 시 세션 복구 지원
