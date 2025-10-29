@@ -189,19 +189,43 @@
 
 ### 노드 배치 가이드라인
 
-노드 위치(position)는 다음 가이드라인을 따르세요:
-- **Input 노드**: x=100, y=100 (시작점)
+**중요**: 워크플로우 적용 시 자동 레이아웃 알고리즘(Dagre)이 실행되어 노드 위치가 최적화됩니다.
+따라서 position은 간단히 설정해도 되지만, 가독성을 위해 다음 기본 규칙을 따르세요:
+
+- **Input 노드**: x=100, y=200 (시작점)
 - **순차 노드**: 왼쪽에서 오른쪽으로 x축 +250px씩 증가
-- **병렬 노드**: 동일한 x좌표, y축으로 분산 (±100px)
-- **분기 노드**: True 경로는 y-100, False 경로는 y+100
-- **병합 노드**: 분기 후 다시 중앙 y좌표로 복귀
+- **병렬 노드**: 동일한 x좌표, y축으로 분산 배치
+  - 첫 번째 분기: y-150
+  - 두 번째 분기: y (중앙)
+  - 세 번째 분기: y+150
+  - 네 번째 분기: y+300
+- **분기 노드 (Condition)**:
+  - Condition 노드: 부모와 동일한 y좌표
+  - True 경로: y-150
+  - False 경로: y+150
+- **병합 노드 (Merge)**: 병렬/분기 후 중앙 y좌표로 복귀
+- **루프 노드 (Loop)**: 루프 시작 위치와 동일한 y좌표
 
 예시:
 ```json
-"position": {"x": 100, "y": 100}   // Input 노드
-"position": {"x": 350, "y": 100}   // 첫 번째 Worker
-"position": {"x": 600, "y": 100}   // 두 번째 Worker
+// 순차 실행
+"position": {"x": 100, "y": 200}   // Input 노드
+"position": {"x": 350, "y": 200}   // Coder
+"position": {"x": 600, "y": 200}   // Reviewer
+
+// 병렬 실행 (3개 리뷰어)
+"position": {"x": 600, "y": 50}    // Reviewer 1 (위)
+"position": {"x": 600, "y": 200}   // Reviewer 2 (중앙)
+"position": {"x": 600, "y": 350}   // Reviewer 3 (아래)
+"position": {"x": 850, "y": 200}   // Merge (중앙으로 복귀)
+
+// 조건 분기
+"position": {"x": 600, "y": 200}   // Condition
+"position": {"x": 850, "y": 50}    // True 경로 (위)
+"position": {"x": 850, "y": 350}   // False 경로 (아래)
 ```
+
+**자동 레이아웃 최적화**: 위 규칙은 기본 가이드라인이며, 실제 캔버스 적용 시 Dagre 알고리즘이 노드 간 충돌을 방지하고 가독성을 최적화합니다.
 
 ## 예시
 
@@ -216,7 +240,7 @@
       {
         "id": "input-1",
         "type": "input",
-        "position": {"x": 100, "y": 100},
+        "position": {"x": 100, "y": 200},
         "data": {
           "initial_input": "{{input}}",
           "parallel_execution": false
@@ -225,7 +249,7 @@
       {
         "id": "coder-1",
         "type": "worker",
-        "position": {"x": 350, "y": 100},
+        "position": {"x": 350, "y": 200},
         "data": {
           "agent_name": "coder",
           "task_template": "다음 요구사항에 따라 코드를 작성해주세요:\n\n{{parent}}",
@@ -237,7 +261,7 @@
       {
         "id": "reviewer-1",
         "type": "worker",
-        "position": {"x": 600, "y": 100},
+        "position": {"x": 600, "y": 200},
         "data": {
           "agent_name": "reviewer",
           "task_template": "다음 코드를 리뷰해주세요:\n\n{{parent}}",
@@ -249,7 +273,7 @@
       {
         "id": "tester-1",
         "type": "worker",
-        "position": {"x": 850, "y": 100},
+        "position": {"x": 850, "y": 200},
         "data": {
           "agent_name": "tester",
           "task_template": "코드에 대한 테스트를 실행하고 결과를 보고해주세요.",

@@ -13,6 +13,7 @@ import { designWorkflow } from '@/lib/api'
 import { Loader2, Send, Check, X, Wand2, ArrowDown, ChevronDown, ChevronRight, Brain } from 'lucide-react'
 import { parseLogMessage } from '@/lib/logParser'
 import { useWorkflowStore } from '@/stores/workflowStore'
+import { layoutWorkflow } from '@/lib/layoutNodes'
 import type { Workflow } from '@/lib/api'
 
 interface WorkflowDesignerModalProps {
@@ -473,8 +474,24 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
     }
 
     try {
-      loadWorkflow(parsedWorkflow)
-      alert('워크플로우가 캔버스에 적용되었습니다')
+      // 자동 레이아웃 적용 (가로 방향)
+      const layoutedWorkflow = layoutWorkflow(
+        {
+          nodes: parsedWorkflow.nodes,
+          edges: parsedWorkflow.edges,
+        },
+        'LR'
+      )
+
+      // 레이아웃이 적용된 워크플로우 로드
+      const finalWorkflow: Workflow = {
+        ...parsedWorkflow,
+        nodes: layoutedWorkflow.nodes,
+        edges: layoutedWorkflow.edges,
+      }
+
+      loadWorkflow(finalWorkflow)
+      alert('워크플로우가 캔버스에 적용되었습니다 (자동 레이아웃 적용)')
       onSuccess()
       resetModal()
       onClose()
