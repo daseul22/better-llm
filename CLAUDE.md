@@ -257,6 +257,36 @@ async def _execute_manager_node(self, node, ...):
 2. 노드 설정에서 워커 체크박스 선택 (최소 1개)
 3. 작업 설명 입력 (모든 워커에게 동일하게 전달)
 
+### 피드백 루프 (Loop 노드)
+
+**Loop 노드를 통한 제어된 피드백 루프를 지원합니다**:
+
+```
+Tester → Condition → Loop (max: 3회) → Bug Fixer → Tester
+         ↓ (통과)
+    Committer
+```
+
+**주요 특징**:
+- **제어된 반복**: Loop 노드의 `max_iterations`로 최대 반복 횟수 제한
+- **조건부 탈출**: Condition 노드로 루프 탈출 조건 설정
+- **무한 루프 방지**: Loop 노드 없는 순환은 검증 단계에서 에러 발생
+
+**사용 예시** (테스트 → 버그 수정 → 재테스트):
+1. Tester가 테스트 실행
+2. Condition 노드가 "테스트 통과" 여부 확인
+3. 실패 시: Loop 노드로 → Bug Fixer가 수정 → 다시 Tester로 (최대 3회 반복)
+4. 성공 시: Committer로 진행
+
+**검증 규칙**:
+- ✅ **허용**: Loop 노드를 포함한 순환 (제어된 피드백 루프)
+- ❌ **거부**: Loop 노드 없는 순환 (무한 루프)
+- ⚠️ **경고**: `max_iterations` 누락 또는 10 초과
+
+**구현 위치**: `src/presentation/web/services/workflow_validator.py`
+- `_check_cycles()`: 순환 참조 검사 (Loop 노드를 통한 피드백 루프 허용)
+- `_check_loop_nodes()`: Loop 노드 검증 (max_iterations 확인, 순환 경로 포함 여부)
+
 ---
 
 ## 설정 파일
