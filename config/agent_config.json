@@ -1,9 +1,9 @@
 {
   "agents": [
     {
-      "name": "planner",
-      "role": "계획 수립",
-      "system_prompt_file": "prompts/planner.txt",
+      "name": "feature_planner",
+      "role": "신규 기능 계획 수립",
+      "system_prompt_file": "prompts/feature_planner.txt",
       "allowed_tools": [
         "read",
         "glob",
@@ -13,9 +13,57 @@
       "thinking": true
     },
     {
-      "name": "coder",
-      "role": "코드 작성",
-      "system_prompt_file": "prompts/coder.txt",
+      "name": "refactoring_planner",
+      "role": "코드 리팩토링 계획 수립",
+      "system_prompt_file": "prompts/refactoring_planner.txt",
+      "allowed_tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "bug_fix_planner",
+      "role": "버그 수정 계획 수립",
+      "system_prompt_file": "prompts/bug_fix_planner.txt",
+      "allowed_tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "api_planner",
+      "role": "API 설계 계획 수립",
+      "system_prompt_file": "prompts/api_planner.txt",
+      "allowed_tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "database_planner",
+      "role": "데이터베이스 스키마 설계 계획",
+      "system_prompt_file": "prompts/database_planner.txt",
+      "allowed_tools": [
+        "read",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "frontend_coder",
+      "role": "프론트엔드 개발 (React/TypeScript)",
+      "system_prompt_file": "prompts/frontend_coder.txt",
       "allowed_tools": [
         "read",
         "write",
@@ -27,11 +75,68 @@
       "thinking": true
     },
     {
-      "name": "reviewer",
-      "role": "코드 리뷰",
-      "system_prompt_file": "prompts/reviewer.txt",
+      "name": "backend_coder",
+      "role": "백엔드 개발 (Python/FastAPI)",
+      "system_prompt_file": "prompts/backend_coder.txt",
       "allowed_tools": [
         "read",
+        "write",
+        "edit",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "test_coder",
+      "role": "테스트 코드 작성",
+      "system_prompt_file": "prompts/test_coder.txt",
+      "allowed_tools": [
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "infrastructure_coder",
+      "role": "인프라 및 설정 파일 작성",
+      "system_prompt_file": "prompts/infrastructure_coder.txt",
+      "allowed_tools": [
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "database_coder",
+      "role": "데이터베이스 마이그레이션 및 SQL 작성",
+      "system_prompt_file": "prompts/database_coder.txt",
+      "allowed_tools": [
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
+    },
+    {
+      "name": "unit_tester",
+      "role": "단위 테스트 실행",
+      "system_prompt_file": "prompts/unit_tester.txt",
+      "allowed_tools": [
+        "read",
+        "bash",
         "glob",
         "grep"
       ],
@@ -39,9 +144,35 @@
       "thinking": false
     },
     {
-      "name": "tester",
-      "role": "테스트 및 검증",
-      "system_prompt_file": "prompts/tester.txt",
+      "name": "integration_tester",
+      "role": "통합 테스트 실행",
+      "system_prompt_file": "prompts/integration_tester.txt",
+      "allowed_tools": [
+        "read",
+        "bash",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-haiku-4-5-20251001",
+      "thinking": false
+    },
+    {
+      "name": "e2e_tester",
+      "role": "E2E 테스트 실행",
+      "system_prompt_file": "prompts/e2e_tester.txt",
+      "allowed_tools": [
+        "read",
+        "bash",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-haiku-4-5-20251001",
+      "thinking": false
+    },
+    {
+      "name": "performance_tester",
+      "role": "성능 테스트 실행",
+      "system_prompt_file": "prompts/performance_tester.txt",
       "allowed_tools": [
         "read",
         "bash",

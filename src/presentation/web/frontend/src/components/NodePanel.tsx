@@ -130,11 +130,29 @@ export const NodePanel: React.FC = () => {
 
   // 워커 분류
   const generalWorkers = ['planner', 'coder', 'reviewer', 'tester', 'committer', 'ideator', 'product_manager', 'documenter']
-  const specializedWorkers = ['style_reviewer', 'security_reviewer', 'architecture_reviewer', 'bug_fixer', 'log_analyzer', 'summarizer']
+  const specializedWorkers = [
+    // 계획 특화
+    'feature_planner', 'refactoring_planner', 'bug_fix_planner', 'api_planner', 'database_planner',
+    // 코드 작성 특화
+    'frontend_coder', 'backend_coder', 'test_coder', 'infrastructure_coder', 'database_coder',
+    // 리뷰 특화
+    'style_reviewer', 'security_reviewer', 'architecture_reviewer',
+    // 테스트 실행 특화
+    'unit_tester', 'integration_tester', 'e2e_tester', 'performance_tester',
+    // 기타 특화
+    'bug_fixer', 'log_analyzer', 'summarizer',
+  ]
 
-  // 범용/특화 워커 분리
-  const filteredGeneralWorkers = agents.filter((agent) => generalWorkers.includes(agent.name))
-  const filteredSpecializedWorkers = agents.filter((agent) => specializedWorkers.includes(agent.name))
+  // 제외 워커 (UI에 표시하지 않음)
+  const excludedWorkers = ['worker_prompt_engineer', 'workflow_designer']
+
+  // 범용/특화 워커 분리 (제외 워커 필터링)
+  const filteredGeneralWorkers = agents.filter(
+    (agent) => generalWorkers.includes(agent.name) && !excludedWorkers.includes(agent.name)
+  )
+  const filteredSpecializedWorkers = agents.filter(
+    (agent) => specializedWorkers.includes(agent.name) && !excludedWorkers.includes(agent.name)
+  )
 
   // 프로젝트 경로 및 Agent 목록 로드
   useEffect(() => {
@@ -644,7 +662,7 @@ export const NodePanel: React.FC = () => {
                       className="w-full justify-start text-left hover:bg-indigo-50 bg-white cursor-grab active:cursor-grabbing"
                       onClick={() => handleAddAgent(agent)}
                       draggable
-                      onDragStart={(e) => onDragStart(e, 'worker', { agent_name: worker.name, task_template: `{{input}}을(를) ${worker.role} 해주세요.` })}
+                      onDragStart={(e) => onDragStart(e, 'worker', { agent_name: worker.name, task_template: `{{parent}}를 ${worker.role} 해주세요.` })}
                     >
                       <Wand2 className="mr-2 h-4 w-4 text-indigo-600" />
                       <div className="flex flex-col items-start flex-1">

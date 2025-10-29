@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 #### 워크플로우 노드 시스템 (Web UI)
 ```
-Input 노드 → Planner → Coder → Reviewer → Tester → Committer
+Input 노드 → Feature Planner → Backend Coder → Security Reviewer → Unit Tester → Committer
 ```
 
 **특징**:
@@ -119,22 +119,42 @@ config/
 └── system_config.json        # 시스템 설정 (max_turns, hooks, permission)
 
 prompts/                       # Worker Agent 시스템 프롬프트
-├── planner.txt               # 계획 수립 (read, glob만) - 계획형
-├── product_manager.txt       # 제품 기획 (read, glob) - 계획형
+
+# 계획 특화 (Planner)
+├── feature_planner.txt       # 신규 기능 계획 (read, glob, grep) - 계획형
+├── refactoring_planner.txt   # 리팩토링 계획 (read, glob, grep) - 계획형
+├── bug_fix_planner.txt       # 버그 수정 계획 (read, glob, grep) - 계획형
+├── api_planner.txt           # API 설계 계획 (read, glob, grep) - 계획형
+├── database_planner.txt      # DB 스키마 설계 (read, glob, grep) - 계획형
+├── product_manager.txt       # 제품 기획 (read, glob, grep) - 계획형
 ├── ideator.txt               # 아이디어 생성 (read, glob) - 계획형
-├── coder.txt                 # 코드 작성 (read, write, edit, glob, grep) - 실행형
-├── reviewer.txt              # 코드 리뷰 (read, glob, grep만) - 분석형
+
+# 코드 작성 특화 (Coder)
+├── frontend_coder.txt        # 프론트엔드 (React/TS) (read, write, edit, glob, grep) - 실행형
+├── backend_coder.txt         # 백엔드 (Python/FastAPI) (read, write, edit, glob, grep) - 실행형
+├── test_coder.txt            # 테스트 코드 작성 (read, write, edit, glob, grep) - 실행형
+├── infrastructure_coder.txt  # 인프라/설정 (read, write, edit, glob, grep) - 실행형
+├── database_coder.txt        # DB 마이그레이션/SQL (read, write, edit, glob, grep) - 실행형
+
+# 리뷰 특화 (Reviewer)
 ├── style_reviewer.txt        # 스타일 리뷰 (read, glob, grep) - 분석형
 ├── security_reviewer.txt     # 보안 리뷰 (read, glob, grep) - 분석형
 ├── architecture_reviewer.txt # 아키텍처 리뷰 (read, glob, grep) - 분석형
-├── tester.txt                # 테스트 실행 (read, bash, glob) - 실행형
+
+# 테스트 실행 특화 (Tester)
+├── unit_tester.txt           # 단위 테스트 실행 (read, bash, glob, grep) - 실행형
+├── integration_tester.txt    # 통합 테스트 실행 (read, bash, glob, grep) - 실행형
+├── e2e_tester.txt            # E2E 테스트 실행 (read, bash, glob, grep) - 실행형
+├── performance_tester.txt    # 성능 테스트 실행 (read, bash, glob, grep) - 실행형
+
+# 기타 특화
 ├── bug_fixer.txt             # 버그 수정 (read, write, edit, bash, grep) - 실행형
 ├── committer.txt             # Git 커밋 (bash, read) - 실행형
 ├── documenter.txt            # 문서화 (read, write, edit, glob, bash) - 실행형
 ├── log_analyzer.txt          # 로그 분석 (read, bash, glob, grep) - 분석형
 ├── summarizer.txt            # 텍스트 요약 (read, glob) - 분석형
-├── worker_prompt_engineer.txt # 커스텀 워커 프롬프트 생성
-└── workflow_designer.txt     # 워크플로우 자동 설계 및 생성
+├── worker_prompt_engineer.txt # 커스텀 워커 프롬프트 생성 (read, glob)
+└── workflow_designer.txt     # 워크플로우 자동 설계 (read, glob, grep)
 ```
 
 ### Worker 출력 형식 표준화
@@ -145,9 +165,9 @@ prompts/                       # Worker Agent 시스템 프롬프트
 
 | 형식 | Worker 예시 | 특징 |
 |------|-------------|------|
-| **계획형** (Planning) | Planner, Product Manager, Ideator | 계획/아이디어 제시, 다음 단계 제안 |
-| **분석형** (Analysis) | Reviewer, Security Reviewer, Log Analyzer | 분석/평가 결과, 승인 여부, 점수 |
-| **실행형** (Execution) | Coder, Tester, Bug Fixer, Committer | 작업 수행 결과, 파일 변경, 상태 |
+| **계획형** (Planning) | Feature Planner, API Planner, Product Manager, Ideator | 계획/아이디어 제시, 다음 단계 제안 |
+| **분석형** (Analysis) | Security Reviewer, Style Reviewer, Log Analyzer | 분석/평가 결과, 승인 여부, 점수 |
+| **실행형** (Execution) | Frontend Coder, Backend Coder, Unit Tester, Bug Fixer, Committer | 작업 수행 결과, 파일 변경, 상태 |
 
 #### 표준 출력 구조
 
@@ -272,13 +292,31 @@ Worker별 도구 제한으로 역할 경계 명확화:
 
 | Worker | 도구 | 역할 |
 |--------|------|------|
-| **Planner** | read, glob | 계획 수립 (읽기만) |
-| **Coder** | read, write, edit, glob, grep | 코드 작성 (bash 제외) |
-| **Reviewer** | read, glob, grep | 코드 리뷰 (읽기만) |
-| **Tester** | read, bash, glob | 테스트 실행 (write 제외) |
-| **Committer** | bash, read | Git 커밋만 |
-| **Worker Prompt Engineer** | read, glob | 커스텀 워커 프롬프트 생성 |
-| **Workflow Designer** | read, glob, grep | 워크플로우 설계 및 생성 |
+| **계획 특화 (Planner)** |
+| Feature Planner | read, glob, grep | 신규 기능 계획 |
+| Refactoring Planner | read, glob, grep | 리팩토링 계획 |
+| Bug Fix Planner | read, glob, grep | 버그 수정 계획 |
+| API Planner | read, glob, grep | API 설계 계획 |
+| Database Planner | read, glob, grep | DB 스키마 설계 |
+| **코드 작성 특화 (Coder)** |
+| Frontend Coder | read, write, edit, glob, grep | 프론트엔드 개발 |
+| Backend Coder | read, write, edit, glob, grep | 백엔드 개발 |
+| Test Coder | read, write, edit, glob, grep | 테스트 코드 작성 |
+| Infrastructure Coder | read, write, edit, glob, grep | 인프라/설정 |
+| Database Coder | read, write, edit, glob, grep | DB 마이그레이션/SQL |
+| **리뷰 특화 (Reviewer)** |
+| Style Reviewer | read, glob, grep | 코딩 스타일 리뷰 |
+| Security Reviewer | read, glob, grep | 보안 취약점 리뷰 |
+| Architecture Reviewer | read, glob, grep | 아키텍처 리뷰 |
+| **테스트 실행 특화 (Tester)** |
+| Unit Tester | read, bash, glob, grep | 단위 테스트 실행 |
+| Integration Tester | read, bash, glob, grep | 통합 테스트 실행 |
+| E2E Tester | read, bash, glob, grep | E2E 테스트 실행 |
+| Performance Tester | read, bash, glob, grep | 성능 테스트 실행 |
+| **기타** |
+| Committer | bash, read, glob, grep | Git 커밋만 |
+| Worker Prompt Engineer | read, glob | 커스텀 워커 프롬프트 생성 |
+| Workflow Designer | read, glob, grep | 워크플로우 설계 및 생성 |
 
 ### system_config.json - 주요 설정
 
