@@ -34,8 +34,11 @@ export const NodePanel: React.FC = () => {
 
   // 새로고침 시 진행 중인 세션 확인
   useEffect(() => {
+    console.log('🚀 NodePanel 마운트: 세션 복구 확인 시작')
+
     // 커스텀 워커 세션 확인
     const workerSession = localStorage.getItem('custom_worker_session')
+    console.log('📦 workerSession:', workerSession)
     if (workerSession) {
       const parsedSession = JSON.parse(workerSession)
       if (parsedSession.status === 'generating') {
@@ -47,13 +50,23 @@ export const NodePanel: React.FC = () => {
 
     // 워크플로우 설계 세션 확인
     const designSession = localStorage.getItem('workflow_design_session')
+    console.log('📦 designSession:', designSession)
     if (designSession) {
-      const parsedSession = JSON.parse(designSession)
-      if (parsedSession.status === 'generating') {
-        console.log('🔄 NodePanel: 진행 중인 워크플로우 설계 세션 발견')
-        setIsWorkflowDesigning(true)
-        setIsWorkflowDesignerModalOpen(true)  // 자동으로 모달 열기
+      try {
+        const parsedSession = JSON.parse(designSession)
+        console.log('📝 parsedSession:', parsedSession)
+        if (parsedSession.status === 'generating') {
+          console.log('🔄 NodePanel: 진행 중인 워크플로우 설계 세션 발견 → 모달 열기')
+          setIsWorkflowDesigning(true)
+          setIsWorkflowDesignerModalOpen(true)  // 자동으로 모달 열기
+        } else {
+          console.log('ℹ️ 세션 상태가 generating이 아님:', parsedSession.status)
+        }
+      } catch (err) {
+        console.error('❌ 세션 파싱 실패:', err)
       }
+    } else {
+      console.log('ℹ️ 워크플로우 설계 세션 없음')
     }
   }, [])
 
@@ -347,12 +360,11 @@ export const NodePanel: React.FC = () => {
             variant="default"
             className="w-full bg-blue-600 hover:bg-blue-700 text-white"
             onClick={() => setIsWorkflowDesignerModalOpen(true)}
-            disabled={isWorkflowDesigning}
           >
             {isWorkflowDesigning ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                워크플로우 설계 중...
+                워크플로우 설계 중... (클릭하여 확인)
               </>
             ) : (
               <>

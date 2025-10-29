@@ -175,12 +175,19 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
 
   // 모달이 열릴 때 진행 중인 세션 확인 및 재접속
   useEffect(() => {
-    if (!isOpen || step === 'generating' || step === 'preview') {
+    if (!isOpen) {
+      return
+    }
+
+    // 이미 재접속 중이면 중복 실행 방지
+    if (step === 'generating' || step === 'preview') {
+      console.log('⏭️ 이미 실행 중이므로 세션 복구 스킵:', step)
       return
     }
 
     const session = loadSession()
     if (!session || session.status !== 'generating') {
+      console.log('ℹ️ 복구할 세션 없음')
       return
     }
 
