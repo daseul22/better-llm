@@ -6,7 +6,7 @@ TaskResult: 작업 실행 결과
 TaskStatus: 작업 상태 (Enum)
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, Any
 from enum import Enum
@@ -29,17 +29,13 @@ class Task:
     Attributes:
         description: 작업 설명
         agent_name: 담당 에이전트 이름
-        created_at: 생성 시각
-        status: 작업 상태
+        created_at: 생성 시각 (기본값: 현재 시각)
+        status: 작업 상태 (기본값: PENDING)
     """
     description: str
     agent_name: str
-    created_at: datetime = None
+    created_at: datetime = field(default_factory=datetime.now)
     status: TaskStatus = TaskStatus.PENDING
-
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now()
 
 
 @dataclass

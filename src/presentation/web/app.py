@@ -1,14 +1,27 @@
 """FastAPI 앱 - Claude Flow 워크플로우 캔버스"""
+# 표준 라이브러리
 import os
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+# 서드파티
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+# 로컬
 from src.infrastructure.logging import configure_structlog, get_logger
-from src.presentation.web.routers import agents_router, health_router, workflows_router, projects_router, filesystem_router, templates_router, custom_workers_router
+from src.presentation.web.routers import (
+    agents_router,
+    health_router,
+    workflows_router,
+    projects_router,
+    filesystem_router,
+    templates_router,
+    custom_workers_router,
+)
 
 # .env 파일 로드 (프로젝트 루트)
 load_dotenv()

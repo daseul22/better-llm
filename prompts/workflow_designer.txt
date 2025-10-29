@@ -207,7 +207,7 @@
 - **role**: 워커의 핵심 역할 (1-2문장)
 - **prompt**: 완성된 시스템 프롬프트 (기존 워커 스타일 준수, 100줄 이내)
 - **allowed_tools**: 워커가 사용할 도구 배열 (read, write, edit, bash, glob, grep 중 선택)
-- **model**: claude-sonnet-4-5-20250929 또는 claude-haiku-4-5-20251001
+- **model**: claude-sonnet-4-5-20250929 또는 claude-haiku-4-5
 - **thinking**: Thinking 모드 활성화 여부 (복잡한 작업은 true)
 - **explanation**: 워커 설명 및 다른 워커와의 차별점
 

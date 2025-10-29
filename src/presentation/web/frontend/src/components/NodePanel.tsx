@@ -4,15 +4,17 @@
  * Agent 목록을 표시하고, 드래그 앤 드롭으로 캔버스에 추가합니다.
  */
 
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Agent, getAgents, getCustomWorkers, getCurrentProject, CustomWorkerInfo, loadDisplayConfig, saveDisplayConfig } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus, Target, Zap, ChevronDown, ChevronUp, GitBranch, Merge, Wand2, Loader2 } from 'lucide-react'
+import { Plus, Target, Zap, GitBranch, Merge, Wand2, Loader2 } from 'lucide-react'
 import { CustomWorkerCreateModal } from './CustomWorkerCreateModal'
 import { WorkflowDesignerModal } from './WorkflowDesignerModal'
+import { WorkerSection } from './WorkerSection'
+import { WorkerButton } from './WorkerButton'
 
 export const NodePanel: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -85,8 +87,8 @@ export const NodePanel: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  // 섹션 토글 함수
-  const toggleSection = (section: string) => {
+  // 섹션 토글 함수 (useCallback으로 최적화)
+  const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => {
       const next = new Set(prev)
       if (next.has(section)) {
@@ -96,7 +98,7 @@ export const NodePanel: React.FC = () => {
       }
       return next
     })
-  }
+  }, [])
 
   // 역할별 템플릿 생성 함수
   const getTemplateByRole = (agentName: string, agentRole: string): string => {
@@ -240,6 +242,7 @@ export const NodePanel: React.FC = () => {
     return () => clearTimeout(timer)
   }, [expandedSections, projectPath])
 
+<<<<<<< HEAD
   // 워커 분류
   const generalWorkers = ['planner', 'coder', 'reviewer', 'tester', 'committer', 'ideator', 'product_manager', 'documenter', 'local']
   const specializedWorkers = [
@@ -254,17 +257,37 @@ export const NodePanel: React.FC = () => {
     // 기타 특화
     'bug_fixer', 'log_analyzer', 'summarizer',
   ]
+=======
+  // 워커 분류 (useMemo로 최적화)
+  const filteredWorkers = useMemo(() => {
+    const generalWorkers = ['planner', 'coder', 'reviewer', 'tester', 'committer', 'ideator', 'product_manager', 'documenter']
+    const specializedWorkers = [
+      // 계획 특화
+      'feature_planner', 'refactoring_planner', 'bug_fix_planner', 'api_planner', 'database_planner',
+      // 코드 작성 특화
+      'frontend_coder', 'backend_coder', 'test_coder', 'infrastructure_coder', 'database_coder',
+      // 리뷰 특화
+      'style_reviewer', 'security_reviewer', 'architecture_reviewer',
+      // 테스트 실행 특화
+      'unit_tester', 'integration_tester', 'e2e_tester', 'performance_tester',
+      // 기타 특화
+      'bug_fixer', 'log_analyzer', 'summarizer',
+    ]
+>>>>>>> 2719556 (refactor: 코드 품질 개선 - 타입 힌팅, Import 정렬, 데이터클래스 최적화)
 
-  // 제외 워커 (UI에 표시하지 않음)
-  const excludedWorkers = ['worker_prompt_engineer', 'workflow_designer']
+    // 제외 워커 (UI에 표시하지 않음)
+    const excludedWorkers = ['worker_prompt_engineer', 'workflow_designer']
 
-  // 범용/특화 워커 분리 (제외 워커 필터링)
-  const filteredGeneralWorkers = agents.filter(
-    (agent) => generalWorkers.includes(agent.name) && !excludedWorkers.includes(agent.name)
-  )
-  const filteredSpecializedWorkers = agents.filter(
-    (agent) => specializedWorkers.includes(agent.name) && !excludedWorkers.includes(agent.name)
-  )
+    // 범용/특화 워커 분리 (제외 워커 필터링)
+    return {
+      general: agents.filter(
+        (agent) => generalWorkers.includes(agent.name) && !excludedWorkers.includes(agent.name)
+      ),
+      specialized: agents.filter(
+        (agent) => specializedWorkers.includes(agent.name) && !excludedWorkers.includes(agent.name)
+      ),
+    }
+  }, [agents])
 
   // 프로젝트 경로 및 Agent 목록 로드
   useEffect(() => {
@@ -313,14 +336,14 @@ export const NodePanel: React.FC = () => {
     loadData()
   }, [])
 
-  // 드래그 시작 핸들러
-  const onDragStart = (event: React.DragEvent, nodeType: string, nodeData: any) => {
+  // 드래그 시작 핸들러 (useCallback으로 최적화)
+  const onDragStart = useCallback((event: React.DragEvent, nodeType: string, nodeData: any) => {
     event.dataTransfer.setData('application/reactflow', JSON.stringify({ type: nodeType, data: nodeData }))
     event.dataTransfer.effectAllowed = 'move'
-  }
+  }, [])
 
   // Agent를 캔버스에 추가 (클릭)
-  const handleAddAgent = (agent: Agent) => {
+  const handleAddAgent = useCallback((agent: Agent) => {
     // 노드 위치 계산 (기존 노드 개수에 따라 오프셋)
     const x = 100 + (nodes.length % 3) * 300
     const y = 100 + Math.floor(nodes.length / 3) * 150
@@ -336,10 +359,10 @@ export const NodePanel: React.FC = () => {
     }
 
     addNode(newNode)
-  }
+  }, [nodes.length, addNode])
 
   // Input 노드를 캔버스에 추가
-  const handleAddInput = () => {
+  const handleAddInput = useCallback(() => {
     // 노드 위치 계산
     const x = 100 + (nodes.length % 3) * 300
     const y = 100 + Math.floor(nodes.length / 3) * 150
@@ -354,10 +377,10 @@ export const NodePanel: React.FC = () => {
     }
 
     addNode(newNode)
-  }
+  }, [nodes.length, addNode])
 
   // Condition 노드를 캔버스에 추가
-  const handleAddCondition = () => {
+  const handleAddCondition = useCallback(() => {
     const x = 100 + (nodes.length % 3) * 300
     const y = 100 + Math.floor(nodes.length / 3) * 150
 
@@ -372,10 +395,10 @@ export const NodePanel: React.FC = () => {
     }
 
     addNode(newNode)
-  }
+  }, [nodes.length, addNode])
 
   // Merge 노드를 캔버스에 추가
-  const handleAddMerge = () => {
+  const handleAddMerge = useCallback(() => {
     const x = 100 + (nodes.length % 3) * 300
     const y = 100 + Math.floor(nodes.length / 3) * 150
 
@@ -390,7 +413,7 @@ export const NodePanel: React.FC = () => {
     }
 
     addNode(newNode)
-  }
+  }, [nodes.length, addNode])
 
   // 커스텀 워커를 Agent로 변환
   const customWorkerToAgent = (worker: CustomWorkerInfo): Agent => {
@@ -564,6 +587,7 @@ export const NodePanel: React.FC = () => {
         </div>
 
         {/* 범용 Worker 노드 섹션 */}
+<<<<<<< HEAD
         <div className="border rounded-lg overflow-hidden bg-slate-50/50">
           <button
             onClick={() => toggleSection('general')}
@@ -608,11 +632,43 @@ export const NodePanel: React.FC = () => {
                   </Button>
                 ))
               )}
+=======
+        <WorkerSection
+          sectionId="general"
+          title="범용 워커"
+          icon={Plus}
+          itemCount={filteredWorkers.general.length}
+          isExpanded={expandedSections.has('general')}
+          onToggle={toggleSection}
+          bgColor="bg-slate-50/50"
+          hoverBgColor="hover:bg-slate-100"
+          iconColor="text-slate-600"
+          titleColor="text-slate-700"
+          badgeBgColor="bg-slate-200"
+          badgeTextColor="text-slate-700"
+        >
+          {filteredWorkers.general.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center py-4">
+              검색 결과가 없습니다
+>>>>>>> 2719556 (refactor: 코드 품질 개선 - 타입 힌팅, Import 정렬, 데이터클래스 최적화)
             </div>
+          ) : (
+            filteredWorkers.general.map((agent) => (
+              <WorkerButton
+                key={agent.name}
+                name={agent.name}
+                role={agent.role}
+                icon={Plus}
+                hoverBgColor="hover:bg-slate-50"
+                onClick={() => handleAddAgent(agent)}
+                onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{parent}}를 ${agent.role} 해주세요.` })}
+              />
+            ))
           )}
-        </div>
+        </WorkerSection>
 
         {/* 특화 Worker 노드 섹션 */}
+<<<<<<< HEAD
         <div className="border rounded-lg overflow-hidden bg-orange-50/50">
           <button
             onClick={() => toggleSection('specialized')}
@@ -657,11 +713,44 @@ export const NodePanel: React.FC = () => {
                   </Button>
                 ))
               )}
+=======
+        <WorkerSection
+          sectionId="specialized"
+          title="특화 워커"
+          icon={Target}
+          itemCount={filteredWorkers.specialized.length}
+          isExpanded={expandedSections.has('specialized')}
+          onToggle={toggleSection}
+          bgColor="bg-orange-50/50"
+          hoverBgColor="hover:bg-orange-100/50"
+          iconColor="text-orange-600"
+          titleColor="text-orange-700"
+          badgeBgColor="bg-orange-200"
+          badgeTextColor="text-orange-700"
+        >
+          {filteredWorkers.specialized.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center py-4">
+              검색 결과가 없습니다
+>>>>>>> 2719556 (refactor: 코드 품질 개선 - 타입 힌팅, Import 정렬, 데이터클래스 최적화)
             </div>
+          ) : (
+            filteredWorkers.specialized.map((agent) => (
+              <WorkerButton
+                key={agent.name}
+                name={agent.name}
+                role={agent.role}
+                icon={Target}
+                iconColor="text-orange-600"
+                hoverBgColor="hover:bg-orange-50"
+                onClick={() => handleAddAgent(agent)}
+                onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{parent}}를 ${agent.role} 해주세요.` })}
+              />
+            ))
           )}
-        </div>
+        </WorkerSection>
 
         {/* 커스텀 워커 섹션 */}
+<<<<<<< HEAD
         <div className="border rounded-lg overflow-hidden bg-indigo-50/50">
           <button
             onClick={() => toggleSection('custom')}
@@ -752,8 +841,88 @@ export const NodePanel: React.FC = () => {
                 })
               )}
             </div>
+=======
+        <WorkerSection
+          sectionId="custom"
+          title="커스텀 워커"
+          icon={Wand2}
+          itemCount={customWorkers.length}
+          isExpanded={expandedSections.has('custom')}
+          onToggle={toggleSection}
+          bgColor="bg-indigo-50/50"
+          hoverBgColor="hover:bg-indigo-100/50"
+          iconColor="text-indigo-600"
+          titleColor="text-indigo-700"
+          badgeBgColor="bg-indigo-200"
+          badgeTextColor="text-indigo-700"
+        >
+          {/* 워커 생성 중 상태 (모달 닫혔을 때) */}
+          {isWorkerGenerating && !isCustomWorkerModalOpen && (
+            <Button
+              variant="outline"
+              className="w-full justify-start text-left border-amber-300 bg-amber-50 hover:bg-amber-100 animate-pulse"
+              onClick={() => setIsCustomWorkerModalOpen(true)}
+              aria-label="워커 생성 진행 상황 확인"
+            >
+              <Loader2 className="mr-2 h-4 w-4 text-amber-600 animate-spin" aria-hidden="true" />
+              <div className="flex flex-col items-start">
+                <span className="font-medium text-amber-700">워커 생성 중...</span>
+                <span className="text-xs text-amber-600">
+                  클릭하여 진행 상황 확인
+                </span>
+              </div>
+            </Button>
+>>>>>>> 2719556 (refactor: 코드 품질 개선 - 타입 힌팅, Import 정렬, 데이터클래스 최적화)
           )}
-        </div>
+
+          {/* 새 워커 생성 버튼 (생성 중이 아닐 때) */}
+          {!isWorkerGenerating && (
+            <Button
+              variant="outline"
+              className="w-full justify-start text-left border-indigo-300 hover:bg-indigo-50 bg-white"
+              onClick={() => setIsCustomWorkerModalOpen(true)}
+              disabled={!projectPath}
+              aria-label="새 워커 생성"
+            >
+              <Wand2 className="mr-2 h-4 w-4 text-indigo-600" aria-hidden="true" />
+              <div className="flex flex-col items-start">
+                <span className="font-medium text-indigo-700">새 워커 생성</span>
+                <span className="text-xs text-muted-foreground">
+                  AI가 도와주는 커스텀 워커 제작
+                </span>
+              </div>
+            </Button>
+          )}
+
+          {!projectPath && (
+            <p className="text-xs text-amber-600 mt-2 px-2" role="alert">
+              ⚠️ 커스텀 워커를 사용하려면 먼저 프로젝트를 선택하세요
+            </p>
+          )}
+
+          {/* 커스텀 워커 목록 */}
+          {customWorkers.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center py-4">
+              생성된 커스텀 워커가 없습니다
+            </div>
+          ) : (
+            customWorkers.map((worker) => {
+              const agent = customWorkerToAgent(worker)
+              return (
+                <WorkerButton
+                  key={worker.name}
+                  name={worker.name}
+                  role={worker.role}
+                  icon={Wand2}
+                  iconColor="text-indigo-600"
+                  hoverBgColor="hover:bg-indigo-50"
+                  onClick={() => handleAddAgent(agent)}
+                  onDragStart={(e) => onDragStart(e, 'worker', { agent_name: worker.name, task_template: `{{parent}}를 ${worker.role} 해주세요.` })}
+                />
+              )
+            })
+          )}
+        </WorkerSection>
       </CardContent>
 
       {/* 커스텀 워커 생성 모달 */}
