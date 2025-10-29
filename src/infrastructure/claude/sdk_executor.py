@@ -4,6 +4,7 @@ Agent SDK 실행 래퍼 모듈.
 클라이언트 코드의 중복을 제거하기 위한 Template Method Pattern 기반 Executor.
 """
 
+import json
 from dataclasses import dataclass
 from typing import AsyncIterator, Callable, Optional, Any, List
 from abc import ABC, abstractmethod
@@ -138,7 +139,6 @@ class SDKResponseHandler(ABC):
                             preview=content_block.thinking[:100] + "..." if len(content_block.thinking) > 100 else content_block.thinking
                         )
                         # JSON 형식으로 직렬화하여 프론트엔드로 전달
-                        import json
                         thinking_json = json.dumps({
                             "role": "assistant",
                             "content": [{
@@ -152,7 +152,6 @@ class SDKResponseHandler(ABC):
                 elif isinstance(content_block, ToolUseBlock):
                     logger.debug(f"Found ToolUseBlock #{i}: {content_block.name}")
                     # JSON 형식으로 직렬화하여 프론트엔드에서 파싱 가능하도록
-                    import json
 
                     # tool_input 안전하게 추출
                     tool_input = {}
@@ -184,7 +183,6 @@ class SDKResponseHandler(ABC):
                 # ToolResultBlock: 도구 실행 결과 (JSON 형식)
                 elif isinstance(content_block, ToolResultBlock):
                     logger.debug(f"Found ToolResultBlock #{i}: tool_use_id={content_block.tool_use_id}")
-                    import json
 
                     # Tool 결과 추출
                     tool_result = None
@@ -219,7 +217,6 @@ class SDKResponseHandler(ABC):
                 # 폴백: hasattr로 type='tool_use' 체크 (하위 호환성)
                 elif hasattr(content_block, 'type') and content_block.type == 'tool_use':
                     logger.debug(f"Found tool_use block (fallback) #{i}")
-                    import json
 
                     # tool_input 안전하게 추출
                     tool_input = {}
@@ -287,7 +284,6 @@ class SDKResponseHandler(ABC):
                     # ToolResultBlock: 도구 실행 결과 (UserMessage에 포함될 수 있음)
                     elif isinstance(content_block, ToolResultBlock):
                         logger.debug(f"Found ToolResultBlock in UserMessage #{i}: tool_use_id={content_block.tool_use_id}")
-                        import json
 
                         # Tool 결과 추출
                         tool_result = None
@@ -549,7 +545,6 @@ class WorkerResponseHandler(SDKResponseHandler):
         else:
             # 예상과 다른 형식일 경우 JSON으로 직렬화
             # (파서가 JSON을 파싱해서 보기 좋게 표시할 수 있도록)
-            import json
             try:
                 # response 객체를 JSON으로 변환 (pydantic 모델인 경우)
                 if hasattr(response, 'model_dump'):

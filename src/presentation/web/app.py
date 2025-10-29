@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"🚀 Claude Flow 시작 (React: {(Path(__file__).parent / 'static-react').exists()})")
 
-    # 환경변수 확인
+    # 환경변수 확인 (경고만 표시, 앱은 시작)
     if not os.getenv("CLAUDE_CODE_OAUTH_TOKEN"):
         logger.warning("⚠️  CLAUDE_CODE_OAUTH_TOKEN 환경변수가 설정되지 않았습니다")
         logger.warning("   Worker Agent 실행 시 오류가 발생할 수 있습니다")

@@ -125,3 +125,41 @@ def parse_str_env(var_name: str, default: str = "") -> str:
         'default-key'
     """
     return os.getenv(var_name, default).strip()
+
+
+def validate_required_env_vars(*var_names: str) -> None:
+    """
+    필수 환경변수가 설정되어 있는지 검증합니다.
+
+    누락된 환경변수가 있으면 ValueError를 발생시킵니다.
+    에러 메시지에는 누락된 변수 목록과 설정 방법이 포함됩니다.
+
+    Args:
+        *var_names: 검증할 환경변수 이름들
+
+    Raises:
+        ValueError: 하나 이상의 필수 환경변수가 설정되지 않은 경우
+
+    Examples:
+        >>> os.environ["REQUIRED_VAR"] = "value"
+        >>> validate_required_env_vars("REQUIRED_VAR")  # 성공
+        >>> validate_required_env_vars("NOT_SET")  # ValueError 발생
+
+        >>> # 여러 변수 동시 검증
+        >>> validate_required_env_vars("VAR1", "VAR2", "VAR3")
+    """
+    missing_vars = [var for var in var_names if not os.getenv(var)]
+
+    if missing_vars:
+        error_msg = (
+            f"필수 환경변수가 설정되지 않았습니다: {', '.join(missing_vars)}\n\n"
+            "다음 방법 중 하나로 설정하세요:\n"
+            "  1. .env 파일에 추가:\n"
+        )
+        for var in missing_vars:
+            error_msg += f"     {var}=your-value-here\n"
+        error_msg += "\n  2. 환경변수로 직접 설정:\n"
+        for var in missing_vars:
+            error_msg += f"     export {var}='your-value-here'\n"
+
+        raise ValueError(error_msg)
