@@ -4,17 +4,17 @@
  * 워크플로우 시작점인 Input 노드의 설정을 관리합니다.
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { Terminal, HelpCircle, CheckCircle2, Save, ScrollText, ChevronDown, ChevronRight, Brain, ArrowDown } from 'lucide-react'
+import { Terminal, HelpCircle, CheckCircle2, Save, ScrollText, ArrowDown } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { parseLogMessage } from '@/lib/logParser'
+import { ParsedContent } from '@/components/ParsedContent'
 
 interface InputNodeConfigProps {
   node: WorkflowNode
@@ -26,77 +26,9 @@ interface InputNodeData {
 }
 
 /**
- * 메시지에서 tool_use_id 추출
- */
-function extractToolUseId(message: string): string | null {
-  const match = message.match(/tool_use_id='([^']+)'/)
-  return match ? match[1] : null
-}
-
-/**
- * 메시지에서 도구 이름 추출 (AssistantMessage의 ToolUseBlock)
- */
-function extractToolName(message: string): { id: string; name: string } | null {
-  // JSON 형식
-  try {
-    const data = JSON.parse(message)
-    if (data.role === 'assistant' && Array.isArray(data.content)) {
-      for (const block of data.content) {
-        if (block.type === 'tool_use' && block.id && block.name) {
-          return { id: block.id, name: block.name }
-        }
-      }
-    }
-  } catch (e) {
-    // JSON이 아니면 무시
-  }
-
-  // Python repr 형식 1: ToolUseBlock(id='...', name='...', type='tool_use')
-  const match1 = message.match(/ToolUseBlock\(id='([^']+)',\s*name='([^']+)'/)
-  if (match1) {
-    return { id: match1[1], name: match1[2] }
-  }
-
-  // Python repr 형식 2: 순서가 다른 경우
-  const match2 = message.match(/ToolUseBlock\(.*?id='([^']+)'.*?name='([^']+)'/)
-  if (match2) {
-    return { id: match2[1], name: match2[2] }
-  }
-
-  return null
-}
-
-/**
- * 로그 목록에서 tool_use_id -> tool_name 매핑 테이블 생성
- */
-function buildToolNameMap(logs: any[]): Map<string, string> {
-  const map = new Map<string, string>()
-
-  for (const log of logs) {
-    const toolInfo = extractToolName(log.message)
-    if (toolInfo) {
-      map.set(toolInfo.id, toolInfo.name)
-    }
-  }
-
-  return map
-}
-
-/**
  * 단일 로그 항목 컴포넌트
  */
-const LogItem: React.FC<{ log: any; index: number; toolNameMap: Map<string, string> }> = ({ log, index, toolNameMap }) => {
-  const [isToolExpanded, setIsToolExpanded] = useState(false)
-  const parsed = parseLogMessage(log.message)
-
-  // tool_result 타입인 경우 매핑 테이블에서 도구 이름 찾기
-  if (parsed.type === 'tool_result' && parsed.toolUse) {
-    const toolUseId = extractToolUseId(log.message)
-    if (toolUseId && toolNameMap.has(toolUseId)) {
-      parsed.toolUse.toolName = toolNameMap.get(toolUseId)!
-    }
-  }
-
+const LogItem: React.FC<{ log: any; index: number }> = ({ log, index }) => {
   // 로그 타입별 스타일
   const getLogStyle = () => {
     if (log.type === 'error') return 'bg-red-50 border-red-200 text-red-900'
@@ -105,149 +37,14 @@ const LogItem: React.FC<{ log: any; index: number; toolNameMap: Map<string, stri
     return 'bg-gray-50 border-gray-200 text-gray-900'
   }
 
-  // 파싱된 메시지 타입별 렌더링
-  const renderParsedContent = () => {
-    switch (parsed.type) {
-      case 'user_message':
-        return (
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-blue-700">👤 사용자 메시지</div>
-            <div className="text-sm whitespace-pre-wrap bg-white p-2 rounded border">{parsed.content}</div>
-          </div>
-        )
-
-      case 'assistant_message':
-        return (
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-purple-700">🤖 어시스턴트 응답</div>
-            <div className="text-sm whitespace-pre-wrap bg-white p-2 rounded border">{parsed.content}</div>
-          </div>
-        )
-
-      case 'tool_use':
-        return (
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded"
-              onClick={() => setIsToolExpanded(!isToolExpanded)}
-            >
-              {isToolExpanded ? (
-                <ChevronDown className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              )}
-              <div className="text-xs font-semibold text-orange-700 overflow-hidden text-ellipsis whitespace-nowrap">
-                🔧 도구 호출: {parsed.toolUse?.toolName}
-              </div>
-            </div>
-
-            {/* 도구 사용 정보 (토글 가능) */}
-            {isToolExpanded && parsed.toolUse && (
-              <div className="ml-5 bg-white border rounded p-2 space-y-2 max-h-[300px] overflow-y-auto">
-                {/* 도구 입력 */}
-                {Object.keys(parsed.toolUse.input).length > 0 && (
-                  <div>
-                    <div className="text-xs font-medium text-gray-700 mb-1">입력 파라미터:</div>
-                    <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto break-words whitespace-pre-wrap">
-                      {JSON.stringify(parsed.toolUse.input, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 접혀있을 때는 간단한 미리보기 */}
-            {!isToolExpanded && (
-              <div className="ml-5 text-xs text-gray-600 overflow-hidden text-ellipsis whitespace-nowrap">
-                {Object.keys(parsed.toolUse?.input || {}).length}개 파라미터
-              </div>
-            )}
-          </div>
-        )
-
-      case 'tool_result':
-        return (
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded"
-              onClick={() => setIsToolExpanded(!isToolExpanded)}
-            >
-              {isToolExpanded ? (
-                <ChevronDown className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-gray-600 flex-shrink-0" />
-              )}
-              <div className="text-xs font-semibold text-green-700 overflow-hidden text-ellipsis whitespace-nowrap">
-                ✅ 도구 결과: {parsed.toolUse?.toolName}
-              </div>
-            </div>
-
-            {/* 도구 결과 (토글 가능) */}
-            {isToolExpanded && (
-              <div className="ml-5 bg-white border rounded p-2 space-y-2 max-h-[300px] overflow-y-auto">
-                <div>
-                  <div className="text-xs font-medium text-gray-700 mb-1">결과:</div>
-                  <div className="text-xs whitespace-pre-wrap bg-gray-50 p-2 rounded break-words">{parsed.content}</div>
-                </div>
-              </div>
-            )}
-
-            {/* 접혀있을 때는 간단한 미리보기 */}
-            {!isToolExpanded && (
-              <div className="ml-5 text-xs text-gray-600 overflow-hidden text-ellipsis whitespace-nowrap">
-                {parsed.content.substring(0, 100)}...
-              </div>
-            )}
-          </div>
-        )
-
-      case 'thinking':
-        return (
-          <div className="space-y-1">
-            <div
-              className="flex items-center gap-2 cursor-pointer hover:bg-purple-50 p-1 rounded transition-colors"
-              onClick={() => setIsToolExpanded(!isToolExpanded)}
-            >
-              {isToolExpanded ? (
-                <ChevronDown className="h-3 w-3 text-purple-600 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-purple-600 flex-shrink-0" />
-              )}
-              <Brain className="h-3.5 w-3.5 text-purple-600 flex-shrink-0" />
-              <div className="text-xs font-semibold text-purple-700 overflow-hidden text-ellipsis whitespace-nowrap">
-                사고 과정 (Extended Thinking)
-              </div>
-            </div>
-
-            {/* 사고 과정 (토글 가능) */}
-            {isToolExpanded && (
-              <div className="ml-5 bg-purple-50 border border-purple-200 rounded p-3 max-h-[300px] overflow-y-auto">
-                <div className="text-xs whitespace-pre-wrap break-words text-purple-900">{parsed.content}</div>
-              </div>
-            )}
-
-            {/* 접혀있을 때는 간단한 미리보기 */}
-            {!isToolExpanded && (
-              <div className="ml-5 text-xs text-purple-600 italic overflow-hidden text-ellipsis whitespace-nowrap">
-                {parsed.content.substring(0, 80)}...
-              </div>
-            )}
-          </div>
-        )
-
-      case 'text':
-      default:
-        return <div className="text-sm font-mono whitespace-pre-wrap break-words">{parsed.content}</div>
-    }
-  }
-
   return (
     <div key={index} className={`p-2 rounded border text-xs ${getLogStyle()}`}>
       <div className="flex flex-col gap-1">
         <div className="text-xs text-muted-foreground">
           {new Date(log.timestamp).toLocaleTimeString()}
         </div>
-        <div>{renderParsedContent()}</div>
+        {/* ParsedContent 컴포넌트로 여러 블록 파싱 및 렌더링 */}
+        <ParsedContent content={log.message} />
       </div>
     </div>
   )
@@ -259,9 +56,6 @@ const LogItem: React.FC<{ log: any; index: number; toolNameMap: Map<string, stri
 const ExecutionLogsPanel: React.FC = () => {
   const execution = useWorkflowStore((state) => state.execution)
   const { logs, isExecuting, totalTokenUsage } = execution
-
-  // tool_use_id -> tool_name 매핑 테이블 생성
-  const toolNameMap = useMemo(() => buildToolNameMap(logs), [logs])
 
   // 자동 스크롤 관련 상태 및 ref
   const logsContainerRef = useRef<HTMLDivElement>(null)
@@ -376,7 +170,7 @@ const ExecutionLogsPanel: React.FC = () => {
             )}
 
             {logs.map((log, index) => (
-              <LogItem key={index} log={log} index={index} toolNameMap={toolNameMap} />
+              <LogItem key={index} log={log} index={index} />
             ))}
           </div>
         )}

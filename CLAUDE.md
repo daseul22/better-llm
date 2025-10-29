@@ -401,6 +401,29 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
+### fix: InputNode 로그 파싱 개선 - ParsedContent 사용 (완료)
+- **날짜**: 2025-10-29 14:00 (Asia/Seoul)
+- **문제**: InputNode의 실행 로그에서 thinking, tool 블록 등이 파싱되지 않음
+  - LogItem 컴포넌트가 `parseLogMessage` (단일 블록) 사용
+  - 각 chunk가 개별 로그로 저장되어 JSON이 여러 로그에 걸쳐 분할됨
+  - 복잡한 파싱 로직이 LogItem에 중복 구현됨
+- **해결**:
+  - **InputNodeConfig.tsx 리팩토링**:
+    - LogItem에서 `ParsedContent` 컴포넌트 사용
+    - 중복된 파싱 로직 (150줄) 완전 제거
+    - extractToolUseId, extractToolName, buildToolNameMap 함수 제거
+    - 불필요한 import 정리 (Brain, ChevronDown, ChevronRight, useMemo)
+  - **일관된 파싱**:
+    - 모든 노드 설정 컴포넌트가 동일한 ParsedContent 사용
+    - InputNode, Worker, Merge, Loop, Condition 모두 일관성
+  - **간결한 코드**:
+    - LogItem: 150줄 → 20줄 (87% 감소)
+    - 파싱 로직은 ParsedContent에 집중
+- **파일**: `src/presentation/web/frontend/src/components/node-config/InputNodeConfig.tsx`
+- **영향범위**: Input 노드 실행 로그 표시, 코드 유지보수성
+- **테스트**: TypeScript 컴파일 검사 통과
+- **후속 조치**: 브라우저에서 실제 로그 확인
+
 ### fix: 로그 파싱 혼합 형태 처리 개선 (완료)
 - **날짜**: 2025-10-29 13:30 (Asia/Seoul)
 - **문제**: Worker 노드 출력에서 텍스트와 JSON이 혼합된 경우 파싱 실패
