@@ -22,6 +22,12 @@ from src.presentation.web.schemas.workflow import (
     DisplayConfig,
     DisplayConfigLoadResponse,
     DisplayConfigSaveRequest,
+    LogFileInfo,
+    LogListResponse,
+    SessionFileInfo,
+    SessionListResponse,
+    LogContentResponse,
+    SessionContentResponse,
 )
 
 logger = get_logger(__name__)
@@ -356,7 +362,7 @@ async def clear_sessions() -> Dict[str, Any]:
     """
     현재 프로젝트의 웹 워크플로우 세션 데이터 비우기
 
-    {project_path}/.claude-flow/web-sessions/ 디렉토리의 모든 세션 파일을 삭제합니다.
+    ~/.claude-flow/{project_name}/web-sessions/ 디렉토리의 모든 세션 파일을 삭제합니다.
 
     Returns:
         Dict[str, Any]: 삭제 결과 (삭제된 파일 수, 확보된 용량)
@@ -376,9 +382,10 @@ async def clear_sessions() -> Dict[str, Any]:
             detail="프로젝트가 선택되지 않았습니다."
         )
 
-    # 웹 세션 디렉토리 경로: {project_path}/.claude-flow/web-sessions/
+    # 웹 세션 디렉토리 경로: ~/.claude-flow/{project_name}/web-sessions/
     project_dir = Path(_current_project_path)
-    web_sessions_dir = project_dir / ".claude-flow" / "web-sessions"
+    project_name = project_dir.name
+    web_sessions_dir = Path.home() / ".claude-flow" / project_name / "web-sessions"
 
     if not web_sessions_dir.exists():
         logger.info(f"웹 세션 디렉토리가 존재하지 않습니다: {web_sessions_dir}")
@@ -428,9 +435,7 @@ async def clear_logs() -> Dict[str, Any]:
     """
     현재 프로젝트의 로그 파일 비우기
 
-    다음 위치의 로그 파일을 모두 삭제합니다:
-    1. {project_path}/.claude-flow/logs/ (프로젝트 내 로그)
-    2. ~/.claude-flow/{project-name}/logs/ (홈 디렉토리 로그)
+    ~/.claude-flow/{project-name}/logs/ 디렉토리의 로그 파일을 모두 삭제합니다.
 
     Returns:
         Dict[str, Any]: 삭제 결과 (삭제된 파일 수, 확보된 용량)
@@ -454,10 +459,9 @@ async def clear_logs() -> Dict[str, Any]:
     project_name = project_dir.name
     home_dir = Path.home()
 
-    # 로그 디렉토리 목록
+    # 로그 디렉토리: ~/.claude-flow/{project_name}/logs/
     log_dirs = [
-        project_dir / ".claude-flow" / "logs",  # 프로젝트 내 로그
-        home_dir / ".claude-flow" / project_name / "logs",  # 홈 디렉토리 로그
+        home_dir / ".claude-flow" / project_name / "logs",
     ]
 
     total_size = 0
@@ -659,4 +663,352 @@ async def save_display_config(
         raise HTTPException(
             status_code=500,
             detail=f"Display 설정 저장 실패: {str(e)}"
+        )
+
+
+# ============================================================================
+# 로그 및 세션 뷰어 API
+# ============================================================================
+
+@router.get("/logs/list", response_model=LogListResponse)
+async def list_logs() -> LogListResponse:
+    """
+    로그 파일 목록 조회
+
+    현재 프로젝트의 로그 디렉토리 (~/.claude-flow/{project_name}/logs/)에서
+    모든 로그 파일을 검색하여 반환합니다.
+
+    Returns:
+        LogListResponse: 로그 파일 목록 및 통계
+
+    Example:
+        GET /api/projects/logs/list
+
+        Response: {
+            "logs": [
+                {
+                    "path": "system.log",
+                    "name": "system.log",
+                    "size": 1024000,
+                    "modified": "2025-10-29T17:30:00",
+                    "type": "system"
+                },
+                {
+                    "path": "session-123/debug.log",
+                    "name": "debug.log",
+                    "size": 512000,
+                    "modified": "2025-10-29T17:25:00",
+                    "type": "debug"
+                }
+            ],
+            "total_count": 2,
+            "total_size": 1536000
+        }
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    try:
+        project_dir = Path(_current_project_path)
+        project_name = project_dir.name
+        logs_dir = Path.home() / ".claude-flow" / project_name / "logs"
+
+        if not logs_dir.exists():
+            return LogListResponse(logs=[], total_count=0, total_size=0)
+
+        logs = []
+        total_size = 0
+
+        # 모든 로그 파일 수집
+        for log_file in logs_dir.rglob("*.log"):
+            if not log_file.is_file():
+                continue
+
+            stat = log_file.stat()
+            relative_path = log_file.relative_to(logs_dir)
+
+            # 파일 타입 결정
+            file_type = "unknown"
+            if log_file.name == "system.log":
+                file_type = "system"
+            elif log_file.name == "debug.log":
+                file_type = "debug"
+            elif log_file.name == "info.log":
+                file_type = "info"
+            elif log_file.name == "error.log":
+                file_type = "error"
+
+            logs.append(LogFileInfo(
+                path=str(relative_path),
+                name=log_file.name,
+                size=stat.st_size,
+                modified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                type=file_type
+            ))
+
+            total_size += stat.st_size
+
+        # 최근 수정 순으로 정렬
+        logs.sort(key=lambda x: x.modified, reverse=True)
+
+        return LogListResponse(
+            logs=logs,
+            total_count=len(logs),
+            total_size=total_size
+        )
+
+    except Exception as e:
+        logger.error(f"로그 파일 목록 조회 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"로그 파일 목록 조회 실패: {str(e)}"
+        )
+
+
+@router.get("/logs/content", response_model=LogContentResponse)
+async def get_log_content(file_path: str, max_lines: int = 1000) -> LogContentResponse:
+    """
+    로그 파일 내용 조회
+
+    Args:
+        file_path: 로그 파일 상대 경로 (logs/ 기준, 예: "system.log", "session-123/debug.log")
+        max_lines: 최대 라인 수 (기본: 1000, 최대: 10000)
+
+    Returns:
+        LogContentResponse: 로그 파일 내용 및 정보
+
+    Example:
+        GET /api/projects/logs/content?file_path=system.log&max_lines=500
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    # max_lines 제한
+    max_lines = min(max_lines, 10000)
+
+    try:
+        project_dir = Path(_current_project_path)
+        project_name = project_dir.name
+        logs_dir = Path.home() / ".claude-flow" / project_name / "logs"
+
+        # 경로 검증 (디렉토리 탐색 방지)
+        log_file_path = (logs_dir / file_path).resolve()
+        if not str(log_file_path).startswith(str(logs_dir)):
+            raise HTTPException(
+                status_code=400,
+                detail="잘못된 파일 경로입니다."
+            )
+
+        if not log_file_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"로그 파일을 찾을 수 없습니다: {file_path}"
+            )
+
+        # 파일 정보
+        stat = log_file_path.stat()
+        file_type = "unknown"
+        if log_file_path.name == "system.log":
+            file_type = "system"
+        elif log_file_path.name == "debug.log":
+            file_type = "debug"
+        elif log_file_path.name == "info.log":
+            file_type = "info"
+        elif log_file_path.name == "error.log":
+            file_type = "error"
+
+        file_info = LogFileInfo(
+            path=file_path,
+            name=log_file_path.name,
+            size=stat.st_size,
+            modified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            type=file_type
+        )
+
+        # 파일 내용 읽기 (마지막 max_lines 라인)
+        with open(log_file_path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+            content = ''.join(lines[-max_lines:])
+
+        return LogContentResponse(
+            content=content,
+            file_info=file_info
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"로그 파일 내용 조회 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"로그 파일 내용 조회 실패: {str(e)}"
+        )
+
+
+@router.get("/sessions/list", response_model=SessionListResponse)
+async def list_sessions() -> SessionListResponse:
+    """
+    세션 파일 목록 조회
+
+    현재 프로젝트의 웹 세션 디렉토리 (~/.claude-flow/{project_name}/web-sessions/)에서
+    모든 세션 파일을 검색하여 반환합니다.
+
+    Returns:
+        SessionListResponse: 세션 파일 목록 및 통계
+
+    Example:
+        GET /api/projects/sessions/list
+
+        Response: {
+            "sessions": [
+                {
+                    "session_id": "wf-1234567890",
+                    "path": "~/.claude-flow/better-llm/web-sessions/wf-1234567890.json",
+                    "size": 5120,
+                    "created": "2025-10-29T17:00:00",
+                    "modified": "2025-10-29T17:30:00",
+                    "status": "completed"
+                }
+            ],
+            "total_count": 1,
+            "total_size": 5120
+        }
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    try:
+        project_dir = Path(_current_project_path)
+        project_name = project_dir.name
+        sessions_dir = Path.home() / ".claude-flow" / project_name / "web-sessions"
+
+        if not sessions_dir.exists():
+            return SessionListResponse(sessions=[], total_count=0, total_size=0)
+
+        sessions = []
+        total_size = 0
+
+        # 모든 세션 파일 수집
+        for session_file in sessions_dir.glob("*.json"):
+            if not session_file.is_file():
+                continue
+
+            stat = session_file.stat()
+            session_id = session_file.stem
+
+            # 세션 상태 파악 (JSON 파일 읽기)
+            status = "unknown"
+            try:
+                with open(session_file, 'r', encoding='utf-8') as f:
+                    session_data = json.load(f)
+                    status = session_data.get("status", "unknown")
+            except Exception:
+                pass
+
+            sessions.append(SessionFileInfo(
+                session_id=session_id,
+                path=str(session_file),
+                size=stat.st_size,
+                created=datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                modified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                status=status
+            ))
+
+            total_size += stat.st_size
+
+        # 최근 수정 순으로 정렬
+        sessions.sort(key=lambda x: x.modified, reverse=True)
+
+        return SessionListResponse(
+            sessions=sessions,
+            total_count=len(sessions),
+            total_size=total_size
+        )
+
+    except Exception as e:
+        logger.error(f"세션 파일 목록 조회 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"세션 파일 목록 조회 실패: {str(e)}"
+        )
+
+
+@router.get("/sessions/content", response_model=SessionContentResponse)
+async def get_session_content(session_id: str) -> SessionContentResponse:
+    """
+    세션 파일 내용 조회
+
+    Args:
+        session_id: 세션 ID (예: "wf-1234567890")
+
+    Returns:
+        SessionContentResponse: 세션 파일 내용 (JSON) 및 정보
+
+    Example:
+        GET /api/projects/sessions/content?session_id=wf-1234567890
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    try:
+        project_dir = Path(_current_project_path)
+        project_name = project_dir.name
+        sessions_dir = Path.home() / ".claude-flow" / project_name / "web-sessions"
+
+        session_file_path = sessions_dir / f"{session_id}.json"
+
+        if not session_file_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"세션 파일을 찾을 수 없습니다: {session_id}"
+            )
+
+        # 파일 정보
+        stat = session_file_path.stat()
+
+        # 세션 JSON 읽기
+        with open(session_file_path, 'r', encoding='utf-8') as f:
+            session_data = json.load(f)
+
+        status = session_data.get("status", "unknown")
+
+        file_info = SessionFileInfo(
+            session_id=session_id,
+            path=str(session_file_path),
+            size=stat.st_size,
+            created=datetime.fromtimestamp(stat.st_ctime).isoformat(),
+            modified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            status=status
+        )
+
+        return SessionContentResponse(
+            content=session_data,
+            file_info=file_info
+        )
+
+    except HTTPException:
+        raise
+    except json.JSONDecodeError as e:
+        logger.error(f"세션 JSON 파싱 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"세션 파일 형식이 잘못되었습니다: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"세션 파일 내용 조회 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"세션 파일 내용 조회 실패: {str(e)}"
         )

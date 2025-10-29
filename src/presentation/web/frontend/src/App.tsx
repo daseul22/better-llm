@@ -22,10 +22,11 @@ import {
   loadDisplayConfig,
   saveDisplayConfig,
 } from './lib/api'
-import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate, Settings, Trash2, FileText, Save } from 'lucide-react'
+import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate, Settings, Trash2, FileText, Save, Eye } from 'lucide-react'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
 import { ToastContainer, ToastType } from './components/Toast'
 import { TemplateGallery } from './components/TemplateGallery'
+import { LogsAndSessionsViewer } from './components/LogsAndSessionsViewer'
 
 const STORAGE_KEY_PROJECT_PATH = 'claude-flow-last-project-path'
 const STORAGE_KEY_SESSION_ID = 'claude-flow-workflow-session-id'
@@ -53,6 +54,9 @@ function App() {
 
   // 프로젝트 관리 메뉴 상태
   const [showProjectMenu, setShowProjectMenu] = useState(false)
+
+  // 로그/세션 뷰어 상태
+  const [showLogsViewer, setShowLogsViewer] = useState(false)
 
   // 사이드바 토글 상태
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
@@ -605,6 +609,16 @@ function App() {
                   <div className="absolute right-0 top-full mt-2 w-56 bg-white border rounded-lg shadow-lg z-50">
                     <div className="py-1">
                       <button
+                        onClick={() => {
+                          setShowLogsViewer(true)
+                          setShowProjectMenu(false)
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 transition-colors"
+                      >
+                        <Eye className="h-4 w-4 text-green-600" />
+                        <span>로그 & 세션 보기</span>
+                      </button>
+                      <button
                         onClick={handleClearSessions}
                         className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 transition-colors"
                       >
@@ -724,6 +738,13 @@ function App() {
             }}
           />
         )}
+
+        {/* 로그 & 세션 뷰어 */}
+        <LogsAndSessionsViewer
+          isOpen={showLogsViewer}
+          onClose={() => setShowLogsViewer(false)}
+          projectPath={currentProjectPath}
+        />
 
         {/* 프로젝트 선택 다이얼로그 */}
         {showProjectDialog && (

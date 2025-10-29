@@ -4,7 +4,7 @@
 워크플로우 실행 상태를 파일로 저장하여 새로고침 후에도 복구 가능하도록 합니다.
 
 저장 경로:
-- 프로젝트 선택 시: {project_path}/.claude-flow/web-sessions/{session_id}.json
+- 프로젝트 선택 시: ~/.claude-flow/{project_name}/web-sessions/{session_id}.json
 - 프로젝트 미선택 시: ~/.claude-flow/web-sessions/{session_id}.json (fallback)
 """
 
@@ -375,7 +375,7 @@ def get_session_store(project_path: Optional[str] = None) -> WorkflowSessionStor
         WorkflowSessionStore: 프로젝트별 세션 저장소 인스턴스
 
     Note:
-        - 프로젝트 선택 시: {project_path}/.claude-flow/web-sessions/
+        - 프로젝트 선택 시: ~/.claude-flow/{project_name}/web-sessions/
         - 프로젝트 미선택 시: ~/.claude-flow/web-sessions/ (fallback)
     """
     # project_path가 명시되지 않으면 전역 _current_project_path 사용
@@ -390,8 +390,9 @@ def get_session_store(project_path: Optional[str] = None) -> WorkflowSessionStor
 
     # 세션 디렉토리 결정
     if project_path:
-        # 프로젝트별 세션 디렉토리: {project_path}/.claude-flow/web-sessions/
-        sessions_dir = Path(project_path) / ".claude-flow" / "web-sessions"
+        # 프로젝트별 세션 디렉토리: ~/.claude-flow/{project_name}/web-sessions/
+        project_name = Path(project_path).name
+        sessions_dir = Path.home() / ".claude-flow" / project_name / "web-sessions"
         cache_key = str(sessions_dir)
     else:
         # Fallback: 홈 디렉토리 세션 디렉토리

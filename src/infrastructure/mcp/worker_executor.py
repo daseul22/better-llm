@@ -735,8 +735,8 @@ class WorkerExecutor:
                         f"에러 타입: {type(error).__name__}\n"
                         f"에러 메시지: {str(error)}\n\n"
                         f"상세 로그:\n"
-                        f"- 전체 로그: {{project-dir}}/.claude-flow/logs/system.log\n"
-                        f"- 세션 로그: {{project-dir}}/.claude-flow/logs/{context.session_id or 'session'}/error.log\n"
+                        f"- 전체 로그: ~/.claude-flow/{{project-name}}/logs/system.log\n"
+                        f"- 세션 로그: ~/.claude-flow/{{project-name}}/logs/{context.session_id or 'session'}/error.log\n"
                         f"{'='*70}\n"
                     )
                 }

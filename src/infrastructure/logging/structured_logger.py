@@ -207,7 +207,10 @@ def add_session_file_handlers(
     """
     # 로그 디렉토리 설정
     if project_path:
-        base_log_dir = Path(project_path) / ".claude-flow" / "logs"
+        # 프로젝트 이름 추출 후 홈 디렉토리 기준으로 로그 디렉토리 결정
+        # ~/.claude-flow/{project_name}/logs/
+        project_name = Path(project_path).name
+        base_log_dir = Path.home() / ".claude-flow" / project_name / "logs"
     else:
         base_log_dir = Path(_get_default_log_dir())
 
