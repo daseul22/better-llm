@@ -494,6 +494,22 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
+### fix: 워크플로우 중단 버그 수정 (완료)
+- **날짜**: 2025-10-29 23:00 (Asia/Seoul)
+- **문제**: 중단 버튼 클릭 시 SSE 연결만 끊기고 백엔드 워크플로우는 계속 실행됨
+- **원인**: InputNode의 `handleStop`이 취소 API를 호출하지 않음
+- **해결**:
+  - **api.ts (730-739줄)**: `cancelWorkflowSession` 함수 추가
+    * `POST /api/workflows/sessions/{session_id}/cancel` 호출
+  - **InputNode.tsx (193-221줄)**: `handleStop` 함수 개선
+    * 1단계: AbortController로 SSE 연결 중단
+    * 2단계: 취소 API 호출하여 백엔드 워크플로우 중단
+    * 3단계: localStorage 정리 및 상태 업데이트
+- **파일**: `src/presentation/web/frontend/src/lib/api.ts`, `src/presentation/web/frontend/src/components/InputNode.tsx`
+- **영향범위**: 워크플로우 중단 기능, 병렬 실행 태스크 정리, 백엔드 리소스 해제
+- **테스트**: TypeScript 타입 검사 통과
+- **후속 조치**: 실제 브라우저에서 중단 기능 테스트 (병렬 실행 중단 포함)
+
 ### refactor: Workflow Designer 프롬프트 - Manager 노드 제거 및 병렬 실행 옵션 추가 (완료)
 - **날짜**: 2025-10-29 21:00 (Asia/Seoul)
 - **목적**: Manager 노드 제거에 따른 Workflow Designer 프롬프트 업데이트

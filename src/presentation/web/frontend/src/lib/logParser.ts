@@ -383,12 +383,49 @@ export function parseLogMessageBlocks(message: string): ParsedLogBlocks {
 
   // 3. 각 블록 파싱
   const parsedBlocks: ParsedLogMessage[] = []
+  // tool_use_id -> tool_name 매핑 (tool_result에서 도구 이름 표시용)
+  const toolUseIdToName: Record<string, string> = {}
 
   for (const block of extractedBlocks) {
     if (block.type === 'json') {
       // JSON 블록 파싱
       const jsonParsed = parseJSONMessage(block.text)
       if (jsonParsed) {
+        // tool_use 블록이면 tool_use_id와 도구 이름 매핑 저장
+        if (jsonParsed.type === 'tool_use' && jsonParsed.toolUse) {
+          try {
+            const data = JSON.parse(block.text)
+            if (data.role === 'assistant' && Array.isArray(data.content)) {
+              for (const contentBlock of data.content) {
+                if (contentBlock.type === 'tool_use' && contentBlock.id && contentBlock.name) {
+                  toolUseIdToName[contentBlock.id] = contentBlock.name
+                }
+              }
+            }
+          } catch (e) {
+            // JSON 파싱 실패 시 무시
+          }
+        }
+
+        // tool_result 블록이면 매핑 테이블에서 도구 이름 찾기
+        if (jsonParsed.type === 'tool_result' && jsonParsed.toolUse) {
+          try {
+            const data = JSON.parse(block.text)
+            if (data.role === 'user' && Array.isArray(data.content)) {
+              for (const contentBlock of data.content) {
+                if (contentBlock.type === 'tool_result' && contentBlock.tool_use_id) {
+                  const toolName = toolUseIdToName[contentBlock.tool_use_id]
+                  if (toolName) {
+                    jsonParsed.toolUse.toolName = toolName
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // JSON 파싱 실패 시 무시
+          }
+        }
+
         parsedBlocks.push(jsonParsed)
       } else {
         // JSON 파싱 실패 시 텍스트로 처리

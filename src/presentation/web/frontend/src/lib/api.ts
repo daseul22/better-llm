@@ -725,6 +725,20 @@ export async function getWorkflowSession(sessionId: string): Promise<WorkflowSes
 }
 
 /**
+ * 워크플로우 실행 취소
+ */
+export async function cancelWorkflowSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/workflows/sessions/${sessionId}/cancel`, {
+    method: "POST",
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+}
+
+/**
  * 워크플로우 세션 삭제
  */
 export async function deleteWorkflowSession(sessionId: string): Promise<void> {

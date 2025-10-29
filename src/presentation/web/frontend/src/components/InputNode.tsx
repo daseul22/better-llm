@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Play, Square, Zap, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { executeWorkflow } from '@/lib/api'
+import { executeWorkflow, cancelWorkflowSession } from '@/lib/api'
 
 interface InputNodeData {
   initial_input: string
@@ -190,13 +190,30 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
   }
 
   // 실행 중단
-  const handleStop = () => {
-    // AbortController로 실행 중단
+  const handleStop = async () => {
+    // 1. AbortController로 SSE 연결 중단
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
 
+    // 2. 백엔드 워크플로우 취소 API 호출
+    const STORAGE_KEY_SESSION_ID = 'claude-flow-workflow-session-id'
+    const sessionId = localStorage.getItem(STORAGE_KEY_SESSION_ID)
+
+    if (sessionId) {
+      try {
+        await cancelWorkflowSession(sessionId)
+        console.log('[InputNode] 워크플로우 취소 API 호출 성공:', sessionId)
+        // 취소 성공 시 localStorage 정리
+        localStorage.removeItem(STORAGE_KEY_SESSION_ID)
+      } catch (err) {
+        console.error('[InputNode] 워크플로우 취소 API 호출 실패:', err)
+        // 실패해도 계속 진행 (UI는 일단 중단 상태로)
+      }
+    }
+
+    // 3. 상태 업데이트
     setLocalIsRunning(false)
     updateNode(id, { isExecuting: false })
     stopExecution()
@@ -215,17 +232,22 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
           !isExecuting && !isCompleted && 'node-appear'
         )}
       >
-        <CardHeader className="py-2 px-3 bg-gradient-to-r from-emerald-500 to-teal-500">
-          <CardTitle className="text-sm flex items-center justify-between text-white">
+        <CardHeader className="py-2 px-3">
+          <CardTitle className="text-sm flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              {isExecuting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {isCompleted && !hasError && <CheckCircle2 className="h-3.5 w-3.5" />}
-              {hasError && <XCircle className="h-3.5 w-3.5" />}
-              {!isExecuting && !isCompleted && !hasError && <Zap className="h-3.5 w-3.5" />}
+              {isExecuting && <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-600" />}
+              {isCompleted && !hasError && <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />}
+              {hasError && <XCircle className="h-3.5 w-3.5 text-red-600" />}
+              {!isExecuting && !isCompleted && !hasError && <Zap className="h-3.5 w-3.5 text-emerald-600" />}
               START
             </span>
             {statusText && (
-              <span className="text-[10px] font-normal bg-white/20 px-1.5 py-0.5 rounded">
+              <span className={cn(
+                'text-[10px] font-normal',
+                isExecuting && 'text-yellow-700',
+                hasError && 'text-red-700',
+                isCompleted && 'text-green-700'
+              )}>
                 {statusText}
               </span>
             )}
@@ -233,9 +255,9 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
         </CardHeader>
         <CardContent className="py-1.5 px-3 space-y-1">
           {/* 입력 텍스트 미리보기 */}
-          <div className="text-[11px] text-muted-foreground bg-white border border-emerald-200 rounded p-1.5 max-h-12 overflow-hidden line-clamp-2">
-            {initial_input?.substring(0, 60) || '아키텍처 패턴 리뷰 해주세요'}
-            {(initial_input?.length || 0) > 60 && '...'}
+          <div className="text-[11px] text-muted-foreground line-clamp-1">
+            {initial_input?.substring(0, 80) || '작업 설명을 입력하세요...'}
+            {(initial_input?.length || 0) > 80 && '...'}
           </div>
 
           {/* 실행 버튼 */}
@@ -244,7 +266,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
               onClick={handleExecute}
               disabled={!initial_input?.trim()}
               size="sm"
-              className="w-full h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+              className="w-full h-6 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px]"
             >
               <Play className="mr-1 h-3 w-3" />
               시작
@@ -254,7 +276,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
               onClick={handleStop}
               size="sm"
               variant="destructive"
-              className="w-full h-7 text-xs font-semibold"
+              className="w-full h-6 text-[10px]"
             >
               <Square className="mr-1 h-3 w-3" />
               중단
