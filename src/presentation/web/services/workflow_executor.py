@@ -189,13 +189,13 @@ class WorkflowExecutor:
                 if max_iterations is not None:
                     condition_nodes_with_iterations.add(node.id)
 
-        # 백엣지 식별 (DFS로 방문 순서 파악)
+        # 백엣지 식별 (DFS로 순환 경로 파악)
         back_edges = set()
         visited_dfs = set()
         rec_stack = set()
 
         def identify_back_edges(node_id: str, path: List[str]):
-            """DFS로 백엣지 식별"""
+            """DFS로 백엣지 식별 (순환 경로에 Condition + max_iterations 포함 여부 확인)"""
             visited_dfs.add(node_id)
             rec_stack.add(node_id)
             path.append(node_id)
@@ -204,12 +204,32 @@ class WorkflowExecutor:
                 if edge.source == node_id:
                     target = edge.target
 
-                    # 이미 방문 스택에 있으면 백엣지
+                    # 이미 방문 스택에 있으면 백엣지 (순환)
                     if target in rec_stack:
-                        # Condition 노드에서 나가는 백엣지만 허용
-                        if node_id in condition_nodes_with_iterations:
+                        # 순환 경로 추출 (target부터 현재 노드까지)
+                        cycle_start_idx = path.index(target)
+                        cycle_path = path[cycle_start_idx:] + [target]
+
+                        # 순환 경로에 max_iterations가 설정된 Condition 노드가 있는지 확인
+                        has_condition_with_iterations = any(
+                            node_id in condition_nodes_with_iterations
+                            for node_id in cycle_path
+                        )
+
+                        if has_condition_with_iterations:
+                            # 피드백 루프 허용: 백엣지로 표시
                             back_edges.add((edge.source, edge.target))
-                            logger.info(f"피드백 루프 감지 (허용): {edge.source} → {edge.target}")
+                            logger.info(
+                                f"피드백 루프 감지 (허용): {edge.source} → {edge.target} "
+                                f"(순환 경로: {' → '.join(cycle_path)})"
+                            )
+                        else:
+                            # max_iterations 없는 순환: 검증 단계에서 에러 발생
+                            logger.warning(
+                                f"무제한 순환 감지: {edge.source} → {edge.target} "
+                                f"(순환 경로: {' → '.join(cycle_path)}). "
+                                f"Condition 노드에 max_iterations를 설정하세요."
+                            )
                     elif target not in visited_dfs:
                         identify_back_edges(target, path.copy())
 
