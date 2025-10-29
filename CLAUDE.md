@@ -405,6 +405,52 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
+### refactor: Workflow Designer 고급 노드 활용 및 미리보기 개선 (완료)
+- **날짜**: 2025-10-29 16:00 (Asia/Seoul)
+- **목적**:
+  - 워크플로우 설계 시 고급 노드(condition, loop, merge, manager)를 적극 활용하도록 개선
+  - 미리보기에서 노드/엣지 연결 관계를 상세히 표시
+- **변경사항**:
+  - **prompts/workflow_designer.txt**:
+    - "워크플로우 설계" 섹션에 고급 노드 활용 지침 강화
+      * **단순 순차 실행을 피하고 고급 노드를 적극 활용**
+      * **독립적인 작업은 반드시 Manager 노드로 병렬 실행** (20-50% 속도 향상)
+      * **조건 분기가 필요하면 Condition 노드 추가**
+      * **반복 작업은 Loop 노드 사용**
+      * **여러 분기를 통합할 때는 Merge 노드 사용**
+    - "고급 노드 우선 원칙" 섹션 추가 (3번 항목)
+      * 2개 이상의 독립적 작업 → Manager 노드 병렬 실행
+      * 조건부 실행 → Condition 노드
+      * 반복 실행 → Loop 노드
+      * 분기 통합 → Merge 노드
+      * 단순 순차 실행은 최소화
+    - 예시 3 추가: 고급 노드 활용 (조건 분기 + 반복 + 병합)
+      * 테스트 실패 시 자동 버그 수정 반복
+      * 테스트 성공 시 Manager 노드로 리뷰 및 문서 작성 병렬 실행
+      * Condition, Loop, Manager 노드를 모두 활용한 복잡한 워크플로우 예시
+  - **WorkflowDesignerModal.tsx (미리보기 개선)**:
+    - 노드 타입별 색상 및 아이콘 추가
+      * input: 📥 (파란색), worker: ⚙️ (녹색), manager: 👥 (보라색)
+      * condition: 🔀 (노란색), loop: 🔁 (주황색), merge: 🔗 (핑크색)
+    - 노드 상세 정보 표시
+      * agent_name, task_template/task_description (80자 이내 미리보기)
+      * available_workers (Manager 노드), condition_type/value (Condition 노드)
+      * max_iterations (Loop 노드), merge_strategy (Merge 노드)
+    - 연결 관계 섹션 추가
+      * source → target 화살표로 시각적 표시
+      * source는 파란색, target은 녹색으로 구분
+      * sourceHandle (예: true/false) 표시
+- **파일**:
+  - `prompts/workflow_designer.txt` (51줄 추가)
+  - `src/presentation/web/frontend/src/components/WorkflowDesignerModal.tsx` (80줄 개선)
+- **영향범위**: 워크플로우 자동 설계 품질, UI/UX, 사용자 이해도
+- **기대효과**:
+  - 워커가 단순한 순차 워크플로우가 아닌 고급 노드를 활용한 복잡한 워크플로우를 생성
+  - 미리보기에서 노드 구조와 연결 관계를 명확히 파악 가능
+  - 조건 분기, 반복, 병렬 실행을 적극 활용하여 실용적인 워크플로우 생성
+- **테스트**: TypeScript 컴파일 검사 및 빌드 통과
+- **후속 조치**: 실제 워크플로우 설계 시 고급 노드 활용 여부 확인
+
 ### feat: Workflow Designer 워커 추가 (완료)
 - **날짜**: 2025-10-29 15:00 (Asia/Seoul)
 - **목적**: 사용자 요구사항으로부터 워크플로우를 자동으로 설계 및 생성하는 워커 추가

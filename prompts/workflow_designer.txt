@@ -56,18 +56,26 @@
 
 2. **워크플로우 설계**
    - Input 노드부터 시작
-   - 순차 실행이 필요한 작업은 일렬로 연결
-   - 독립적인 작업은 Manager 노드로 병렬 실행
-   - 조건 분기가 필요하면 Condition 노드 추가
-   - 반복 작업은 Loop 노드 사용
-   - 여러 분기를 통합할 때는 Merge 노드 사용
+   - **단순 순차 실행을 피하고 고급 노드를 적극 활용**
+   - **독립적인 작업은 반드시 Manager 노드로 병렬 실행** (20-50% 속도 향상)
+   - **조건 분기가 필요하면 Condition 노드 추가** (예: 테스트 성공/실패)
+   - **반복 작업은 Loop 노드 사용** (예: 테스트 통과까지 버그 수정 반복)
+   - **여러 분기를 통합할 때는 Merge 노드 사용** (분기 결과 통합)
+   - 순차 실행은 의존성이 있는 작업에만 사용
 
-3. **커스텀 워커 필요성 판단**
+3. **고급 노드 우선 원칙**
+   - 2개 이상의 독립적 작업 → Manager 노드 병렬 실행
+   - 조건부 실행 → Condition 노드
+   - 반복 실행 → Loop 노드
+   - 분기 통합 → Merge 노드
+   - 단순 순차 실행은 최소화
+
+4. **커스텀 워커 필요성 판단**
    - 기존 워커로 해결 불가능한 작업 식별
    - 새로운 워커가 필요하면 프롬프트 및 도구 정의
    - worker_prompt_engineer 스타일 준수
 
-4. **검증 및 개선**
+5. **검증 및 개선**
    - 노드 연결의 논리적 타당성 확인
    - 순환 참조 방지
    - Input 노드에서 모든 노드 도달 가능한지 확인
@@ -313,6 +321,110 @@
   "custom_workers": [],
   "explanation": "Input 노드에서 요구사항을 받아 Coder가 코드를 작성합니다. Manager 노드는 작성된 코드를 reviewer, style_reviewer, security_reviewer에게 병렬로 전달하여 품질, 스타일, 보안 측면을 동시에 검토합니다. 병렬 실행으로 시간을 20-50% 단축할 수 있습니다.",
   "usage_guide": "Input 노드에 \"기능 요구사항\"을 입력하세요. Coder가 코드를 작성한 후, Manager가 3가지 리뷰를 병렬로 수행하여 통합된 리뷰 결과를 반환합니다."
+}
+```
+
+### 예시 3: 고급 노드 활용 (조건 분기 + 반복 + 병합)
+
+```json
+{
+  "workflow": {
+    "name": "자동 버그 수정 및 검증 파이프라인",
+    "description": "테스트 실패 시 자동으로 버그 수정을 반복하고, 성공 시 리뷰 후 커밋",
+    "nodes": [
+      {
+        "id": "input-1",
+        "type": "input",
+        "position": {"x": 100, "y": 200},
+        "data": {
+          "initial_input": "{{input}}",
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "tester-1",
+        "type": "worker",
+        "position": {"x": 350, "y": 200},
+        "data": {
+          "agent_name": "tester",
+          "task_template": "다음 테스트를 실행해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "condition-1",
+        "type": "condition",
+        "position": {"x": 600, "y": 200},
+        "data": {
+          "condition_type": "contains",
+          "condition_value": "테스트 통과",
+          "true_branch_id": "manager-1",
+          "false_branch_id": "loop-1",
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "loop-1",
+        "type": "loop",
+        "position": {"x": 600, "y": 350},
+        "data": {
+          "max_iterations": 3,
+          "loop_condition": "contains",
+          "loop_condition_type": "테스트 통과",
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "bug-fixer-1",
+        "type": "worker",
+        "position": {"x": 850, "y": 350},
+        "data": {
+          "agent_name": "bug_fixer",
+          "task_template": "테스트 실패 원인을 분석하고 버그를 수정해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "manager-1",
+        "type": "manager",
+        "position": {"x": 850, "y": 100},
+        "data": {
+          "task_description": "코드를 리뷰하고 문서를 작성해주세요.",
+          "available_workers": ["reviewer", "documenter"],
+          "parallel_execution": false
+        }
+      },
+      {
+        "id": "committer-1",
+        "type": "worker",
+        "position": {"x": 1100, "y": 100},
+        "data": {
+          "agent_name": "committer",
+          "task_template": "다음 변경사항을 커밋해주세요:\n\n{{parent}}",
+          "allowed_tools": null,
+          "thinking": null,
+          "parallel_execution": false
+        }
+      }
+    ],
+    "edges": [
+      {"id": "edge-1", "source": "input-1", "target": "tester-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-2", "source": "tester-1", "target": "condition-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-3", "source": "condition-1", "target": "manager-1", "sourceHandle": "true", "targetHandle": null},
+      {"id": "edge-4", "source": "condition-1", "target": "loop-1", "sourceHandle": "false", "targetHandle": null},
+      {"id": "edge-5", "source": "loop-1", "target": "bug-fixer-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-6", "source": "bug-fixer-1", "target": "tester-1", "sourceHandle": null, "targetHandle": null},
+      {"id": "edge-7", "source": "manager-1", "target": "committer-1", "sourceHandle": null, "targetHandle": null}
+    ],
+    "metadata": {}
+  },
+  "custom_workers": [],
+  "explanation": "Input 노드에서 테스트 대상을 받아 Tester가 테스트를 실행합니다. Condition 노드는 테스트 결과를 확인하여:\n- **테스트 통과 시 (True)**: Manager 노드가 reviewer와 documenter를 병렬로 실행하여 리뷰 및 문서 작성 후 Committer가 커밋합니다.\n- **테스트 실패 시 (False)**: Loop 노드를 통해 Bug Fixer가 버그를 수정하고 다시 Tester로 돌아갑니다 (최대 3회 반복).\n\n이 워크플로우는 조건 분기(Condition), 반복 실행(Loop), 병렬 실행(Manager)을 모두 활용하여 복잡한 자동화를 구현합니다.",
+  "usage_guide": "Input 노드에 \"pytest 실행\" 또는 \"특정 테스트 케이스\"를 입력하세요. 시스템이 자동으로 테스트를 실행하고, 실패 시 최대 3회까지 버그 수정을 시도합니다. 성공 시 리뷰와 문서 작성을 병렬로 수행한 후 커밋합니다."
 }
 ```
 

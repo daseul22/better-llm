@@ -616,12 +616,77 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
                   </div>
 
                   <div className="mt-4">
-                    <div className="text-xs font-semibold text-gray-700 mb-2">노드 목록:</div>
+                    <div className="text-xs font-semibold text-gray-700 mb-2">노드 상세:</div>
+                    <div className="space-y-2">
+                      {parsedWorkflow.nodes.map((node) => {
+                        const typeColors: Record<string, string> = {
+                          input: 'bg-blue-50 border-blue-300',
+                          worker: 'bg-green-50 border-green-300',
+                          manager: 'bg-purple-50 border-purple-300',
+                          condition: 'bg-yellow-50 border-yellow-300',
+                          loop: 'bg-orange-50 border-orange-300',
+                          merge: 'bg-pink-50 border-pink-300',
+                        }
+                        const typeIcons: Record<string, string> = {
+                          input: '📥',
+                          worker: '⚙️',
+                          manager: '👥',
+                          condition: '🔀',
+                          loop: '🔁',
+                          merge: '🔗',
+                        }
+                        const bgColor = typeColors[node.type] || 'bg-white border-gray-300'
+                        const icon = typeIcons[node.type] || '📦'
+
+                        return (
+                          <div key={node.id} className={`text-xs p-3 rounded border ${bgColor}`}>
+                            <div className="font-semibold flex items-center gap-2 mb-1">
+                              <span>{icon}</span>
+                              <span>{node.id}</span>
+                              <span className="text-gray-600 font-normal">({node.type})</span>
+                            </div>
+                            {node.data && (
+                              <div className="ml-6 mt-1 space-y-1 text-gray-700">
+                                {node.data.agent_name && (
+                                  <div>• Agent: <span className="font-medium">{node.data.agent_name}</span></div>
+                                )}
+                                {node.data.task_template && (
+                                  <div>• Task: <span className="italic">{node.data.task_template.substring(0, 80)}{node.data.task_template.length > 80 ? '...' : ''}</span></div>
+                                )}
+                                {node.data.task_description && (
+                                  <div>• Task: <span className="italic">{node.data.task_description.substring(0, 80)}{node.data.task_description.length > 80 ? '...' : ''}</span></div>
+                                )}
+                                {node.data.available_workers && (
+                                  <div>• Workers: <span className="font-medium">{node.data.available_workers.join(', ')}</span></div>
+                                )}
+                                {node.data.condition_type && (
+                                  <div>• Condition: <span className="font-medium">{node.data.condition_type} "{node.data.condition_value}"</span></div>
+                                )}
+                                {node.data.max_iterations && (
+                                  <div>• Max Iterations: <span className="font-medium">{node.data.max_iterations}</span></div>
+                                )}
+                                {node.data.merge_strategy && (
+                                  <div>• Strategy: <span className="font-medium">{node.data.merge_strategy}</span></div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <div className="text-xs font-semibold text-gray-700 mb-2">연결 관계:</div>
                     <div className="space-y-1">
-                      {parsedWorkflow.nodes.map((node) => (
-                        <div key={node.id} className="text-xs bg-white p-2 rounded border">
-                          <span className="font-medium">{node.id}</span>
-                          <span className="text-gray-600 ml-2">({node.type})</span>
+                      {parsedWorkflow.edges.map((edge) => (
+                        <div key={edge.id} className="text-xs bg-white p-2 rounded border flex items-center gap-2">
+                          <span className="font-medium text-blue-600">{edge.source}</span>
+                          <span className="text-gray-400">→</span>
+                          <span className="font-medium text-green-600">{edge.target}</span>
+                          {edge.sourceHandle && (
+                            <span className="text-gray-500 text-[10px] ml-auto">({edge.sourceHandle})</span>
+                          )}
                         </div>
                       ))}
                     </div>
