@@ -892,14 +892,45 @@ class WorkflowExecutor:
             allowed_tools = [
                 f"mcp__workers__execute_{worker}_task"
                 for worker in available_workers
-            ] + ["read", "mcp__workers__ask_user"]  # 기본 도구 추가
+            ] + [
+                "read",
+                "mcp__workers__ask_user",
+                "mcp__workers__execute_parallel_tasks"  # 병렬 실행 Tool 추가
+            ]
 
-            # 원래 allowed_tools를 백업하고 필터링
-            original_analyzer = manager_agent.analyzer
+            # Manager 노드 전용 시스템 지침 추가
+            manager_instruction = f"""당신은 Manager 노드로 실행되고 있습니다.
 
-            # 대화 히스토리 생성 (사용자 메시지 1개)
+**등록된 워커**: {', '.join(available_workers)}
+
+**역할**:
+1. 작업 요구사항을 분석하여 필요한 워커를 선택
+2. 등록된 워커만 사용 가능 (다른 워커는 사용 불가)
+3. **독립적인 작업들은 반드시 병렬로 실행**
+
+**병렬 실행 방법**:
+- 독립적인 워커들은 **한 번에 여러 Tool을 동시에 호출**
+- 예시 (Reviewer + Tester 병렬):
+  ```xml
+  <tool_use>
+    <tool_name>execute_reviewer_task</tool_name>
+    <parameters>...</parameters>
+  </tool_use>
+  <tool_use>
+    <tool_name>execute_tester_task</tool_name>
+    <parameters>...</parameters>
+  </tool_use>
+  ```
+- 이렇게 하면 자동으로 병렬 실행됩니다
+
+**중요**: 순차 호출하지 말고, 독립적인 워커는 **한 응답에 모두 포함**하세요!
+
+**실제 작업**:
+{task_description}"""
+
+            # 대화 히스토리 생성 (Manager 지침 + 사용자 메시지)
             history = [
-                Message(role="user", content=task_description)
+                Message(role="user", content=manager_instruction)
             ]
 
             logger.info(

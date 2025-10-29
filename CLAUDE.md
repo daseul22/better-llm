@@ -267,6 +267,11 @@ async def _execute_manager_node(self, node, ...):
         yield chunk
 ```
 
+**병렬 실행**:
+- Manager가 독립적인 워커들을 선택하면 **자동으로 병렬 실행**
+- Claude가 여러 Tool을 한 번에 호출하면 SDK가 병렬 처리
+- 예: Reviewer + Tester를 동시에 호출 → 병렬 실행 (속도 2배)
+
 **사용법**:
 1. 왼쪽 패널에서 "Manager" 노드 추가
 2. 노드 설정에서 **사용 가능한 워커** 체크박스 선택 (최소 1개)
@@ -276,6 +281,7 @@ async def _execute_manager_node(self, node, ...):
 - 등록된 워커: Planner, Coder, Reviewer, Tester
 - 작업: "FastAPI CRUD API 작성"
 - Manager 판단: Planner → Coder → Reviewer 호출 (Tester는 생략 가능)
+- 독립 작업: Reviewer + Tester → 병렬 실행
 
 ### 피드백 루프 (Loop 노드)
 
@@ -542,7 +548,7 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 
 ## 최근 작업 (2025-10-29)
 
-### fix: Manager 노드를 지능형 오케스트레이터로 수정 (완료)
+### fix: Manager 노드를 지능형 오케스트레이터로 수정 + 병렬 실행 지원 (완료)
 - **날짜**: 2025-10-29 18:00 (Asia/Seoul)
 - **문제**:
   - Manager 노드가 등록된 **모든 워커를 강제로 병렬 실행**
@@ -551,39 +557,45 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 - **요구사항**:
   - Manager 노드는 **지능형 오케스트레이터**여야 함
   - 워커를 "도구"로 보유하고, 필요한 워커만 선택적으로 호출
+  - **선택된 워커들은 병렬로 실행** (가능하면)
   - TUI의 ManagerAgent와 동일한 동작 방식
 - **해결**:
-  - **workflow_executor.py 완전 재작성**:
+  - **workflow_executor.py 재작성**:
     ```python
-    # 기존: 모든 워커를 강제 병렬 실행
-    for worker_name in available_workers:
-        worker = WorkerAgent(...)
-        await worker.execute_task(task)
-
     # 신규: ManagerAgent 사용 (지능형)
     manager_agent = ManagerAgent(...)
     allowed_tools = [f"mcp__workers__execute_{w}_task" for w in available_workers]
+
+    # Manager 노드 전용 지침 추가
+    manager_instruction = """
+    - 독립적인 워커들은 한 번에 여러 Tool을 동시에 호출
+    - 순차 호출하지 말고, 한 응답에 모두 포함
+    """
+
     async for chunk in manager_agent.analyze_and_plan_stream(
         history,
         allowed_tools_override=allowed_tools
     ):
         yield chunk
     ```
+  - **병렬 실행 메커니즘**:
+    - Claude가 여러 Tool을 한 번에 호출하면 SDK가 자동으로 병렬 처리
+    - `execute_parallel_tasks` Tool도 allowed_tools에 추가 (대체 방법)
+    - Manager 노드 전용 지침으로 병렬 실행 유도
   - **manager_client.py 확장**:
     - `analyze_and_plan_stream`에 `allowed_tools_override` 파라미터 추가
     - Manager 노드가 등록된 워커만 사용하도록 도구 필터링
-    - None이면 기본 도구 목록 사용 (TUI용)
 - **파일**:
   - `src/presentation/web/services/workflow_executor.py` (Manager 노드 로직 재작성)
   - `src/infrastructure/claude/manager_client.py` (allowed_tools_override 추가)
   - `CLAUDE.md` (Manager 노드 설명 수정)
 - **영향범위**: Manager 노드 동작 방식, 워크플로우 실행 로직
 - **기대효과**:
-  - Manager가 작업을 분석하여 필요한 워커만 호출 (효율성 향상)
+  - Manager가 작업을 분석하여 필요한 워커만 호출 (효율성)
+  - 독립적인 워커들은 병렬 실행 (속도 향상)
   - 등록된 워커를 모두 사용할 필요 없음 (유연성)
-  - TUI와 동일한 지능형 오케스트레이션
 - **테스트**: 구문 검사 통과
-- **후속 조치**: Web UI에서 Manager 노드 실제 동작 확인
+- **후속 조치**: Web UI에서 병렬 실행 여부 확인
 
 ### fix: Loop 노드 검증 버그 수정 (완료)
 - **날짜**: 2025-10-29 17:00 (Asia/Seoul)
