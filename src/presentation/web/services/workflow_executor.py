@@ -188,6 +188,11 @@ class WorkflowExecutor:
 
                 if max_iterations is not None:
                     condition_nodes_with_iterations.add(node.id)
+                    logger.info(f"Condition 노드 발견 (max_iterations={max_iterations}): {node.id}")
+                else:
+                    logger.debug(f"Condition 노드 발견 (max_iterations 없음): {node.id}")
+
+        logger.info(f"피드백 루프 제어 노드 총 {len(condition_nodes_with_iterations)}개: {condition_nodes_with_iterations}")
 
         # 백엣지 식별 (DFS로 순환 경로 파악)
         back_edges = set()
@@ -206,27 +211,35 @@ class WorkflowExecutor:
 
                     # 이미 방문 스택에 있으면 백엣지 (순환)
                     if target in rec_stack:
+                        logger.debug(f"🔄 백엣지 발견: {node_id} → {target}")
+
                         # 순환 경로 추출 (target부터 현재 노드까지)
-                        cycle_start_idx = path.index(target)
-                        cycle_path = path[cycle_start_idx:] + [target]
+                        try:
+                            cycle_start_idx = path.index(target)
+                            cycle_path = path[cycle_start_idx:] + [target]
+                            logger.debug(f"   순환 경로: {' → '.join(cycle_path)}")
+                        except ValueError:
+                            logger.error(f"   ❌ 순환 경로 추출 실패: target={target}, path={path}")
+                            continue
 
                         # 순환 경로에 max_iterations가 설정된 Condition 노드가 있는지 확인
                         has_condition_with_iterations = any(
                             node_id in condition_nodes_with_iterations
                             for node_id in cycle_path
                         )
+                        logger.debug(f"   Condition 노드 포함 여부: {has_condition_with_iterations}")
 
                         if has_condition_with_iterations:
                             # 피드백 루프 허용: 백엣지로 표시
                             back_edges.add((edge.source, edge.target))
                             logger.info(
-                                f"피드백 루프 감지 (허용): {edge.source} → {edge.target} "
+                                f"✅ 피드백 루프 감지 (허용): {edge.source} → {edge.target} "
                                 f"(순환 경로: {' → '.join(cycle_path)})"
                             )
                         else:
                             # max_iterations 없는 순환: 검증 단계에서 에러 발생
                             logger.warning(
-                                f"무제한 순환 감지: {edge.source} → {edge.target} "
+                                f"⚠️ 무제한 순환 감지: {edge.source} → {edge.target} "
                                 f"(순환 경로: {' → '.join(cycle_path)}). "
                                 f"Condition 노드에 max_iterations를 설정하세요."
                             )
@@ -240,6 +253,13 @@ class WorkflowExecutor:
             if input_id not in visited_dfs:
                 identify_back_edges(input_id, [])
 
+        logger.info(f"백엣지 식별 완료: 총 {len(back_edges)}개 발견")
+        if back_edges:
+            for source, target in back_edges:
+                logger.info(f"  - {source} → {target}")
+        else:
+            logger.info("  (백엣지 없음)")
+
         # 인접 리스트 (노드 ID → 자식 노드 ID 목록)
         adjacency: Dict[str, List[str]] = {node.id: [] for node in nodes}
         in_degree: Dict[str, int] = {node.id: 0 for node in nodes}
@@ -249,6 +269,14 @@ class WorkflowExecutor:
             if (edge.source, edge.target) not in back_edges:
                 adjacency[edge.source].append(edge.target)
                 in_degree[edge.target] += 1
+            else:
+                logger.debug(f"백엣지 제외 (위상 정렬): {edge.source} → {edge.target}")
+
+        # 디버깅: 인접 리스트 출력
+        logger.debug("위상 정렬용 인접 리스트:")
+        for node_id, children in adjacency.items():
+            if children:
+                logger.debug(f"  {node_id} → {children}")
 
         # Input 노드에서 도달 가능한 노드만 필터링 (BFS)
         reachable_nodes = set(input_node_ids)
