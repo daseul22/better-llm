@@ -213,10 +213,8 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
 
   // 노드 삭제 핸들러
   const handleDelete = () => {
-    if (confirm(`"Input" 노드를 삭제하시겠습니까?`)) {
-      deleteNode(node.id)
-      setSelectedNodeId(null)
-    }
+    deleteNode(node.id)
+    setSelectedNodeId(null)
   }
 
   // 노드 설정 Hook 사용
