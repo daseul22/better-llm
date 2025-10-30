@@ -616,7 +616,11 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 <div className="text-sm font-medium text-blue-900">📥 입력</div>
                 <div className="text-xs text-blue-700">이 노드가 받은 작업 설명</div>
               </div>
-              <div className="p-3 max-h-60 overflow-y-auto">
+              <AutoScrollContainer
+                className="p-3"
+                maxHeight="240px"
+                dependency={logs.filter(log => log.nodeId === node.id && log.type === 'input').length}
+              >
                 {logs.filter(log => log.nodeId === node.id && log.type === 'input').length > 0 ? (
                   logs
                     .filter(log => log.nodeId === node.id && log.type === 'input')
@@ -626,7 +630,7 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 ) : (
                   <div className="text-xs text-gray-500">입력 대기 중...</div>
                 )}
-              </div>
+              </AutoScrollContainer>
             </div>
 
             {/* 실행 과정 섹션 */}
@@ -635,7 +639,11 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 <div className="text-sm font-medium text-purple-900">🔧 실행 과정</div>
                 <div className="text-xs text-purple-700">Thinking, 도구 호출 등</div>
               </div>
-              <div className="p-3 max-h-80 overflow-y-auto">
+              <AutoScrollContainer
+                className="p-3"
+                maxHeight="320px"
+                dependency={logs.filter(log => log.nodeId === node.id && log.type === 'execution').length}
+              >
                 {logs.filter(log => log.nodeId === node.id && log.type === 'execution').length > 0 ? (
                   logs
                     .filter(log => log.nodeId === node.id && log.type === 'execution')
@@ -645,7 +653,7 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 ) : (
                   <div className="text-xs text-gray-500">실행 대기 중...</div>
                 )}
-              </div>
+              </AutoScrollContainer>
             </div>
 
             {/* 출력 섹션 */}
@@ -654,7 +662,11 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 <div className="text-sm font-medium text-green-900">📤 출력</div>
                 <div className="text-xs text-green-700">최종 결과 (다음 노드로 전달됨)</div>
               </div>
-              <div className="p-3 max-h-80 overflow-y-auto">
+              <AutoScrollContainer
+                className="p-3"
+                maxHeight="320px"
+                dependency={logs.filter(log => log.nodeId === node.id && log.type === 'output').length}
+              >
                 {logs.filter(log => log.nodeId === node.id && log.type === 'output').length > 0 ? (
                   logs
                     .filter(log => log.nodeId === node.id && log.type === 'output')
@@ -664,7 +676,7 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 ) : (
                   <div className="text-xs text-gray-500">출력 대기 중...</div>
                 )}
-              </div>
+              </AutoScrollContainer>
             </div>
 
             {/* 통계 정보 */}

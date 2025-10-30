@@ -19,6 +19,7 @@ import {
   getWorkflowSession,
   clearProjectSessions,
   clearProjectLogs,
+  clearNodeSessions,
   loadDisplayConfig,
   saveDisplayConfig,
 } from './lib/api'
@@ -526,6 +527,27 @@ function App() {
     }
   }
 
+  // 모든 노드 세션 초기화 핸들러
+  const handleClearNodeSessions = async () => {
+    if (!currentProjectPath) {
+      addToast('warning', '프로젝트가 선택되지 않았습니다')
+      return
+    }
+
+    if (!confirm('모든 노드의 세션을 초기화하시겠습니까?\n각 노드의 대화 기록이 모두 삭제됩니다.')) {
+      return
+    }
+
+    try {
+      const result = await clearNodeSessions()
+      addToast('success', `세션 초기화 완료! ${result.deleted_sessions}개의 세션이 삭제되었습니다.`)
+      setShowProjectMenu(false)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      addToast('error', `세션 초기화 실패: ${errorMsg}`)
+    }
+  }
+
   return (
     <ReactFlowProvider>
       <div className="h-screen flex flex-col bg-background transition-colors duration-300">
@@ -614,11 +636,18 @@ function App() {
                         <span>로그 & 세션 보기</span>
                       </button>
                       <button
+                        onClick={handleClearNodeSessions}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4 text-red-600" />
+                        <span>모든 노드 세션 초기화</span>
+                      </button>
+                      <button
                         onClick={handleClearSessions}
                         className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 transition-colors"
                       >
                         <Trash2 className="h-4 w-4 text-orange-600" />
-                        <span>세션 비우기</span>
+                        <span>프로젝트 세션 비우기</span>
                       </button>
                       <button
                         onClick={handleClearLogs}

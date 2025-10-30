@@ -141,13 +141,17 @@ const NodeExecutionLogs: React.FC = () => {
                     <div className="text-sm font-medium text-blue-900">📥 입력</div>
                     <div className="text-xs text-blue-700">이 노드가 받은 작업 설명</div>
                   </div>
-                  <div className="p-3 max-h-60 overflow-y-auto">
+                  <AutoScrollContainer
+                    className="p-3"
+                    maxHeight="240px"
+                    dependency={validLogs.filter(log => log.nodeId === execNode.id && log.type === 'input').length}
+                  >
                     {validLogs
                       .filter(log => log.nodeId === execNode.id && log.type === 'input')
                       .map((log, idx) => (
                         <ParsedContent key={idx} content={log.message} />
                       ))}
-                  </div>
+                  </AutoScrollContainer>
                 </div>
               )}
 
@@ -158,13 +162,17 @@ const NodeExecutionLogs: React.FC = () => {
                     <div className="text-sm font-medium text-purple-900">🔧 실행 과정</div>
                     <div className="text-xs text-purple-700">Thinking, 도구 호출 등</div>
                   </div>
-                  <div className="p-3 max-h-60 overflow-y-auto">
+                  <AutoScrollContainer
+                    className="p-3"
+                    maxHeight="240px"
+                    dependency={validLogs.filter(log => log.nodeId === execNode.id && log.type === 'execution').length}
+                  >
                     {validLogs
                       .filter(log => log.nodeId === execNode.id && log.type === 'execution')
                       .map((log, idx) => (
                         <ParsedContent key={idx} content={log.message} />
                       ))}
-                  </div>
+                  </AutoScrollContainer>
                 </div>
               )}
 
@@ -175,13 +183,17 @@ const NodeExecutionLogs: React.FC = () => {
                     <div className="text-sm font-medium text-green-900">📤 출력</div>
                     <div className="text-xs text-green-700">최종 결과 (다음 노드로 전달됨)</div>
                   </div>
-                  <div className="p-3 max-h-60 overflow-y-auto">
+                  <AutoScrollContainer
+                    className="p-3"
+                    maxHeight="240px"
+                    dependency={validLogs.filter(log => log.nodeId === execNode.id && log.type === 'output').length}
+                  >
                     {validLogs
                       .filter(log => log.nodeId === execNode.id && log.type === 'output')
                       .map((log, idx) => (
                         <ParsedContent key={idx} content={log.message} />
                       ))}
-                  </div>
+                  </AutoScrollContainer>
                 </div>
               )}
             </div>

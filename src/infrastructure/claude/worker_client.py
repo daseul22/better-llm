@@ -4,7 +4,7 @@
 WorkerAgent: Claude Code의 agentic harness를 사용하여 파일 읽기/쓰기, 코드 실행 등 수행
 """
 
-from typing import List, AsyncIterator, Optional
+from typing import List, AsyncIterator, Optional, Callable
 from pathlib import Path
 import logging
 import os
@@ -54,6 +54,7 @@ class WorkerAgent:
         self.project_dir = project_dir
         self.project_context = project_context or self._load_project_context()
         self.system_prompt = self._load_system_prompt()
+        self.last_session_id: Optional[str] = None  # 마지막 실행의 세션 ID 저장
 
     def _load_project_context(self) -> Optional[ProjectContext]:
         """
@@ -205,7 +206,8 @@ Use your thinking process liberally throughout your response to show your reason
     async def execute_task(
         self,
         task_description: str,
-        usage_callback: Optional[callable] = None
+        usage_callback: Optional[Callable[[dict], None]] = None,
+        resume_session_id: Optional[str] = None
     ) -> AsyncIterator[str]:
         """
         Claude Agent SDK를 사용하여 작업 실행
@@ -213,6 +215,7 @@ Use your thinking process liberally throughout your response to show your reason
         Args:
             task_description: 작업 설명
             usage_callback: 토큰 사용량 정보를 받을 콜백 함수 (선택)
+            resume_session_id: 재개할 SDK 세션 ID (선택, 이전 실행의 컨텍스트 유지)
 
         Yields:
             스트리밍 응답 청크
@@ -269,9 +272,17 @@ Use your thinking process liberally throughout your response to show your reason
                 worker_name=self.config.name
             )
 
-            # 스트림 실행
-            async for text in executor.execute_stream(full_prompt):
+            # 스트림 실행 (resume_session_id 전달하여 이전 컨텍스트 재개)
+            async for text in executor.execute_stream(full_prompt, resume_session_id=resume_session_id):
                 yield text
+
+            # 실제 SDK 세션 ID 저장 (다음 실행에서 재활용)
+            self.last_session_id = executor.last_session_id
+            if self.last_session_id:
+                logger.info(
+                    f"[{self.config.name}] SDK 세션 ID 저장: {self.last_session_id[:8]}... "
+                    "(다음 실행에서 resume으로 재활용)"
+                )
 
             # Worker 실행 완료 표시
             yield f"\n{'='*70}\n✅ [{self.config.name.upper()}] Worker execution completed\n{'='*70}\n"

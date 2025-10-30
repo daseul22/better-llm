@@ -178,6 +178,12 @@ class WorkflowExecutor:
         # {session_id: {node_id: iteration_count}}
         self._condition_iterations: Dict[str, Dict[str, int]] = {}
 
+        # 노드 세션 관리 (노드별 SDK 세션 ID 저장)
+        # {node_id: session_id}
+        # 메모리 기반: 서버 재시작 시 초기화
+        # 여러 워크플로우 실행에 걸쳐 유지되어 컨텍스트 재활용
+        self._node_sessions: Dict[str, str] = {}
+
         # 커스텀 워커 로드 (프로젝트 경로가 주어진 경우)
         self.custom_worker_names = set()
         if project_path:
@@ -1265,6 +1271,18 @@ class WorkflowExecutor:
                     f"- 작업 길이: {len(task_description)}"
                 )
 
+                # 노드별 세션 관리: 이전 세션 ID가 있으면 재사용
+                previous_session_id = self._node_sessions.get(node_id)
+                if previous_session_id:
+                    logger.info(
+                        f"[{session_id}] 노드 {node_id}: 이전 세션 재개 "
+                        f"(세션: {previous_session_id[:8]}...)"
+                    )
+                else:
+                    logger.info(
+                        f"[{session_id}] 노드 {node_id}: 새 세션 시작"
+                    )
+
                 worker = WorkerAgent(config=agent_config, project_dir=project_path)
                 node_output_chunks = []
                 node_token_usage: Optional[TokenUsage] = None
@@ -1281,7 +1299,12 @@ class WorkflowExecutor:
                         f"(입력: {node_token_usage.input_tokens}, 출력: {node_token_usage.output_tokens})"
                     )
 
-                async for chunk in worker.execute_task(task_description, usage_callback=usage_callback):
+                # Worker 실행 (이전 세션 ID 전달 - resume 용도)
+                async for chunk in worker.execute_task(
+                    task_description,
+                    usage_callback=usage_callback,
+                    resume_session_id=previous_session_id
+                ):
                     node_output_chunks.append(chunk)
 
                     # 청크 타입 분류
@@ -1307,6 +1330,19 @@ class WorkflowExecutor:
                     f"[{session_id}] 노드 출력 처리 완료: {node_id} "
                     f"(전체: {len(full_output)}자, 최종 텍스트: {len(final_text)}자)"
                 )
+
+                # Worker에서 반환된 실제 SDK 세션 ID 저장
+                if worker.last_session_id:
+                    self._node_sessions[node_id] = worker.last_session_id
+                    logger.info(
+                        f"[{session_id}] 노드 세션 저장: {node_id} → "
+                        f"SDK 세션 {worker.last_session_id[:8]}... "
+                        "(다음 실행에서 컨텍스트 재활용)"
+                    )
+                else:
+                    logger.warning(
+                        f"[{session_id}] 노드 {node_id}: SDK 세션 ID를 받지 못함"
+                    )
 
                 elapsed_time = time.time() - start_time
 

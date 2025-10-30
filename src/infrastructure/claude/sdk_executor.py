@@ -21,7 +21,8 @@ from claude_agent_sdk import (
     CLINotFoundError,
     ProcessError,
     CLIJSONDecodeError,
-    ClaudeSDKError
+    ClaudeSDKError,
+    ClaudeSDKClient
 )
 
 from src.domain.exceptions import WorkerExecutionError
@@ -588,12 +589,14 @@ class WorkerSDKExecutor:
         self.response_handler = response_handler
         self.worker_name = worker_name or "Unknown"
         self.logger = get_logger(__name__, component=self.worker_name)
+        self.last_session_id: Optional[str] = None  # 마지막 실행의 세션 ID 저장
 
-    async def execute_stream(self, prompt: str) -> AsyncIterator[str]:
+    async def execute_stream(self, prompt: str, resume_session_id: Optional[str] = None) -> AsyncIterator[str]:
         """스트림 실행.
 
         Args:
             prompt: 프롬프트
+            resume_session_id: 재개할 SDK 세션 ID (선택, 이전 실행의 컨텍스트 유지)
 
         Yields:
             str: 응답 텍스트 청크
@@ -601,14 +604,14 @@ class WorkerSDKExecutor:
         Raises:
             WorkerExecutionError: SDK 실행 중 에러 발생 시
         """
-        from claude_agent_sdk import query
         from claude_agent_sdk.types import ClaudeAgentOptions
 
         try:
             self.logger.info(
                 f"[{self.worker_name}] Claude Agent SDK 실행 시작",
                 model=self.config.model,
-                allowed_tools_count=len(self.allowed_tools)
+                allowed_tools_count=len(self.allowed_tools),
+                resume_session=resume_session_id[:8] + "..." if resume_session_id and len(resume_session_id) > 8 else resume_session_id
             )
 
             chunk_count = 0
@@ -625,46 +628,62 @@ class WorkerSDKExecutor:
             # 선택적 컨텍스트 관리 옵션 추가 (None이 아니면)
             if self.config.max_turns is not None:
                 options_dict["max_turns"] = self.config.max_turns
-            if self.config.continue_conversation:
-                options_dict["continue_conversation"] = self.config.continue_conversation
             if self.config.setting_sources:
                 options_dict["setting_sources"] = self.config.setting_sources
 
-            # System Prompt 명시적 설정 (SDK Best Practice)
-            # ClaudeAgentOptions에서 system_prompt를 직접 지원하지 않으므로
-            # 프롬프트에 포함하여 전달 (현재 방식 유지)
-            # 참고: system_prompt는 WorkerAgent._load_system_prompt()에서 이미 포함됨
-
-            async for response in query(
-                prompt=prompt,
-                options=ClaudeAgentOptions(**options_dict)
-            ):
-                chunk_count += 1
-                last_response = response  # 마지막 응답 저장
-
+            # resume_session_id가 주어진 경우 이전 세션 재개
+            if resume_session_id:
+                options_dict["resume"] = resume_session_id
                 self.logger.info(
-                    f"[{self.worker_name}] response #{chunk_count} 수신: "
-                    f"{type(response).__name__}"
+                    f"[{self.worker_name}] 이전 세션 재개: {resume_session_id[:8]}... "
+                    f"(대화 컨텍스트 유지)"
+                )
+            else:
+                self.logger.info(
+                    f"[{self.worker_name}] 새 세션 시작"
                 )
 
-                async for text in self.response_handler.process_response(response):
-                    yield text
+            # ClaudeSDKClient를 context manager로 사용 (자동 connect/disconnect)
+            async with ClaudeSDKClient(options=ClaudeAgentOptions(**options_dict)) as client:
+                # query 메서드로 질의 전송
+                # resume 옵션으로 이전 세션 재개 시 session_id는 자동 할당됨
+                await client.query(prompt=prompt)
 
-            self.logger.info(
-                f"[{self.worker_name}] Claude Agent SDK 실행 완료. "
-                f"총 {chunk_count}개 청크 수신"
-            )
+                # receive_response()로 응답 스트리밍 수신
+                async for response in client.receive_response():
+                    chunk_count += 1
+                    last_response = response  # 마지막 응답 저장
 
-            # 마지막 응답에서 usage 정보 재확인
-            if last_response:
-                self.logger.info(f"[{self.worker_name}] Checking last response for usage...")
-                if hasattr(last_response, 'usage') and last_response.usage:
-                    self.logger.info(f"[{self.worker_name}] Last response has usage: {last_response.usage}")
-                    # 한 번 더 process_response 호출 (usage만 처리)
-                    async for _ in self.response_handler.process_response(last_response):
-                        pass  # 텍스트는 무시하고 usage만 수집
-                else:
-                    self.logger.info(f"⚠️  [{self.worker_name}] Last response has no usage information")
+                    self.logger.info(
+                        f"[{self.worker_name}] response #{chunk_count} 수신: "
+                        f"{type(response).__name__}"
+                    )
+
+                    # 첫 응답에서 실제 SDK 세션 ID 추출 (session_id 필드가 있으면)
+                    if chunk_count == 1 and hasattr(response, 'session_id'):
+                        self.last_session_id = response.session_id
+                        self.logger.info(
+                            f"[{self.worker_name}] SDK 세션 ID 감지: {self.last_session_id[:8]}..."
+                        )
+
+                    async for text in self.response_handler.process_response(response):
+                        yield text
+
+                self.logger.info(
+                    f"[{self.worker_name}] Claude Agent SDK 실행 완료. "
+                    f"총 {chunk_count}개 청크 수신"
+                )
+
+                # 마지막 응답에서 usage 정보 재확인
+                if last_response:
+                    self.logger.info(f"[{self.worker_name}] Checking last response for usage...")
+                    if hasattr(last_response, 'usage') and last_response.usage:
+                        self.logger.info(f"[{self.worker_name}] Last response has usage: {last_response.usage}")
+                        # 한 번 더 process_response 호출 (usage만 처리)
+                        async for _ in self.response_handler.process_response(last_response):
+                            pass  # 텍스트는 무시하고 usage만 수집
+                    else:
+                        self.logger.info(f"⚠️  [{self.worker_name}] Last response has no usage information")
 
         except Exception as e:
             from src.infrastructure.logging import log_exception_silently

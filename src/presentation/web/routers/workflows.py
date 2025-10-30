@@ -768,6 +768,84 @@ async def delete_session(session_id: str) -> Dict[str, str]:
         )
 
 
+@router.post("/clear-node-sessions")
+async def clear_node_sessions() -> Dict[str, Any]:
+    """
+    모든 노드의 SDK 세션 초기화
+
+    Claude Code SDK가 저장한 모든 세션 파일(.jsonl)을 삭제하여
+    각 노드의 대화 컨텍스트를 초기화합니다.
+
+    Returns:
+        Dict[str, Any]: 삭제된 세션 수와 메시지
+
+    Example:
+        POST /api/workflows/clear-node-sessions
+
+        Response:
+        {
+            "message": "모든 노드 세션이 초기화되었습니다",
+            "deleted_sessions": 824
+        }
+    """
+    import os
+    import glob
+
+    try:
+        # 현재 프로젝트 경로 가져오기
+        from src.presentation.web.routers.projects import _current_project_path
+
+        if not _current_project_path:
+            raise HTTPException(
+                status_code=400,
+                detail="프로젝트가 선택되지 않았습니다"
+            )
+
+        # Claude 세션 디렉토리 경로 생성
+        # ~/.claude/projects/<project-dir>/
+        project_dir_name = str(Path(_current_project_path).resolve()).replace('/', '-')
+        if project_dir_name.startswith('-'):
+            project_dir_name = project_dir_name[1:]
+
+        claude_sessions_dir = Path.home() / ".claude" / "projects" / f"-{project_dir_name}"
+
+        logger.info(f"Claude 세션 디렉토리: {claude_sessions_dir}")
+
+        if not claude_sessions_dir.exists():
+            return {
+                "message": "세션 디렉토리가 존재하지 않습니다 (초기화할 세션 없음)",
+                "deleted_sessions": 0
+            }
+
+        # .jsonl 파일 찾기
+        session_files = list(claude_sessions_dir.glob("*.jsonl"))
+        deleted_count = 0
+
+        for session_file in session_files:
+            try:
+                session_file.unlink()
+                deleted_count += 1
+                logger.debug(f"세션 파일 삭제: {session_file.name}")
+            except Exception as e:
+                logger.warning(f"세션 파일 삭제 실패: {session_file.name} - {e}")
+
+        logger.info(f"노드 세션 초기화 완료: {deleted_count}개 파일 삭제")
+
+        return {
+            "message": "모든 노드 세션이 초기화되었습니다",
+            "deleted_sessions": deleted_count
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"노드 세션 초기화 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"노드 세션 초기화 실패: {str(e)}"
+        )
+
+
 # ==================== 워크플로우 설계 (workflow_designer) ====================
 
 # 활성 설계 세션 관리 (메모리)

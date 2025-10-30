@@ -59,8 +59,8 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className={`overflow-y-auto scroll-smooth ${className}`}
-        style={{ maxHeight }}
+        className="overflow-y-auto scroll-smooth"
+        style={{ height: maxHeight, maxHeight }}
       >
         {/* 자동 스크롤 비활성화 알림 (스크롤 컨테이너 내부 상단에 sticky) */}
         {!autoScroll && (
@@ -71,7 +71,9 @@ export const AutoScrollContainer: React.FC<AutoScrollContainerProps> = ({
           </div>
         )}
 
-        {children}
+        <div className={className}>
+          {children}
+        </div>
       </div>
 
       {/* 맨 아래로 버튼 (컨테이너 외부 우측 하단) */}

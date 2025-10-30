@@ -753,6 +753,25 @@ export async function deleteWorkflowSession(sessionId: string): Promise<void> {
 }
 
 /**
+ * 모든 노드 세션 초기화
+ */
+export async function clearNodeSessions(): Promise<{
+  message: string
+  deleted_sessions: number
+}> {
+  const response = await fetch(`${API_BASE}/workflows/clear-node-sessions`, {
+    method: "POST",
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return response.json()
+}
+
+/**
  * 프로젝트 세션 데이터 비우기
  */
 export async function clearProjectSessions(): Promise<{

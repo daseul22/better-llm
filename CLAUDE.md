@@ -1094,6 +1094,133 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 - **해결**: `model_dump(mode='json', exclude_none=False)` 사용
 - **파일**: `projects.py:235`
 
+### fix: 노드별 세션 유지 기능 구현 (완료)
+- **날짜**: 2025-10-30 17:40 (Asia/Seoul)
+- **버그 수정** (2025-10-30 17:45):
+  - **문제**: `NameError: name 'session_id' is not defined` 발생
+  - **원인**: 파라미터를 `resume_session_id`로 변경했지만 로그에서 `session_id` 참조
+  - **해결**: `sdk_executor.py:614` 라인 수정 (`session_id` → `resume_session_id`)
+  - **테스트**: 구문 검사 통과
+- **문제**: 워크플로우 재실행 시 각 노드가 이전 대화 컨텍스트를 유지하지 못함
+- **시도 1**: 노드 ID를 세션 ID로 직접 사용
+  - **결과**: ❌ `Exception: Control request timeout: initialize` 발생
+  - **원인**: `resume` 파라미터는 SDK가 생성한 실제 세션 ID가 필요함
+- **해결 방법**: 첫 실행과 재개를 구분하여 SDK 세션 ID 저장 및 재사용
+  1. **WorkflowExecutor** (`workflow_executor.py:1274-1345`):
+     - `_node_sessions: Dict[str, str]`에 노드ID → SDK세션ID 매핑 저장
+     - 첫 실행: 이전 세션 ID 없음 → 새로 생성 → SDK 세션 ID 저장
+     - 이후 실행: 저장된 SDK 세션 ID로 `resume_session_id` 전달
+  2. **WorkerAgent** (`worker_client.py:206-285`):
+     - `resume_session_id` 파라미터 추가
+     - SDK Executor에 전달 및 실행 후 세션 ID 반환
+  3. **SDKExecutor** (`sdk_executor.py:594-667`):
+     - `resume_session_id`가 있으면 `ClaudeAgentOptions(resume=...)`로 이전 세션 재개
+     - 없으면 새 세션 시작
+     - 첫 응답에서 `response.session_id` 추출하여 `last_session_id`에 저장
+- **구현 흐름**:
+  ```python
+  # 첫 실행
+  WorkflowExecutor: _node_sessions에 노드 ID 확인 → None
+    → WorkerAgent: resume_session_id=None 전달
+      → SDKExecutor: 새 세션 시작, response.session_id 추출
+        → last_session_id 저장
+    → WorkflowExecutor: SDK 세션 ID를 _node_sessions에 저장
+
+  # 이후 실행 (재개)
+  WorkflowExecutor: _node_sessions에서 SDK 세션 ID 조회
+    → WorkerAgent: resume_session_id=<SDK세션ID> 전달
+      → SDKExecutor: ClaudeAgentOptions(resume=...) 사용
+        → 이전 대화 컨텍스트 유지
+  ```
+- **파일**:
+  - `src/presentation/web/services/workflow_executor.py:1274-1345`
+  - `src/infrastructure/claude/worker_client.py:206-285`
+  - `src/infrastructure/claude/sdk_executor.py:594-667`
+- **영향범위**: 노드별 세션 유지, 워크플로우 재실행 시 컨텍스트 연속성
+- **기대효과**:
+  - 같은 노드를 여러 번 실행해도 이전 대화 기억
+  - 워크플로우 재실행 시 각 노드가 이전 컨텍스트 유지
+  - 불필요한 컨텍스트 반복 전달 방지 → 토큰 절약
+- **테스트**: 구문 검사 통과
+- **주의**: 서버 재시작 시 메모리 기반 세션 저장소 초기화됨
+- **참고**: [Claude Agent SDK Python 문서](https://docs.claude.com/en/api/agent-sdk/python)
+
+### feat: 로그 섹션 자동 스크롤 기능 추가 (완료)
+- **날짜**: 2025-10-30 17:20 (Asia/Seoul)
+- **목적**: 로그가 업데이트될 때마다 자동으로 맨 아래로 스크롤하여 최신 로그 확인 용이
+- **구현**:
+  - 기존 `AutoScrollContainer` 컴포넌트 활용
+  - Worker 노드와 Input 노드 설정 패널의 3개 로그 섹션에 적용
+    * 📥 입력 섹션
+    * 🔧 실행 과정 섹션
+    * 📤 출력 섹션
+  - `dependency` prop으로 로그 개수 전달 → 로그 추가 시 자동 스크롤
+- **특징**:
+  - 사용자가 수동으로 스크롤하면 자동 스크롤 일시 중지
+  - 맨 아래에서 50px 이내이면 자동 스크롤 재활성화
+  - "자동 스크롤 일시 중지됨" 알림 표시
+  - "맨 아래로" 버튼으로 수동 스크롤
+- **버그 수정** (2025-10-30 17:25):
+  - **문제**: 컨테이너 높이가 고정되지 않아 무한정 늘어나서 자동 스크롤 미작동
+  - **원인**: `maxHeight`만 설정하면 내용이 적을 때 컨테이너가 줄어듦
+  - **해결**: `height: maxHeight`로 고정 + padding을 내부 div로 분리
+    ```tsx
+    // 이전 (높이 가변)
+    <div className="overflow-y-auto p-3" style={{ maxHeight }}>
+      {children}
+    </div>
+
+    // 이후 (높이 고정)
+    <div className="overflow-y-auto" style={{ height: maxHeight, maxHeight }}>
+      <div className="p-3">
+        {children}
+      </div>
+    </div>
+    ```
+- **파일**:
+  - `src/presentation/web/frontend/src/components/node-config/WorkerNodeConfig.tsx` (입력/실행/출력 섹션)
+  - `src/presentation/web/frontend/src/components/node-config/InputNodeConfig.tsx` (입력/실행/출력 섹션)
+  - `src/presentation/web/frontend/src/components/AutoScrollContainer.tsx` (높이 고정 로직 개선)
+- **영향범위**: UX 개선, 로그 모니터링 편의성 향상
+- **테스트**: 프론트엔드 빌드 통과
+
+### fix: ClaudeSDKClient API 호환성 수정 (완료)
+- **날짜**: 2025-10-30 17:12 (Asia/Seoul)
+- **문제**:
+  1. `TypeError: ClaudeSDKClient.query() got an unexpected keyword argument 'options'`
+  2. `CLIConnectionError: Not connected. Call connect() first.`
+- **원인**: Claude Agent SDK API 변경
+  - `options`는 `query()` 메서드가 아닌 **생성자**에 전달해야 함
+  - `query()` 메서드는 `prompt`와 `session_id`만 받음
+  - 응답은 `receive_response()`로 수신해야 함
+  - **Context manager로 사용해야 함** (`async with`)
+- **해결**:
+  - **이전 (잘못된 사용법)**:
+    ```python
+    client = ClaudeSDKClient()
+    async for response in client.query(
+        prompt=prompt,
+        options=ClaudeAgentOptions(**options_dict),  # ❌
+        session_id=session_id
+    ):
+    ```
+  - **중간 시도 (부분적으로 잘못됨)**:
+    ```python
+    client = ClaudeSDKClient(options=ClaudeAgentOptions(**options_dict))
+    await client.query(prompt=prompt, session_id=session_id)  # ❌ connect() 필요
+    async for response in client.receive_response():
+    ```
+  - **이후 (올바른 사용법)**:
+    ```python
+    async with ClaudeSDKClient(options=ClaudeAgentOptions(**options_dict)) as client:  # ✅
+        await client.query(prompt=prompt, session_id=session_id)
+        async for response in client.receive_response():  # ✅
+    ```
+- **파일**: `src/infrastructure/claude/sdk_executor.py:634-676`
+- **영향범위**: Worker Agent 실행, SDK 호환성, 연결 관리
+- **참고**: [Claude Agent SDK Python 문서](https://docs.claude.com/en/api/agent-sdk/python)
+- **테스트**: 구문 검사 통과
+
 ### 커스텀 워커 지원 (이전)
 - **문제**: 커스텀 워커 노드 실행 시 "Agent를 찾을 수 없습니다" 에러
 - **해결**: WorkflowExecutor에서 프로젝트 경로 기반 커스텀 워커 자동 로드
