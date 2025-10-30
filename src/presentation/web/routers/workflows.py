@@ -782,7 +782,28 @@ async def continue_node_conversation(
         # 노드의 이전 세션 ID 확인
         previous_session_id = executor._node_sessions.get(node_id)
         if not previous_session_id:
-            raise ValueError(f"노드 {node_id}의 이전 세션을 찾을 수 없습니다. 먼저 워크플로우를 실행해주세요.")
+            # 저장된 세션 목록 확인
+            available_sessions = list(executor._node_sessions.keys())
+            agent_name = executor._node_agent_names.get(node_id, "알 수 없음")
+
+            # 상세한 에러 메시지
+            error_msg = (
+                f"❌ 노드 '{node_id}' ({agent_name})의 세션을 찾을 수 없습니다.\n\n"
+                "💡 가능한 원인:\n"
+                "1. 워크플로우를 아직 실행하지 않았습니다\n"
+                "2. 서버를 재시작하여 세션이 초기화되었습니다\n"
+                "3. 노드 실행 중 에러가 발생하여 세션이 저장되지 않았습니다\n\n"
+                f"📝 현재 저장된 세션: {len(available_sessions)}개\n"
+            )
+
+            if available_sessions:
+                error_msg += f"   - 사용 가능한 노드: {', '.join(available_sessions[:5])}"
+                if len(available_sessions) > 5:
+                    error_msg += f" 외 {len(available_sessions) - 5}개"
+            else:
+                error_msg += "   - 저장된 세션이 없습니다. 먼저 워크플로우를 실행해주세요."
+
+            raise ValueError(error_msg)
 
         logger.info(f"노드 {node_id} 재실행 (이전 세션: {previous_session_id[:8]}...)")
 

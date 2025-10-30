@@ -1460,25 +1460,23 @@ class WorkflowExecutor:
                 # Worker에서 반환된 실제 SDK 세션 ID 저장
                 if worker.last_session_id:
                     self._node_sessions[node_id] = worker.last_session_id
+                    self._node_agent_names[node_id] = agent_name  # agent_name도 함께 저장
                     logger.info(
-                        f"[{session_id}] 노드 세션 저장: {node_id} → "
+                        f"[{session_id}] ✓ 노드 세션 저장 완료: {node_id} ({agent_name}) → "
                         f"SDK 세션 {worker.last_session_id[:8]}... "
-                        "(다음 실행에서 컨텍스트 재활용)"
+                        f"(총 {len(self._node_sessions)}개 노드, 다음 실행에서 컨텍스트 재활용)"
                     )
                 else:
-                    logger.warning(
-                        f"[{session_id}] 노드 {node_id}: SDK 세션 ID를 받지 못함"
+                    logger.error(
+                        f"[{session_id}] ❌ 노드 {node_id}의 세션 ID를 저장할 수 없습니다! "
+                        f"Worker에서 last_session_id가 None입니다. "
+                        "추가 프롬프트 기능을 사용할 수 없습니다."
                     )
 
-                # 노드의 agent_name 저장 (주도적 대화에서 사용)
-                self._node_agent_names[node_id] = agent_name
-                logger.info(
-                    f"[{session_id}] 노드 정보 저장 완료:\n"
-                    f"  - node_id: {node_id}\n"
-                    f"  - agent_name: {agent_name}\n"
-                    f"  - SDK 세션: {worker.last_session_id[:8] if worker.last_session_id else 'None'}...\n"
-                    f"  - 총 저장된 노드: {len(self._node_sessions)}개"
-                )
+                # agent_name은 세션 ID와 별도로 항상 저장 (세션 없어도 저장)
+                if not worker.last_session_id:
+                    # 세션 ID가 없어도 agent_name은 저장 (에러 메시지 개선용)
+                    self._node_agent_names[node_id] = agent_name
 
 
                 elapsed_time = time.time() - start_time

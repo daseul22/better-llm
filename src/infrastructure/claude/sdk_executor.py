@@ -712,11 +712,17 @@ class WorkerSDKExecutor:
                         )
 
                         # 첫 응답에서 실제 SDK 세션 ID 추출 (session_id 필드가 있으면)
-                        if chunk_count == 1 and hasattr(response, 'session_id'):
-                            self.last_session_id = response.session_id
-                            self.logger.info(
-                                f"[{self.worker_name}] SDK 세션 ID 감지: {self.last_session_id[:8]}..."
-                            )
+                        if chunk_count == 1:
+                            if hasattr(response, 'session_id') and response.session_id:
+                                self.last_session_id = response.session_id
+                                self.logger.info(
+                                    f"[{self.worker_name}] ✓ SDK 세션 ID 저장 성공: {self.last_session_id[:8]}..."
+                                )
+                            else:
+                                self.logger.warning(
+                                    f"[{self.worker_name}] ⚠️ 첫 응답에 session_id가 없습니다. "
+                                    "추가 프롬프트 기능을 사용할 수 없습니다."
+                                )
 
                         # 응답 처리하면서 텍스트 수집
                         async for text in self.response_handler.process_response(response):

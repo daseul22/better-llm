@@ -287,8 +287,13 @@ Use your thinking process liberally throughout your response to show your reason
             self.last_session_id = executor.last_session_id
             if self.last_session_id:
                 logger.info(
-                    f"[{self.config.name}] SDK 세션 ID 저장: {self.last_session_id[:8]}... "
+                    f"[{self.config.name}] ✓ Worker 세션 ID 저장 완료: {self.last_session_id[:8]}... "
                     "(다음 실행에서 resume으로 재활용)"
+                )
+            else:
+                logger.warning(
+                    f"[{self.config.name}] ⚠️ SDK 세션 ID를 가져올 수 없습니다. "
+                    "추가 프롬프트 기능이 동작하지 않을 수 있습니다."
                 )
 
             # Worker 실행 완료 표시
