@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Agent, getAgents, getCustomWorkers, getCurrentProject, CustomWorkerInfo, loadDisplayConfig, saveDisplayConfig } from '@/lib/api'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from '@/lib/api'
-import { Plus, Target, Zap, ChevronDown, ChevronUp, GitBranch, RotateCw, Merge, Wand2, Loader2 } from 'lucide-react'
+import { Plus, Target, Zap, ChevronDown, ChevronUp, GitBranch, Merge, Wand2, Loader2 } from 'lucide-react'
 import { CustomWorkerCreateModal } from './CustomWorkerCreateModal'
 import { WorkflowDesignerModal } from './WorkflowDesignerModal'
 

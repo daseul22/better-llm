@@ -22,18 +22,20 @@ export interface NodeExecutionMeta {
   error?: string
 }
 
+export interface LogItem {
+  nodeId: string
+  type: 'start' | 'input' | 'execution' | 'output' | 'complete' | 'error'
+  message: string
+  timestamp: number
+}
+
 interface WorkflowExecutionState {
   isExecuting: boolean
   currentNodeId: string | null
   nodeOutputs: Record<string, string>
   nodeInputs: Record<string, string>  // 노드별 입력 (디버깅용)
   nodeMeta: Record<string, NodeExecutionMeta>
-  logs: Array<{
-    nodeId: string
-    type: 'start' | 'input' | 'execution' | 'output' | 'complete' | 'error'
-    message: string
-    timestamp: number
-  }>
+  logs: LogItem[]
   totalTokenUsage: {
     input_tokens: number
     output_tokens: number

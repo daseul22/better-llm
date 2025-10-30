@@ -1,6 +1,7 @@
 import { X, Maximize2 } from 'lucide-react'
 import { LogItem } from '@/stores/workflowStore'
 import { ParsedContent } from './ParsedContent'
+import { AutoScrollContainer } from './AutoScrollContainer'
 
 interface NodeLogSection {
   nodeId: string
@@ -51,7 +52,7 @@ export function LogDetailModal({ isOpen, onClose, sections, title = "실행 로�
             </div>
           ) : singleSection ? (
             // 단일 노드: 전체 화면
-            <div className="h-full overflow-y-auto p-4 bg-gray-50">
+            <div className="h-full p-4 bg-gray-50">
               <LogSection section={sections[0]} />
             </div>
           ) : (
@@ -106,27 +107,102 @@ function LogSection({ section }: { section: NodeLogSection }) {
           <>
             {/* 입력 섹션 */}
             {inputLogs.length > 0 && (
-              <LogTypeSection title="📥 입력" logs={inputLogs} bgColor="bg-blue-50" borderColor="border-blue-200" />
+              <div className="border rounded-md overflow-hidden">
+                <div className="bg-blue-50 px-3 py-2 border-b border-blue-200">
+                  <h4 className="text-sm font-semibold text-blue-900">📥 입력</h4>
+                </div>
+                <AutoScrollContainer
+                  className="p-3"
+                  maxHeight="200px"
+                  dependency={inputLogs.length}
+                >
+                  <div className="space-y-2">
+                    {inputLogs.map((log, idx) => (
+                      <LogItemComponent key={idx} log={log} />
+                    ))}
+                  </div>
+                </AutoScrollContainer>
+              </div>
             )}
 
             {/* 실행 과정 섹션 */}
             {executionLogs.length > 0 && (
-              <LogTypeSection title="🔧 실행 과정" logs={executionLogs} bgColor="bg-purple-50" borderColor="border-purple-200" />
+              <div className="border rounded-md overflow-hidden">
+                <div className="bg-purple-50 px-3 py-2 border-b border-purple-200">
+                  <h4 className="text-sm font-semibold text-purple-900">🔧 실행 과정</h4>
+                </div>
+                <AutoScrollContainer
+                  className="p-3"
+                  maxHeight="300px"
+                  dependency={executionLogs.length}
+                >
+                  <div className="space-y-2">
+                    {executionLogs.map((log, idx) => (
+                      <LogItemComponent key={idx} log={log} />
+                    ))}
+                  </div>
+                </AutoScrollContainer>
+              </div>
             )}
 
             {/* 출력 섹션 */}
             {outputLogs.length > 0 && (
-              <LogTypeSection title="📤 출력" logs={outputLogs} bgColor="bg-green-50" borderColor="border-green-200" />
+              <div className="border rounded-md overflow-hidden">
+                <div className="bg-green-50 px-3 py-2 border-b border-green-200">
+                  <h4 className="text-sm font-semibold text-green-900">📤 출력</h4>
+                </div>
+                <AutoScrollContainer
+                  className="p-3"
+                  maxHeight="300px"
+                  dependency={outputLogs.length}
+                >
+                  <div className="space-y-2">
+                    {outputLogs.map((log, idx) => (
+                      <LogItemComponent key={idx} log={log} />
+                    ))}
+                  </div>
+                </AutoScrollContainer>
+              </div>
             )}
 
             {/* 에러 섹션 */}
             {errorLogs.length > 0 && (
-              <LogTypeSection title="❌ 에러" logs={errorLogs} bgColor="bg-red-50" borderColor="border-red-200" />
+              <div className="border rounded-md overflow-hidden">
+                <div className="bg-red-50 px-3 py-2 border-b border-red-200">
+                  <h4 className="text-sm font-semibold text-red-900">❌ 에러</h4>
+                </div>
+                <AutoScrollContainer
+                  className="p-3"
+                  maxHeight="250px"
+                  dependency={errorLogs.length}
+                >
+                  <div className="space-y-2">
+                    {errorLogs.map((log, idx) => (
+                      <LogItemComponent key={idx} log={log} />
+                    ))}
+                  </div>
+                </AutoScrollContainer>
+              </div>
             )}
 
             {/* 기타 로그 */}
             {otherLogs.length > 0 && (
-              <LogTypeSection title="📝 기타" logs={otherLogs} bgColor="bg-gray-50" borderColor="border-gray-200" />
+              <div className="border rounded-md overflow-hidden">
+                <div className="bg-gray-50 px-3 py-2 border-b border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900">📝 기타</h4>
+                </div>
+                <AutoScrollContainer
+                  className="p-3"
+                  maxHeight="200px"
+                  dependency={otherLogs.length}
+                >
+                  <div className="space-y-2">
+                    {otherLogs.map((log, idx) => (
+                      <LogItemComponent key={idx} log={log} />
+                    ))}
+                  </div>
+                </AutoScrollContainer>
+              </div>
             )}
           </>
         )}
@@ -135,20 +211,13 @@ function LogSection({ section }: { section: NodeLogSection }) {
   )
 }
 
-function LogTypeSection({ title, logs, bgColor, borderColor }: { title: string; logs: LogItem[]; bgColor: string; borderColor: string }) {
+function LogItemComponent({ log }: { log: LogItem }) {
   return (
-    <div className={`${bgColor} rounded-lg p-3 border ${borderColor}`}>
-      <h4 className="text-sm font-semibold text-gray-900 mb-3">{title}</h4>
-      <div className="space-y-2">
-        {logs.map((log, idx) => (
-          <div key={idx} className="bg-white rounded p-2 border border-gray-200 shadow-sm">
-            <div className="text-xs text-gray-500 mb-1">
-              {new Date(log.timestamp).toLocaleString()}
-            </div>
-            <ParsedContent content={log.message} />
-          </div>
-        ))}
+    <div className="bg-white rounded p-2 border border-gray-200 shadow-sm">
+      <div className="text-xs text-gray-500 mb-1">
+        {new Date(log.timestamp).toLocaleString()}
       </div>
+      <ParsedContent content={log.message} />
     </div>
   )
 }
