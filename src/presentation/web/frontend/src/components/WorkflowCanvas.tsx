@@ -374,7 +374,7 @@ export const WorkflowCanvas: React.FC = () => {
         <MiniMap />
 
         {/* 자동 레이아웃 버튼 */}
-        <Panel position="top-right" className="flex gap-2">
+        <Panel position="bottom-right" className="flex gap-2">
           <button
             onClick={() => autoLayout('COMPACT')}
             disabled={storeNodes.length === 0}
@@ -382,22 +382,6 @@ export const WorkflowCanvas: React.FC = () => {
             title="작은 화면에 최적화 (컴팩트 배치)"
           >
             📱 컴팩트
-          </button>
-          <button
-            onClick={() => autoLayout('TB')}
-            disabled={storeNodes.length === 0}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md transition-colors text-sm font-medium"
-            title="위에서 아래로 정렬 (세로 배치)"
-          >
-            ⬇️ 세로
-          </button>
-          <button
-            onClick={() => autoLayout('LR')}
-            disabled={storeNodes.length === 0}
-            className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md transition-colors text-sm font-medium"
-            title="왼쪽에서 오른쪽으로 정렬 (가로 배치)"
-          >
-            ➡️ 가로
           </button>
         </Panel>
       </ReactFlow>
