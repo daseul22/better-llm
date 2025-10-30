@@ -2,1333 +2,338 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
----
+## Project Overview
 
-## 프로젝트 개요
+**Claude Flow** (formerly Better-LLM) is a group chat orchestration system based on the Manager-Worker pattern.
+The Manager Agent coordinates specialized Worker Agents (Planner, Coder, Reviewer, Tester, etc.) to automate complex software development tasks.
 
-**워크플로우 기반 AI 개발 자동화 시스템 (Clean Architecture)** - 전문화된 Worker Agent들을 노드로 연결하여 복잡한 소프트웨어 개발 작업을 자동화하는 시스템입니다.
+**Core Components:**
+- **Manager Agent**: Orchestrates workflow and manages Worker execution
+- **Worker Agents**: Specialized for specific tasks (planning, coding, review, testing, etc.)
+- **Web UI**: React-based drag-and-drop workflow canvas
 
-### 핵심 개념
+## Architecture
 
-#### 워크플로우 노드 시스템 (Web UI)
-```
-Input 노드 → Feature Planner → Backend Coder → Security Reviewer → Unit Tester → Committer
-```
-
-**특징**:
-- 각 Worker는 독립적인 노드로 실행
-- 노드 간 연결로 데이터 전달 (이전 노드의 **전체 출력** → 다음 노드 입력)
-- 드래그 앤 드롭으로 워크플로우 구성
-
-#### Clean Architecture (4계층)
-```
-Presentation (Web UI) → Application (Use Cases, Ports)
-    → Domain (Models, Services) ← Infrastructure (Claude SDK, MCP, Storage)
-```
-
-**의존성 규칙**: 외부 계층 → 내부 계층만 의존. 내부는 외부를 모름.
-
----
-
-## 빠른 시작
-
-### 설치 및 실행
-
-```bash
-# 설치 (개발 모드)
-pipx install -e .
-
-# 환경변수 설정 (필수)
-export CLAUDE_CODE_OAUTH_TOKEN='your-token-here'
-
-# Web UI 실행
-claude-flow-web
-# → http://localhost:5173
-```
-
----
-
-## 핵심 개발 명령어
-
-### 코드 검증
-
-```bash
-# 구문 검사 (코드 변경 후 필수)
-find src -name "*.py" -type f | xargs python3 -m py_compile
-
-# 특정 파일만
-python3 -m py_compile src/infrastructure/claude/worker_client.py
-
-# 린트 및 포맷
-ruff check src/
-black src/
-```
-
-### 테스트
-
-```bash
-# 전체 테스트
-pytest
-
-# 특정 디렉토리
-pytest tests/unit/ -v
-pytest tests/integration/ -v
-
-# 커버리지
-pytest --cov=src --cov-report=html
-```
-
-### 개발 의존성 설치
-
-```bash
-# 처음 한 번만 (pytest, black, ruff 등)
-pipx inject claude-flow pytest pytest-asyncio black ruff
-```
-
----
-
-## 아키텍처
-
-### Clean Architecture 계층 구조
+### Clean Architecture + Hexagonal Architecture
 
 ```
 src/
-├── domain/                    # 순수 Python, 외부 의존성 없음
-│   ├── models/               # Message, AgentConfig, Task, SessionResult
-│   ├── services/             # ConversationHistory, ProjectContext
-│   └── agents/               # BaseAgent (인터페이스)
+├── domain/           # Core business logic (no dependencies)
+│   ├── models/      # Domain entities (Message, Session, AgentConfig, etc.)
+│   ├── services/    # Domain services (Context, Conversation, etc.)
+│   ├── interfaces/  # Interface definitions (Use Cases)
+│   └── errors/      # Domain exceptions
 │
-├── application/               # Use Cases 및 의존성 역전
-│   └── ports/                # IAgentClient, IConfigLoader, ISessionRepository
+├── application/      # Application logic
+│   ├── use_cases/   # Use Case implementations (ExecutePlannerUseCase, etc.)
+│   ├── ports/       # Port interfaces (IAgentClient, IConfigPort, etc.)
+│   ├── resilience/  # Circuit Breaker, Retry Policy
+│   └── validation/  # Input validation
 │
-├── infrastructure/            # 외부 의존성 구현
-│   ├── claude/               # Manager/Worker Agent 클라이언트
-│   ├── mcp/                  # Worker Tools MCP Server
-│   ├── storage/              # JSON/SQLite 저장소
-│   └── config/               # 설정 로더, 환경 검증
+├── infrastructure/   # External adapter implementations
+│   ├── claude/      # Claude SDK integration (WorkerAgent)
+│   ├── storage/     # SQLite repositories
+│   ├── config/      # Configuration loaders
+│   └── mcp/         # MCP callback handlers
 │
-└── presentation/              # UI
-    └── web/                  # Web UI (FastAPI + React)
+└── presentation/     # Interface layer
+    ├── web/         # FastAPI web server + React UI
+    └── cli/         # CLI (planned)
 ```
 
-### 주요 설정 파일
+### Key Concepts
 
-```
-config/
-├── agent_config.json         # Worker Agent 설정 (name, role, tools, model)
-└── system_config.json        # 시스템 설정 (max_turns, hooks, permission)
+1. **Dependency Inversion Principle (DIP)**
+   - Application layer only uses port interfaces
+   - Infrastructure layer implements ports as adapters
 
-prompts/                       # Worker Agent 시스템 프롬프트
+2. **Use Case Factory**
+   - Located at `src/application/use_cases/use_case_factory.py`
+   - Centrally manages dependency injection and Use Case instance creation
+   - Loose coupling through Worker Client Factory
 
-# 계획 특화 (Planner)
-├── feature_planner.txt       # 신규 기능 계획 (read, glob, grep) - 계획형
-├── refactoring_planner.txt   # 리팩토링 계획 (read, glob, grep) - 계획형
-├── bug_fix_planner.txt       # 버그 수정 계획 (read, glob, grep) - 계획형
-├── api_planner.txt           # API 설계 계획 (read, glob, grep) - 계획형
-├── database_planner.txt      # DB 스키마 설계 (read, glob, grep) - 계획형
-├── product_manager.txt       # 제품 기획 (read, glob, grep) - 계획형
-├── ideator.txt               # 아이디어 생성 (read, glob) - 계획형
+3. **Worker Agent Adapter**
+   - Located at `src/infrastructure/claude/worker_agent_adapter.py`
+   - Adapts Claude SDK's `WorkerAgent` to `IAgentClient` interface
 
-# 코드 작성 특화 (Coder)
-├── frontend_coder.txt        # 프론트엔드 (React/TS) (read, write, edit, glob, grep) - 실행형
-├── backend_coder.txt         # 백엔드 (Python/FastAPI) (read, write, edit, glob, grep) - 실행형
-├── test_coder.txt            # 테스트 코드 작성 (read, write, edit, glob, grep) - 실행형
-├── infrastructure_coder.txt  # 인프라/설정 (read, write, edit, glob, grep) - 실행형
-├── database_coder.txt        # DB 마이그레이션/SQL (read, write, edit, glob, grep) - 실행형
+## Development Setup
 
-# 리뷰 특화 (Reviewer)
-├── style_reviewer.txt        # 스타일 리뷰 (read, glob, grep) - 분석형
-├── security_reviewer.txt     # 보안 리뷰 (read, glob, grep) - 분석형
-├── architecture_reviewer.txt # 아키텍처 리뷰 (read, glob, grep) - 분석형
+### 1. Prerequisites
 
-# 테스트 실행 특화 (Tester)
-├── unit_tester.txt           # 단위 테스트 실행 (read, bash, glob, grep) - 실행형
-├── integration_tester.txt    # 통합 테스트 실행 (read, bash, glob, grep) - 실행형
-├── e2e_tester.txt            # E2E 테스트 실행 (read, bash, glob, grep) - 실행형
-├── performance_tester.txt    # 성능 테스트 실행 (read, bash, glob, grep) - 실행형
+- Python 3.10 or higher
+- Node.js (for Web UI build)
+- Claude Code OAuth Token
+- Claude CLI path
 
-# 기타 특화
-├── bug_fixer.txt             # 버그 수정 (read, write, edit, bash, grep) - 실행형
-├── committer.txt             # Git 커밋 (bash, read) - 실행형
-├── documenter.txt            # 문서화 (read, write, edit, glob, bash) - 실행형
-├── log_analyzer.txt          # 로그 분석 (read, bash, glob, grep) - 분석형
-├── summarizer.txt            # 텍스트 요약 (read, glob) - 분석형
-├── worker_prompt_engineer.txt # 커스텀 워커 프롬프트 생성 (read, glob)
-├── workflow_designer.txt     # 워크플로우 자동 설계 (read, glob, grep)
-└── local.txt                 # 범용 AI 어시스턴트 (빈 파일, 유저/프로젝트 설정만 사용)
+### 2. Installation (Automated Setup Script)
+
+```bash
+# Global installation using pipx (recommended)
+./setup.sh
+
+# Choose installation mode:
+# 1) Normal mode (production use)
+# 2) Development mode (editable install, changes reflected immediately)
 ```
 
-### Worker 출력 형식 표준화
+### 3. Environment Variables
 
-**모든 Worker는 표준화된 출력 형식을 사용합니다** (Markdown + JSON):
+Copy `.env.example` to `.env` and set required values:
 
-#### 3가지 출력 형식
+```bash
+# Required
+CLAUDE_CODE_OAUTH_TOKEN="your-token-here"
+CLAUDE_CLI_PATH="/path/to/claude"
 
-| 형식 | Worker 예시 | 특징 |
-|------|-------------|------|
-| **계획형** (Planning) | Feature Planner, API Planner, Product Manager, Ideator | 계획/아이디어 제시, 다음 단계 제안 |
-| **분석형** (Analysis) | Security Reviewer, Style Reviewer, Log Analyzer | 분석/평가 결과, 승인 여부, 점수 |
-| **실행형** (Execution) | Frontend Coder, Backend Coder, Unit Tester, Bug Fixer, Committer | 작업 수행 결과, 파일 변경, 상태 |
-
-#### 표준 출력 구조
-
-모든 Worker는 다음 구조를 따릅니다:
-
-```markdown
-# [작업] 결과
-
-## 📋 요약
-[한 줄 요약]
-
-## 🔍 [작업명] 개요
-[상세 정보]
-
-## [작업 내용 섹션들]
-...
-
-## ✅ 최종 평가
-- **승인 여부** / **상태**: ✅ 성공 / ❌ 실패
-- **종합 의견**: [평가]
-- **추천 조치**: [다음 단계]
-
-## ➡️ 다음 노드를 위한 데이터
-```json
-{
-  "type": "planning|analysis|execution",
-  "status": "success|warning|critical|failure",
-  "summary": "한 줄 요약",
-  ... (워커별 필드)
-}
-```
+# Optional (defaults exist)
+WORKER_TIMEOUT_PLANNER=300
+WORKER_TIMEOUT_CODER=600
+LOG_LEVEL=INFO
 ```
 
-**JSON 블록의 역할**:
-- 다음 노드가 구조화된 데이터를 쉽게 파싱 가능
-- 워크플로우 자동화 및 조건부 분기 지원
-- 상태(`status`), 승인 여부(`approved`), 점수(`score`) 등 표준 필드 제공
+### 4. Manual Installation (For Developers)
 
-**예시**:
-```json
-// 계획형 (Planner)
-{
-  "type": "planning",
-  "status": "success",
-  "total_tasks": 5,
-  "files_to_modify": ["file1.py", "file2.py"]
-}
+```bash
+# Install Python dependencies
+pip install -e .
 
-// 분석형 (Reviewer)
-{
-  "type": "analysis",
-  "status": "critical",
-  "approved": false,
-  "critical_issues": 2,
-  "recommendations": ["SQL 파라미터화", "에러 처리 개선"]
-}
-
-// 실행형 (Coder)
-{
-  "type": "execution",
-  "status": "success",
-  "operation": "create",
-  "files_created": ["src/new.py"],
-  "quality_score": 8.5
-}
+# Build web frontend
+cd src/presentation/web/frontend
+npm install
+npm run build
 ```
 
----
+## Common Commands
 
-## 워크플로우
+### Run Web UI
 
-### Web UI 워크플로우 (노드 기반 실행)
+```bash
+# Production mode (serves built React app)
+claude-flow-web
 
-**실행 과정**:
-1. **위상 정렬**: 노드 실행 순서 결정
-2. **Input 검증**: Input 노드에서 도달 불가능한 노드는 스킵
-3. **순차 실행**: 각 노드를 순서대로 실행
-4. **데이터 전달**: 노드 출력을 `node_outputs`에 저장 → 다음 노드 템플릿에 변수 치환
+# Or
+python -m src.presentation.web.app
 
-**템플릿 변수**:
-- `{{input}}`: 초기 사용자 입력
-- `{{parent}}`: 직전 부모 노드의 출력
-- `{{node_<id>}}`: 특정 노드의 출력
-
-### 피드백 루프 (Loop 노드)
-
-**Loop 노드를 통한 제어된 피드백 루프를 지원합니다**:
-
-```
-Tester → Condition → Loop (max: 3회) → Bug Fixer → Tester
-         ↓ (통과)
-    Committer
+# Access server at: http://localhost:8000
 ```
 
-**주요 특징**:
-- **제어된 반복**: Loop 노드의 `max_iterations`로 최대 반복 횟수 제한
-- **조건부 탈출**: Condition 노드로 루프 탈출 조건 설정
-- **무한 루프 방지**: Loop 노드 없는 순환은 검증 단계에서 에러 발생
+### Frontend Development
 
-**사용 예시** (테스트 → 버그 수정 → 재테스트):
-1. Tester가 테스트 실행
-2. Condition 노드가 "테스트 통과" 여부 확인
-3. 실패 시: Loop 노드로 → Bug Fixer가 수정 → 다시 Tester로 (최대 3회 반복)
-4. 성공 시: Committer로 진행
+```bash
+cd src/presentation/web/frontend
 
-**검증 규칙**:
-- ✅ **허용**: Loop 노드를 포함한 순환 (제어된 피드백 루프)
-- ❌ **거부**: Loop 노드 없는 순환 (무한 루프)
-- ⚠️ **경고**: `max_iterations` 누락 또는 10 초과
+# Development server (hot reload)
+npm run dev
 
-**구현 위치**: `src/presentation/web/services/workflow_validator.py`
-- `_check_cycles()`: 순환 참조 검사 (Loop 노드를 통한 피드백 루프 허용)
-- `_check_loop_nodes()`: Loop 노드 검증 (max_iterations 확인, 순환 경로 포함 여부)
+# Production build (output: ../static-react/)
+npm run build
 
----
+# TypeScript check + build
+npm run build:check
+```
 
-## 설정 파일
+### Testing
 
-### agent_config.json - Worker 도구 제한
+```bash
+# Run all tests
+pytest
 
-Worker별 도구 제한으로 역할 경계 명확화:
+# With coverage
+pytest --cov=src --cov-report=html
 
-| Worker | 도구 | 역할 |
-|--------|------|------|
-| **계획 특화 (Planner)** |
-| Feature Planner | read, glob, grep | 신규 기능 계획 |
-| Refactoring Planner | read, glob, grep | 리팩토링 계획 |
-| Bug Fix Planner | read, glob, grep | 버그 수정 계획 |
-| API Planner | read, glob, grep | API 설계 계획 |
-| Database Planner | read, glob, grep | DB 스키마 설계 |
-| **코드 작성 특화 (Coder)** |
-| Frontend Coder | read, write, edit, glob, grep | 프론트엔드 개발 |
-| Backend Coder | read, write, edit, glob, grep | 백엔드 개발 |
-| Test Coder | read, write, edit, glob, grep | 테스트 코드 작성 |
-| Infrastructure Coder | read, write, edit, glob, grep | 인프라/설정 |
-| Database Coder | read, write, edit, glob, grep | DB 마이그레이션/SQL |
-| **리뷰 특화 (Reviewer)** |
-| Style Reviewer | read, glob, grep | 코딩 스타일 리뷰 |
-| Security Reviewer | read, glob, grep | 보안 취약점 리뷰 |
-| Architecture Reviewer | read, glob, grep | 아키텍처 리뷰 |
-| **테스트 실행 특화 (Tester)** |
-| Unit Tester | read, bash, glob, grep | 단위 테스트 실행 |
-| Integration Tester | read, bash, glob, grep | 통합 테스트 실행 |
-| E2E Tester | read, bash, glob, grep | E2E 테스트 실행 |
-| Performance Tester | read, bash, glob, grep | 성능 테스트 실행 |
-| **기타** |
-| Committer | bash, read, glob, grep | Git 커밋만 |
-| Worker Prompt Engineer | read, glob | 커스텀 워커 프롬프트 생성 |
-| Workflow Designer | read, glob, grep | 워크플로우 설계 및 생성 |
-| Local | read, write, edit, bash, glob, grep | 범용 AI 어시스턴트 (유저/프로젝트 설정만 사용) |
+# Specific test file
+pytest tests/unit/domain/models/test_task.py
 
-### system_config.json - 주요 설정
+# Specific test function
+pytest tests/unit/domain/models/test_task.py::test_task_creation
+```
+
+### Code Quality
+
+```bash
+# Black formatter
+black src/ tests/
+
+# Ruff linter
+ruff check src/ tests/
+
+# Type checking (if mypy configured)
+# mypy src/
+```
+
+## Configuration Files
+
+### config/system_config.json
+
+System-wide configuration:
 
 ```json
 {
   "manager": {
-    "max_history_messages": 20,      // 슬라이딩 윈도우
+    "model": "claude-sonnet-4-5-20250929",
     "max_turns": 10
   },
-  "performance": {
-    "worker_retry_max_attempts": 3
+  "timeouts": {
+    "planner_timeout": 1200,
+    "coder_timeout": 1200
+  },
+  "workflow_limits": {
+    "max_review_iterations": 3
   },
   "permission": {
-    "mode": "acceptEdits"             // acceptEdits | default | bypassPermissions
+    "mode": "bypassPermissions"  // Test environments only!
   }
 }
 ```
 
-**Permission Mode 변경**:
-```bash
-export PERMISSION_MODE=acceptEdits  # 환경변수가 설정 파일보다 우선
+### config/agent_config.json
+
+Worker Agent configuration:
+
+```json
+{
+  "planner": {
+    "agent_type": "planner",
+    "prompt_path": "prompts/feature_planner.txt",
+    "model": "claude-sonnet-4-5-20250929"
+  }
+}
 ```
 
-### .context.json - 프로젝트 컨텍스트
+## Key Workflows
 
-Worker Agent 초기화 시 자동 로드:
-- `project_name`, `architecture`
-- `key_files`: entry_points, domain, infrastructure
-- `coding_style`: docstring, type hints, line length
+### Worker Execution Flow
 
----
+1. **Use Case Factory** creates Worker Client
+2. **Use Case** (`ExecutePlannerUseCase`, etc.) executes Worker
+3. **Worker Agent Adapter** calls Claude SDK
+4. **MCP Callback Handler** monitors execution
+5. **Results saved** (SQLite)
 
-## 디버깅
+### Web UI Workflow
 
-### 로그 확인
+1. User drags and drops nodes in React UI
+2. Workflow submitted to FastAPI backend
+3. Manager Agent executes workflow
+4. Real-time log streaming via SSE
+5. Results displayed in frontend
 
-```bash
-# 실시간 모니터링
-tail -f ~/.claude-flow/{project-name}/logs/claude-flow.log
+## Important File Locations
 
-# 에러만
-tail -50 ~/.claude-flow/{project-name}/logs/claude-flow-error.log
+### Worker Agent Execution
 
-# 상세 로깅 활성화
-export LOG_LEVEL=DEBUG
-export WORKER_DEBUG_INFO=true
-```
+- `src/infrastructure/claude/worker_client.py` - WorkerAgent implementation
+- `src/infrastructure/claude/worker_agent_adapter.py` - IAgentClient adapter
+- `src/application/use_cases/execute_*_use_case.py` - Worker Use Cases
 
-### 세션 및 워크플로우 검증
+### Web API
 
-```bash
-# 세션 확인
-ls -la ~/.claude-flow/{project-name}/sessions/
-cat ~/.claude-flow/{project-name}/sessions/{session-id}.json
+- `src/presentation/web/app.py` - FastAPI app
+- `src/presentation/web/routers/workflows_router.py` - Workflow API
+- `src/presentation/web/services/workflow_service.py` - Workflow execution service
 
-# Web UI에서:
-# - 워크플로우 저장 시 자동 검증 (순환 참조, 노드 연결)
-# - SSE로 실시간 출력 스트리밍
-# - 새로고침 후 세션 자동 복원
-```
+### Configuration & Storage
 
----
+- `src/infrastructure/config/loader.py` - JSON config loader
+- `src/infrastructure/storage/sqlite_session_repository.py` - Session repository
+- `src/infrastructure/storage/optimized_session_storage.py` - Optimized session storage
 
-## 중요한 제약사항
+## Development Guidelines
 
-### Web 워크플로우
-
-- **Input 노드 필수**: Input에서 도달 불가능한 노드는 실행 안 됨
-- **순환 참조 금지**: 사이클 있으면 위상 정렬 실패
-- **변수 치환**: 존재하지 않는 변수는 빈 문자열로 대체
-
-### 일반
-
-1. **환경변수 필수**: `CLAUDE_CODE_OAUTH_TOKEN` 설정 필수
-2. **시크릿 하드코딩 금지**: `.env` 파일 사용
-3. **프로젝트 경로**: 워크플로우 실행 시 프로젝트 디렉토리 지정 필요
-
----
-
-## 일반적인 작업 패턴
-
-### 새 Worker Agent 추가
-
-1. `prompts/new_agent.txt` 작성
-2. `config/agent_config.json`에 정의 (name, role, tools, model)
-3. `src/infrastructure/mcp/worker_tools.py`에 `@tool` 함수 추가
-4. 구문 검사 → Web UI에서 테스트
-
-### 프롬프트 수정
-
-- **위치**: `prompts/{worker}.txt`
-- **출력 형식**: 전체 출력이 다음 노드로 전달되므로 요약 불필요
-- **검증**: 구문 검사 후 Web UI에서 실제 실행으로 확인
-
-### 설정 변경
-
-- **모델**: `agent_config.json`의 `model` 필드
-- **재시도**: `system_config.json`의 `performance.worker_retry_*`
-- **입력 검증**: `system_config.json`의 `security.*`
-
----
-
-## 문제 해결
-
-### "CLAUDE_CODE_OAUTH_TOKEN 환경변수가 설정되지 않았습니다"
-```bash
-export CLAUDE_CODE_OAUTH_TOKEN='your-token-here'
-# 또는 .env 파일에 추가
-```
-
-### "워크플로우 실행 실패"
-1. 로그 확인: `tail -f ~/.claude-flow/{project}/logs/claude-flow.log`
-2. Worker 설정 확인: `config/agent_config.json`
-3. 프롬프트 파일 존재 확인: `prompts/*.txt`
-4. 노드 연결 확인: Input 노드에서 도달 가능한지
-
-### "노드 출력이 다음 노드로 전달되지 않음"
-- 템플릿 변수 확인: `{{parent}}`, `{{node_<id>}}`
-- 이전 노드 완료 확인: node_complete 이벤트
-- 워크플로우 엣지(연결) 확인
-
-### "Web UI 접속 불가"
-```bash
-# 포트 충돌 확인
-lsof -i :5173
-
-# 백엔드 로그
-tail -f ~/.claude-flow/{project}/logs/claude-flow.log
-```
-
----
-
-## Claude Agent SDK Best Practice
-
-### 1. ClaudeAgentOptions 사용
+### 1. Adding a Use Case
 
 ```python
-from claude_agent_sdk.types import ClaudeAgentOptions
+# 1. Define Use Case interface (domain/interfaces/use_cases/)
+class IExecuteNewWorkerUseCase(Protocol):
+    async def execute(self, task: str) -> Result: ...
 
-options = ClaudeAgentOptions(
-    model="claude-sonnet-4-5-20250929",
-    allowed_tools=["read", "write", "edit"],
-    permission_mode="acceptEdits",
-    setting_sources=["user", "project"]  # SDK v0.1.0+
-)
+# 2. Implement Use Case (application/use_cases/)
+class ExecuteNewWorkerUseCase(BaseWorkerUseCase):
+    async def execute(self, task: str) -> Result:
+        # Worker execution logic
+
+# 3. Register in Factory (application/use_cases/use_case_factory.py)
+def get_new_worker_use_case(self) -> IExecuteNewWorkerUseCase:
+    return ExecuteNewWorkerUseCase(...)
 ```
 
-### 2. System Prompt 설정
+### 2. Adding a New Worker Agent
 
-- **Worker**: `prompts/*.txt` 파일에서 로드 (`worker_client.py:68-105`)
+1. Add prompt file to `prompts/` directory
+2. Add Worker config to `config/agent_config.json`
+3. Verify Worker loads in Use Case Factory
+
+### 3. Adding an API Endpoint
 
 ```python
-# Worker 예시
-full_prompt = f"{self.system_prompt}\n\n{task_description}"
-async for response in query(prompt=full_prompt, options=options):
-    ...
+# src/presentation/web/routers/new_router.py
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/api/new", tags=["new"])
+
+@router.post("/endpoint")
+async def new_endpoint(data: RequestModel):
+    # Delegate business logic to Use Case
+    use_case = factory.get_use_case()
+    return await use_case.execute(data)
 ```
 
-### 3. 에러 처리
+### 4. Adding a Frontend Component
 
-```python
-from claude_agent_sdk import CLINotFoundError, ProcessError, ClaudeSDKError
+```typescript
+// src/presentation/web/frontend/src/components/NewComponent.tsx
+import React from 'react';
 
-try:
-    async for response in query(prompt, options):
-        ...
-except CLINotFoundError:
-    # Claude CLI 미설치
-except ProcessError as e:
-    # 프로세스 실행 실패
-except ClaudeSDKError:
-    # 기타 SDK 에러
+export const NewComponent: React.FC = () => {
+  // Utilize React Flow nodes/edges
+  return <div>...</div>;
+};
 ```
 
-**구현**: `sdk_executor.py` (ManagerSDKExecutor, WorkerSDKExecutor)
+## Troubleshooting
 
-### 4. Permission Mode
+### Worker Execution Timeout
 
-| Mode | 설명 | 사용 시나리오 |
-|------|------|--------------|
-| **acceptEdits** | 파일 편집 자동 승인 | 프로덕션, CI/CD |
-| **default** | 수동 승인 | 대화형 개발 |
-| **bypassPermissions** | 모든 작업 자동 승인 | 테스트 |
+- Increase `WORKER_TIMEOUT_*` values in `.env`
+- Or modify `timeouts` section in `config/system_config.json`
+
+### React Build Failure
 
 ```bash
-export PERMISSION_MODE=acceptEdits  # 동적 변경
+cd src/presentation/web/frontend
+rm -rf node_modules package-lock.json
+npm install
+npm run build
 ```
 
-**구현**: `sdk_executor.py` (PermissionModeResolver)
+### OAuth Token Error
 
-### 5. Context 관리
+```bash
+# Check token
+echo $CLAUDE_CODE_OAUTH_TOKEN
 
-**Worker Agent**:
-- 각 Worker는 독립적인 컨텍스트로 실행
-- 노드 간 데이터 전달은 템플릿 변수(`{{parent}}`, `{{input}}`)를 통해 처리
+# Reset token
+export CLAUDE_CODE_OAUTH_TOKEN='new-token'
+```
 
-**구현**: `workflow_executor.py` (워크플로우 실행 및 데이터 전달)
+### Check Logs
 
----
+```bash
+# Web UI logs (structlog)
+tail -f ~/.claude-flow/better-llm/logs/web_app.log
 
-## 참고
+# Worker execution logs
+tail -f ~/.claude-flow/better-llm/logs/worker_*.log
+```
 
-- [Claude Agent SDK 마이그레이션 가이드](https://docs.claude.com/en/docs/claude-code/sdk/migration-guide.md)
-- [MCP Server 가이드](https://docs.anthropic.com/en/docs/agent-sdk/python/mcp-servers)
-- [Conventional Commits](https://www.conventionalcommits.org/)
-- [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
+## Testing Strategy
 
-**상세 히스토리**: `CHANGELOG.md` 참조
+- **Unit Tests**: Domain models and Use Case unit tests
+- **Integration Tests**: Worker Agent execution integration tests (using mocks)
+- **E2E Tests**: Web API end-to-end tests (not implemented)
 
-**최종 업데이트**: 2025-10-29
+## References
 
----
-
-## 최근 작업 (2025-10-29)
-
-### refactor: 코드베이스 리팩토링 Phase 1 - Import 정리 및 환경변수 검증 강화 (완료)
-- **날짜**: 2025-10-29 23:30 (Asia/Seoul)
-- **목적**: 코드 품질 분석 결과에 기반하여 즉시 개선 항목 적용
-- **분석 문서**: `CODEBASE_ANALYSIS.md` (467줄), `CODEBASE_ANALYSIS_SUMMARY.txt` (289줄)
-- **결과 문서**: `docs/refactoring-results.md` (신규)
-- **변경사항**:
-  - **sdk_executor.py (-7줄)**:
-    - 반복된 `import json` 제거 (라인 141, 155, 187, 222, 290)
-    - 파일 상단 (라인 7)으로 단일 import 이동
-    - 효과: Import 오버헤드 제거, 코드 정결성 향상
-  - **env_utils.py (+38줄)**:
-    - `validate_required_env_vars()` 함수 신규 추가
-    - 필수 환경변수 검증 함수
-    - 누락 시 ValueError 발생, 설정 방법 가이드 포함
-    - 특징: Google Style Docstring, 가변 인자 지원, 상세 에러 메시지
-  - **app.py (+15줄)**:
-    - Lifespan 이벤트에서 환경변수 검증 강화
-    - 경고 로깅 → 앱 시작 중단으로 변경
-    - `validate_required_env_vars()` 함수 활용
-    - 누락 시 명확한 에러 메시지 + 설정 가이드 제시
-- **코드 품질 지표**:
-  - 미사용 코드: 7줄 제거 (import json 반복)
-  - 중복도: 반복 import 100% 제거
-  - 가독성: 모듈 의존성 명확화
-  - 안정성: 앱 시작 단계 검증으로 조기 오류 감지
-- **파일**: `src/infrastructure/claude/sdk_executor.py`, `src/infrastructure/config/env_utils.py`, `src/presentation/web/app.py`
-- **영향범위**: 앱 시작, 환경 설정, Worker 초기화
-- **테스트**: Python 구문 검사 통과
-- **하위 호환성**: 환경변수 누락 시 앱 시작 중단 (더 엄격한 검증)
-- **사용자 경험**: 앱 시작 시점에 명확한 오류 메시지 제시 (이전: Worker 실행 시점에 오류)
-- **후속 조치**:
-  - 로컬 개발 환경 확인: .env 파일 또는 환경변수 설정 확인
-  - CI/CD 파이프라인 확인: 환경변수 사전 설정 확인
-  - 테스트 환경: CLAUDE_CODE_OAUTH_TOKEN 설정 필수
-
-### refactor: 코드베이스 종합 분석 (완료)
-- **날짜**: 2025-10-29 23:00 (Asia/Seoul)
-- **목적**: 코드 품질 평가 및 개선 로드맵 수립
-- **분석 범위**: Python 129개 파일, ~27,305줄
-- **생성 문서**:
-  - `CODEBASE_ANALYSIS.md`: 상세 분석 보고서 (467줄)
-    * 사용하지 않는 코드 분석
-    * 파일 간 의존성 분석 (순환 의존성 0개)
-    * 복잡도가 높은 함수 Top 5 (extract_text_from_response: 복잡도 63)
-    * 중복 코드 패턴 4가지 탐지
-    * 개선 로드맵 (Phase 1-3)
-  - `CODEBASE_ANALYSIS_SUMMARY.txt`: 요약본 (289줄)
-    * 종합 평가: B+ (양호)
-    * 강점: Clean Architecture 준수, 순환 의존성 없음, 모든 코드 사용됨
-    * 약점: 높은 복잡도 함수, 중복 코드, 테스트 커버리지 부족
-    * 개선 효과: 유지보수성 20-30% 향상, 버그 40% 감소
-- **주요 findings**:
-  1. **사용하지 않는 코드**: 거의 없음 (반복 import json만 7회)
-  2. **순환 의존성**: 0개 (Clean Architecture 완벽 준수)
-  3. **높은 복잡도 함수**: 5개
-     - extract_text_from_response(): 복잡도 63 (즉시 리팩토링 필요)
-     - process_response(): 복잡도 26
-     - execute_stream(): 복잡도 20
-  4. **중복 코드 패턴**: 4가지
-     - tool_input 추출 (3회 반복)
-     - tool_result JSON 생성 (2회 반복)
-     - tool_use JSON 생성 (2회 반복)
-     - import json (5회 반복)
-- **의존성 분석**:
-  - 최대 의존성: workflows.py (11개 모듈)
-  - 강결합 분석: 모두 정상 범위
-  - 계층 구조: presentation → application → infrastructure → domain (올바른 방향)
-- **테스트 커버리지**: 현재 0% (권장: 70% 이상)
-- **개선 로드맵**:
-  - Phase 1 (1주): sdk_executor.py 리팩토링, 반복 코드 제거, import 정리
-  - Phase 2 (2주): 단위 테스트 추가, process_response() 리팩토링
-  - Phase 3 (3주): execute_stream() 리팩토링, 성능 최적화
-- **기대 효과**:
-  - 코드 품질: B+ → A 개선
-  - 유지보수성: 30% 향상
-  - 버그 가능성: 40% 감소
-  - 개발 생산성: 25% 향상
-- **파일**: `CODEBASE_ANALYSIS.md`, `CODEBASE_ANALYSIS_SUMMARY.txt`
-- **후속 조치**: Phase 1 항목부터 순차적으로 진행
-
----
-
-## 최근 작업 (2025-10-30)
-
-### feat: 노드 출력 파싱 및 로그 분류 개선 (완료)
-- **날짜**: 2025-10-30 13:00 (Asia/Seoul)
-- **문제**:
-  1. Worker 노드의 모든 출력(thinking, tool_use, tool_result, text)이 다음 노드 입력으로 전달되어 혼란 야기
-  2. 로그가 "입력", "출력"으로만 구분되어 실행 과정 파악 어려움
-- **해결**:
-  - **백엔드 (workflow_executor.py)**:
-    * `extract_text_from_worker_output()` 함수 추가 (35-82줄): JSON 블록에서 type="text"만 추출
-    * `classify_chunk_type()` 함수 추가 (85-113줄): 청크를 "thinking", "tool", "text"로 분류
-    * Worker 노드 실행 시 입력을 별도 이벤트로 전송 (chunk_type="input")
-    * 출력 청크를 chunk_type에 따라 분류하여 전송
-    * `node_outputs`에는 최종 텍스트만 저장 (1267줄)
-  - **프론트엔드 (stores/workflowStore.ts)**:
-    * 로그 타입 확장: `'start' | 'input' | 'execution' | 'output' | 'complete' | 'error'` (33줄)
-  - **프론트엔드 (InputNode.tsx)**:
-    * chunk_type에 따라 로그 타입 결정 (112-124줄)
-    * input → "input", thinking/tool → "execution", text → "output"
-  - **프론트엔드 (WorkerNodeConfig.tsx, InputNodeConfig.tsx)**:
-    * 로그 탭을 3개 섹션으로 구분 (587-641줄, 105-153줄)
-    * 📥 입력 (파란색): 노드가 받은 작업 설명
-    * 🔧 실행 과정 (보라색): Thinking, 도구 호출 등
-    * 📤 출력 (녹색): 최종 결과 (다음 노드로 전달됨)
-- **영향범위**: 노드 간 데이터 전달, 로그 가독성, 디버깅 편의성
-- **사용자 경험**:
-  - **이전**: 다음 노드가 thinking/tool 블록까지 받아서 혼란
-  - **이후**: 최종 텍스트만 전달되어 명확함
-  - 로그에서 입력/실행/출력을 명확히 구분하여 디버깅 용이
-- **파일**:
-  - `src/presentation/web/services/workflow_executor.py` (+78줄)
-  - `src/presentation/web/frontend/src/stores/workflowStore.ts` (로그 타입 확장)
-  - `src/presentation/web/frontend/src/components/InputNode.tsx` (chunk_type 처리)
-  - `src/presentation/web/frontend/src/components/node-config/WorkerNodeConfig.tsx` (로그 탭 개선)
-  - `src/presentation/web/frontend/src/components/node-config/InputNodeConfig.tsx` (로그 탭 개선)
-- **테스트**: 구문 검사 통과
-
----
-
-### fix: 조건분기 LLM 모드 순환참조 오류 수정 (완료)
-- **날짜**: 2025-10-30 12:00 (Asia/Seoul)
-- **문제**: Condition 노드(condition_type: "llm")를 사용한 순환 워크플로우에서 `max_iterations`가 설정되지 않으면 순환참조 오류 발생
-- **원인**:
-  - Validator가 `max_iterations`가 설정된 Condition 노드만 제어 노드로 간주
-  - 따라서 `max_iterations` 없는 Condition 노드는 순환 경로에서 에러 발생
-- **해결**:
-  - **workflow_validator.py (133-150줄)**:
-    * 모든 Condition 노드를 제어 노드로 간주 (max_iterations 없어도 허용)
-    * 순환 경로의 Condition 노드에 `max_iterations` 없으면 경고 표시
-    * `_check_condition_nodes` 함수 추가 (389-453줄): 순환 경로의 Condition 노드 검증
-  - **workflow_executor.py (745-757줄)**:
-    * `max_iterations`가 None인 경우 기본값 10 적용
-    * 무한 루프 방지
-- **영향범위**: Condition 노드 기반 피드백 루프, 순환 워크플로우 검증
-- **사용자 경험**:
-  - 이전: `max_iterations` 미설정 시 워크플로우 검증 실패 (순환참조 에러)
-  - 이후: 검증 통과 (경고만 표시), Executor에서 기본값 10 적용
-- **테스트**: 구문 검사 통과
-- **권장사항**: 순환 경로의 Condition 노드에는 `max_iterations: 3-10` 명시적 설정 권장
-
----
-
-## 최근 작업 (2025-10-29)
-
-### fix: 워크플로우 중단 버그 수정 (완료)
-- **날짜**: 2025-10-29 23:00 (Asia/Seoul)
-- **문제**: 중단 버튼 클릭 시 SSE 연결만 끊기고 백엔드 워크플로우는 계속 실행됨
-- **원인**: InputNode의 `handleStop`이 취소 API를 호출하지 않음
-- **해결**:
-  - **api.ts (730-739줄)**: `cancelWorkflowSession` 함수 추가
-    * `POST /api/workflows/sessions/{session_id}/cancel` 호출
-  - **InputNode.tsx (193-221줄)**: `handleStop` 함수 개선
-    * 1단계: AbortController로 SSE 연결 중단
-    * 2단계: 취소 API 호출하여 백엔드 워크플로우 중단
-    * 3단계: localStorage 정리 및 상태 업데이트
-- **파일**: `src/presentation/web/frontend/src/lib/api.ts`, `src/presentation/web/frontend/src/components/InputNode.tsx`
-- **영향범위**: 워크플로우 중단 기능, 병렬 실행 태스크 정리, 백엔드 리소스 해제
-- **테스트**: TypeScript 타입 검사 통과
-- **후속 조치**: 실제 브라우저에서 중단 기능 테스트 (병렬 실행 중단 포함)
-
-### refactor: Workflow Designer 프롬프트 - Manager 노드 제거 및 병렬 실행 옵션 추가 (완료)
-- **날짜**: 2025-10-29 21:00 (Asia/Seoul)
-- **목적**: Manager 노드 제거에 따른 Workflow Designer 프롬프트 업데이트
-- **변경사항**:
-  - **prompts/workflow_designer.txt**:
-    - Manager 노드 타입 제거 (input, worker, condition, loop, merge만 남김)
-    - 노드별 `parallel_execution` 옵션 설명 추가
-      * 부모 노드의 `parallel_execution: true` 설정 시 자식 노드들이 병렬 실행됨
-      * 예: Coder → (Reviewer + Tester + Security Reviewer) 병렬 실행
-      * 20-50% 속도 향상 가능
-    - 고급 노드 우선 원칙 수정
-      * "2개 이상의 독립적 작업 → `parallel_execution: true` 설정" 추가
-    - 예시 재구성 (총 4개):
-      * 예시 1: 순차 실행 (기존 유지)
-      * 예시 2: 병렬 실행 활용 (새로 추가) - Coder → 3개 리뷰어 병렬 실행 → Merge
-      * 예시 3: 조건 분기 (기존 유지)
-      * 예시 4: 조건 + 반복 (Manager 노드 제거, 순차 실행으로 변경)
-- **파일**: `prompts/workflow_designer.txt`
-- **영향범위**: Workflow Designer 워커가 Manager 노드 없이 병렬 실행을 활용한 워크플로우 생성
-- **테스트**: 구문 검사 통과
-- **후속 조치**: Web UI에서 실제 워크플로우 생성 시 병렬 실행 옵션 활용 확인
-
-### fix: Manager 노드 제거 (완료)
-- **날짜**: 2025-10-29 20:00 (Asia/Seoul)
-- **이유**: Manager 노드 기능 제거
-- **제거된 파일**:
-  - `src/infrastructure/claude/manager_client.py`
-  - `src/presentation/web/frontend/src/components/ManagerNode.tsx`
-  - `src/presentation/web/frontend/src/components/node-config/ManagerNodeConfig.tsx`
-- **수정된 파일**:
-  - `src/infrastructure/claude/__init__.py` (import 제거)
-  - `src/presentation/web/services/workflow_executor.py` (_execute_manager_node 메서드 제거)
-  - `src/presentation/web/frontend/src/components/WorkflowCanvas.tsx` (nodeTypes에서 제거)
-  - `src/presentation/web/frontend/src/components/NodeConfigPanel.tsx` (설정 패널 제거)
-  - `src/presentation/web/frontend/src/stores/workflowStore.ts` (nodeWorkerLogs 제거)
-  - `src/presentation/web/frontend/src/components/NodePanel.tsx` (Manager 노드 버튼 제거)
-  - `CLAUDE.md` (Manager 노드 관련 문서 제거)
-- **영향범위**: Manager 노드 완전 제거, 워커 병렬 실행 기능 제거
-
-### fix: Loop 노드 검증 버그 수정 (완료)
-- **날짜**: 2025-10-29 17:00 (Asia/Seoul)
-- **문제**:
-  - Loop 노드에 `max_iterations: 3`이 설정되어 있는데도 "max_iterations 설정이 없습니다" 에러 발생
-  - Loop 노드가 순환 경로에 포함되어 있는데도 "순환 경로에 포함되지 않음" 경고 발생
-- **원인**:
-  - **원인 1**: `workflow_validator.py:465`에서 `isinstance(node.data, dict)` 체크 실패
-    * `node.data`는 Pydantic 모델 객체 (`LoopNodeData`)이므로 딕셔너리가 아님
-    * `max_iterations` 추출 실패하여 항상 `None` 반환
-  - **원인 2**: `can_reach_self` 함수 로직 버그
-    * 499줄: `if current == target and current in visited_in_path` 조건이 절대 True가 될 수 없음
-    * 첫 호출 시 `current`는 `visited_in_path`에 아직 추가되지 않았으므로
-- **해결**:
-  - **수정 1**: Pydantic 모델과 딕셔너리 모두 처리하도록 로직 개선
-    ```python
-    # Pydantic 모델 객체인 경우
-    if hasattr(node.data, "max_iterations"):
-        max_iterations = node.data.max_iterations
-    # 딕셔너리인 경우
-    elif isinstance(node.data, dict):
-        max_iterations = node.data.get("max_iterations")
-    ```
-  - **수정 2**: 순환 경로 검사 함수 단순화
-    ```python
-    def can_reach_target(current: str, target: str, visited: Set[str]) -> bool:
-        if current == target:
-            return True
-        # ... DFS 탐색
-    ```
-- **파일**: `src/presentation/web/services/workflow_validator.py`
-- **영향범위**: Loop 노드 검증, 피드백 루프 워크플로우
-- **테스트**: 구문 검사 통과
-- **후속 조치**: Web UI에서 실제 워크플로우 검증 확인
-
-### feat: Workflow Designer 백그라운드 실행 및 세션 복구 (완료)
-- **날짜**: 2025-10-29 16:30 (Asia/Seoul)
-- **목적**: 워크플로우 설계 중 백그라운드 전환 및 새로고침 시 세션 복구 지원
-- **변경사항**:
-  - **NodePanel.tsx**:
-    - 워크플로우 설계 세션 감지 로직 추가 (36-58줄)
-      * localStorage에서 `workflow_design_session` 확인
-      * 진행 중인 세션 발견 시 `isWorkflowDesigning` 상태 업데이트
-      * 자동으로 모달 열기 (setIsWorkflowDesignerModalOpen(true))
-    - 주기적 세션 상태 동기화 (60-74줄)
-      * 1초마다 localStorage 체크하여 버튼 상태 업데이트
-      * 백그라운드 실행 중에도 "워크플로우 설계 중..." 표시 유지
-    - 버튼 클릭 시 동작
-      * 진행 중일 때 클릭 → 모달 열어서 진행 상황 확인
-      * 미진행 시 클릭 → 새로운 설계 시작
-  - **WorkflowDesignerModal.tsx** (기존 구현 확인):
-    - localStorage 세션 관리 (STORAGE_KEY: 'workflow_design_session')
-    - 모달 열릴 때 세션 자동 복구 (176-240줄)
-    - 완료/중단/에러 시 세션 정리 (clearSession)
-    - "백그라운드 실행" 버튼: 모달만 닫고 세션 유지
-    - "중단" 버튼: 세션 정리 및 초기화
-- **사용 시나리오**:
-  1. 워크플로우 설계 시작 → "백그라운드 실행" 클릭
-  2. 버튼이 "워크플로우 설계 중..."으로 변경됨
-  3. 버튼 클릭 → 모달 다시 열림, 진행 중인 출력 확인
-  4. 새로고침 → localStorage에서 세션 복구, 모달 자동 열림
-  5. 완료 또는 중단 → 세션 자동 정리
-- **파일**: `NodePanel.tsx` (40줄 추가), `WorkflowDesignerModal.tsx` (기존 구현 확인)
-- **영향범위**: UX 개선, 세션 영속성, 백그라운드 실행
-- **패턴**: CustomWorkerCreateModal과 동일한 세션 관리 패턴 적용
-- **테스트**: TypeScript 컴파일 및 빌드 통과
-- **후속 조치**: 실제 브라우저에서 백그라운드 실행 및 새로고침 테스트
-
-### refactor: Workflow Designer 고급 노드 활용 및 미리보기 개선 (완료)
-- **날짜**: 2025-10-29 16:00 (Asia/Seoul)
-- **목적**:
-  - 워크플로우 설계 시 고급 노드(condition, loop, merge)를 적극 활용하도록 개선
-  - 미리보기에서 노드/엣지 연결 관계를 상세히 표시
-- **변경사항**:
-  - **prompts/workflow_designer.txt**:
-    - "워크플로우 설계" 섹션에 고급 노드 활용 지침 강화
-      * **단순 순차 실행을 피하고 고급 노드를 적극 활용**
-      * **조건 분기가 필요하면 Condition 노드 추가**
-      * **반복 작업은 Loop 노드 사용**
-      * **여러 분기를 통합할 때는 Merge 노드 사용**
-    - "고급 노드 우선 원칙" 섹션 추가 (3번 항목)
-      * 조건부 실행 → Condition 노드
-      * 반복 실행 → Loop 노드
-      * 분기 통합 → Merge 노드
-      * 단순 순차 실행은 최소화
-    - 예시 3 추가: 고급 노드 활용 (조건 분기 + 반복 + 병합)
-      * 테스트 실패 시 자동 버그 수정 반복
-      * Condition, Loop 노드를 활용한 복잡한 워크플로우 예시
-  - **WorkflowDesignerModal.tsx (미리보기 개선)**:
-    - 노드 타입별 색상 및 아이콘 추가
-      * input: 📥 (파란색), worker: ⚙️ (녹색)
-      * condition: 🔀 (노란색), loop: 🔁 (주황색), merge: 🔗 (핑크색)
-    - 노드 상세 정보 표시
-      * agent_name, task_template/task_description (80자 이내 미리보기)
-      * condition_type/value (Condition 노드)
-      * max_iterations (Loop 노드), merge_strategy (Merge 노드)
-    - 연결 관계 섹션 추가
-      * source → target 화살표로 시각적 표시
-      * source는 파란색, target은 녹색으로 구분
-      * sourceHandle (예: true/false) 표시
-- **파일**:
-  - `prompts/workflow_designer.txt` (51줄 추가)
-  - `src/presentation/web/frontend/src/components/WorkflowDesignerModal.tsx` (80줄 개선)
-- **영향범위**: 워크플로우 자동 설계 품질, UI/UX, 사용자 이해도
-- **기대효과**:
-  - 워커가 단순한 순차 워크플로우가 아닌 고급 노드를 활용한 복잡한 워크플로우를 생성
-  - 미리보기에서 노드 구조와 연결 관계를 명확히 파악 가능
-  - 조건 분기, 반복, 병렬 실행을 적극 활용하여 실용적인 워크플로우 생성
-- **테스트**: TypeScript 컴파일 검사 및 빌드 통과
-- **후속 조치**: 실제 워크플로우 설계 시 고급 노드 활용 여부 확인
-
-### feat: Workflow Designer 워커 추가 (완료)
-- **날짜**: 2025-10-29 15:00 (Asia/Seoul)
-- **목적**: 사용자 요구사항으로부터 워크플로우를 자동으로 설계 및 생성하는 워커 추가
-- **변경사항**:
-  - **config/agent_config.json**:
-    - `workflow_designer` 워커 추가 (read, glob, grep 도구 사용)
-    - model: claude-sonnet-4-5-20250929, thinking: true
-  - **prompts/workflow_designer.txt**:
-    - 워크플로우 설계 전문가 프롬프트 작성
-    - 노드 타입 (input, worker, condition, loop, merge) 설명
-    - 사용 가능한 기본 워커 목록 (15개)
-    - 노드 연결 규칙 및 템플릿 변수 설명
-    - JSON 출력 형식 정의:
-      * `workflow`: Workflow 객체 (nodes, edges, metadata)
-      * `custom_workers`: 필요 시 커스텀 워커 정의 배열
-      * `explanation`: 워크플로우 설명
-      * `usage_guide`: 사용 방법 가이드
-    - 예시 2개 추가 (순차 워크플로우, 고급 노드 활용)
-  - **CLAUDE.md**:
-    - prompts 섹션에 workflow_designer.txt 추가
-    - agent_config.json 섹션에 Workflow Designer 워커 추가
-- **출력 활용**:
-  - `workflow` 부분: Web UI 워크플로우 캔버스에 직접 로드 가능
-  - `custom_workers` 부분: agent_config.json 및 prompts/ 디렉토리에 추가 가능
-- **영향범위**: 워크플로우 자동 생성, 사용자 생산성 향상
-- **사용법**:
-  1. Web UI에서 "Workflow Designer" 워커를 노드로 추가
-  2. 요구사항 입력 (예: "코드 리뷰 후 테스트 실행하는 워크플로우")
-  3. 생성된 JSON의 `workflow` 부분을 복사하여 워크플로우 캔버스에 로드
-  4. 필요 시 `custom_workers` 부분을 프로젝트에 추가
-- **테스트**: 구문 검사 통과 (agent_config.json)
-- **후속 조치**: Web UI에서 실제 워크플로우 생성 테스트
-
-### fix: InputNode 로그 파싱 개선 - ParsedContent 사용 (완료)
-- **날짜**: 2025-10-29 14:00 (Asia/Seoul)
-- **문제**: InputNode의 실행 로그에서 thinking, tool 블록 등이 파싱되지 않음
-  - LogItem 컴포넌트가 `parseLogMessage` (단일 블록) 사용
-  - 각 chunk가 개별 로그로 저장되어 JSON이 여러 로그에 걸쳐 분할됨
-  - 복잡한 파싱 로직이 LogItem에 중복 구현됨
-- **해결**:
-  - **InputNodeConfig.tsx 리팩토링**:
-    - LogItem에서 `ParsedContent` 컴포넌트 사용
-    - 중복된 파싱 로직 (150줄) 완전 제거
-    - extractToolUseId, extractToolName, buildToolNameMap 함수 제거
-    - 불필요한 import 정리 (Brain, ChevronDown, ChevronRight, useMemo)
-  - **일관된 파싱**:
-    - 모든 노드 설정 컴포넌트가 동일한 ParsedContent 사용
-    - InputNode, Worker, Merge, Loop, Condition 모두 일관성
-  - **간결한 코드**:
-    - LogItem: 150줄 → 20줄 (87% 감소)
-    - 파싱 로직은 ParsedContent에 집중
-- **파일**: `src/presentation/web/frontend/src/components/node-config/InputNodeConfig.tsx`
-- **영향범위**: Input 노드 실행 로그 표시, 코드 유지보수성
-- **테스트**: TypeScript 컴파일 검사 통과
-- **후속 조치**: 브라우저에서 실제 로그 확인
-
-### fix: 로그 파싱 혼합 형태 처리 개선 (완료)
-- **날짜**: 2025-10-29 13:30 (Asia/Seoul)
-- **문제**: Worker 노드 출력에서 텍스트와 JSON이 혼합된 경우 파싱 실패
-  - 예: "먼저 프로젝트 구조를 파악하고...{"role": "assistant", "content": [...]}"
-  - 기존 파서는 순수 JSON만 처리하여 혼합 형태는 raw 텍스트로 표시됨
-- **해결**:
-  - **logParser.ts 개선**:
-    - `extractJSONBlocks` 함수 추가: 텍스트에서 JSON 블록 추출
-      * `{"role":` 패턴으로 JSON 시작 감지
-      * 중괄호 카운팅으로 JSON 끝 감지 (문자열 내부 처리 포함)
-      * 텍스트와 JSON을 분리하여 배열로 반환
-    - `parseLogMessageBlocks` 함수 추가: 여러 블록 파싱 지원
-      * 텍스트와 JSON 혼합 형태 처리
-      * 각 블록을 개별적으로 파싱하여 배열로 반환
-    - `ParsedLogBlocks` 인터페이스 추가: 여러 블록 반환용
-  - **ParsedContent.tsx 개선**:
-    - `ParsedBlock` 컴포넌트 분리: 단일 블록 렌더링
-    - 메인 컴포넌트에서 `parseLogMessageBlocks` 사용
-    - 여러 블록을 순서대로 렌더링 (map)
-    - 각 블록의 상태(isExpanded) 독립적으로 관리
-  - **InputNodeConfig.tsx 타입 에러 수정**:
-    - onValidate의 사용하지 않는 파라미터를 `_data`로 변경
-- **파일**:
-  - `src/presentation/web/frontend/src/lib/logParser.ts`
-  - `src/presentation/web/frontend/src/components/ParsedContent.tsx`
-  - `src/presentation/web/frontend/src/components/node-config/InputNodeConfig.tsx`
-- **영향범위**: Worker 노드 출력 파싱, 로그 가독성
-- **테스트**: TypeScript 컴파일 검사 통과
-- **후속 조치**: 실제 브라우저에서 혼합 형태 로그 확인
-
-### docs: README.md 오픈소스 공개 버전으로 업데이트 (완료)
-- **날짜**: 2025-10-29 11:00 (Asia/Seoul)
-- **목적**: 실제 오픈소스 프로젝트로 공개하기 위해 README 전면 개편
-- **변경사항**:
-  - **Hero 섹션 개선**: 중앙 정렬, 명확한 설명, 빠른 네비게이션 링크 추가
-  - **주요 특징 재구성**:
-    - Web UI 워크플로우 에디터를 가장 먼저 배치 (핵심 기능 강조)
-    - Manager 노드 병렬 실행 기능 강조 (20-50% 속도 향상)
-    - Worker Agent 역할을 표로 정리하여 가독성 향상
-    - 커스텀 워커 생성 기능 추가 언급
-  - **설치 및 사용법 단순화**:
-    - 이모지로 단계 구분 (1️⃣ 2️⃣ 3️⃣)
-    - 각 UI별 특징 명확히 표시 (Web UI, TUI, CLI)
-    - OAuth 토큰 발급 링크 추가
-  - **실용적인 사용 예시 추가**:
-    - 예시 1: 신규 기능 개발 (순차 워크플로우)
-    - 예시 2: 코드 리뷰 (병렬 실행, 3배 속도)
-    - 예시 3: 반복 작업 (Loop + Condition 노드)
-    - 각 예시에 워크플로우 다이어그램 및 단계별 설명 포함
-  - **문서 구조 개선**:
-    - 문서 링크를 사용자 가이드/개발자 가이드로 분리
-    - 기여 방법을 상세히 설명 (개발 환경 설정 포함)
-    - 버그 리포트 & 기능 요청 섹션 추가
-  - **감사의 말 확장**: React Flow 등 사용한 라이브러리 명시
-- **파일**: `README.md`
-- **영향범위**: 프로젝트 첫인상, 사용자 온보딩, 기여자 유입
-- **후속 조치**:
-  - 스크린샷/GIF 추가 (워크플로우 캔버스 실행 화면)
-  - LICENSE 파일 확인
-  - CONTRIBUTING.md 작성
-
-### fix: 노드 패널 설명 텍스트 줄바꿈 버그 수정 (완료)
-- **날짜**: 2025-10-29 11:00 (Asia/Seoul)
-- **문제**: 커스텀 워커 등의 설명(role)이 길 때 UI 박스를 넘어가는 문제
-- **원인**: `line-clamp-1` 클래스가 한 줄로 제한하다 보니 긴 텍스트가 UI를 뚫고 나감
-- **해결**:
-  - **`line-clamp-2`로 변경** (`NodePanel.tsx`):
-    - 범용 워커 섹션 (500줄)
-    - 특화 워커 섹션 (549줄)
-    - 커스텀 워커 섹션 (642줄)
-  - 최대 2줄까지 표시하고 나머지는 말줄임표(...)로 처리
-- **파일**: `src/presentation/web/frontend/src/components/NodePanel.tsx`
-- **영향범위**: 노드 패널 UI 가독성, 긴 설명 텍스트 표시
-- **테스트**: TypeScript 컴파일 검사 (기존 에러와 무관)
-
-### fix: 노드 위치 저장 문제 해결 (완료)
-- **날짜**: 2025-10-29 14:00 (Asia/Seoul)
-- **문제**: 웹 UI에서 노드 위치를 변경해도 workflow-config.json에 저장되지 않음
-- **원인**: React Flow의 `onNodesChange` 이벤트만으로는 드래그 완료 시점을 정확히 감지하기 어려움
-- **해결**:
-  - **`onNodeDragStop` 핸들러 추가** (`WorkflowCanvas.tsx:287-293`):
-    - 노드 드래그 완료 시 확실하게 `updateNodePosition` 호출
-    - React Flow의 공식 드래그 완료 이벤트 사용
-  - **디버그 로그 추가** (`WorkflowCanvas.tsx:195-199, 289`):
-    - position change 이벤트 추적
-    - `updateNodePosition` 호출 추적
-  - **조건문 개선** (`WorkflowCanvas.tsx:203`):
-    - `dragging === false || dragging === undefined` 명시적 검사
-    - 이전: `!change.dragging` (암묵적)
-  - **타입 에러 수정** (`WorkflowCanvas.tsx:362`):
-    - `fitViewOnInit` → `fitView` (React Flow 11.x 호환)
-- **파일**: `src/presentation/web/frontend/src/components/WorkflowCanvas.tsx`
-- **영향범위**: 노드 위치 영속성, 자동 저장 트리거
-- **테스트**: TypeScript 타입 검사 통과
-- **후속 조치**: 실제 브라우저에서 노드 드래그 후 workflow-config.json 저장 확인
-
----
-
-### 커스텀 워커 세션 복구 버그 수정 (완료)
-- **날짜**: 2025-10-29 10:30 (Asia/Seoul)
-- **문제**: 커스텀 워커 실행 중 웹 새로고침 시 세션 복구 실패
-  - 싱글톤 `BackgroundWorkflowManager`가 첫 초기화 시 프로젝트 경로 없이 생성됨
-  - 이후 프로젝트 선택 후 커스텀 워커 실행 시 구버전 `executor` 사용
-  - 결과: "Agent를 찾을 수 없습니다" 에러
-- **원인**:
-  - `get_background_workflow_manager`가 전역 싱글톤 패턴 사용
-  - 첫 호출 시 전달된 `executor`로 한 번만 초기화
-  - 프로젝트 전환 시 새로운 `executor` (커스텀 워커 포함) 무시
-- **해결**:
-  - **프로젝트별 인스턴스 캐싱** (`background_workflow_manager.py`):
-    - 싱글톤 → 프로젝트 경로별 딕셔너리 캐싱 (`_managers: Dict[str, BackgroundWorkflowManager]`)
-    - `get_background_workflow_manager`에 `project_path` 매개변수 추가
-    - 프로젝트 경로 변경 시 자동으로 올바른 인스턴스 반환
-    - 기존 인스턴스의 `executor` 동적 업데이트 지원
-  - **워크플로우 라우터 수정** (`workflows.py:79-93`):
-    - `get_background_manager`에서 현재 프로젝트 경로 전달
-  - **에러 메시지 개선** (`workflow_executor.py`):
-    - 커스텀 워커 로드 실패 시 프로젝트 경로 포함하여 로깅
-    - Agent 찾을 수 없을 때 사용 가능한 Agent 목록 표시
-    - 커스텀 워커 여부에 따라 힌트 메시지 제공
-- **영향범위**: 세션 복구, 프로젝트 전환, 커스텀 워커 실행
-- **테스트**: 구문 검사 통과
-- **후속 조치**: 실제 시나리오 테스트 필요 (커스텀 워커 실행 중 새로고침)
-
-### 템플릿 변수 설명 및 기본값 수정 (완료)
-- **문제**: 노드 설정 패널과 기본 템플릿에서 `{{input}}`이 "이전 노드 출력"이라고 잘못 설명됨
-- **원인**:
-  - `{{input}}`은 Input 노드의 초기 입력값
-  - `{{parent}}`가 직전 부모 노드의 출력
-- **해결**:
-  - **백엔드 검증 로직 수정** (`workflow_validator.py`):
-    - 263-265줄: `{{parent}}` 변수를 유효한 변수로 추가
-    - 227줄: docstring에 `{{parent}}` 추가
-    - 280줄: 에러 메시지에 변수 설명 추가
-  - **프론트엔드 설명 수정** (`WorkerNodeConfig.tsx`):
-    - 211-213줄: 툴팁 설명에 모든 템플릿 변수 정보 추가
-    - 236-252줄: 사용 가능한 변수 섹션에 `{{parent}}`, `{{input}}`, `{{node_<id>}}` 상세 설명
-    - 561-563줄: 정보 탭 사용법에 변수별 용도 명시
-  - **기본 템플릿 변경** (`NodePanel.tsx`):
-    - 161줄 (handleAddAgent): `{{input}}` → `{{parent}}`
-    - 495, 544, 637줄 (드래그 핸들러): 모두 `{{parent}}`로 변경
-  - **프론트엔드 빌드 완료**
-- **파일**: `workflow_validator.py`, `WorkerNodeConfig.tsx`, `NodePanel.tsx`
-- **영향**: 신규 워커 노드 추가 시 `{{parent}}`가 기본값으로 설정되어 대부분의 경우 올바르게 작동
-
-### 병합 노드 경고 로그 추가 (완료)
-- **문제**: 병합 노드에서 부모 출력이 없을 때 경고 없이 빈 문자열 사용
-- **해결**: 부모 출력 누락 시 경고 로그 추가
-  - 부모 노드 ID와 병합 노드 ID를 포함한 상세 경고 메시지
-  - 빈 문자열 대체 사실을 명시적으로 로깅
-- **파일**: `workflow_executor.py:720-726`
-- **참고**: 템플릿 변수 사용법
-  - `{{input}}`: 초기 입력값 (Input 노드 값)
-  - `{{parent}}`: 직전 부모 노드의 출력
-  - `{{node_<id>}}`: 특정 노드의 출력
-
-### 병렬 실행 버그 수정 (완료)
-- **문제 1**: 노드 상태가 "진행중"으로 안바뀌는 문제
-  - **원인**: 병렬 실행 시 모든 이벤트를 수집한 후 일괄 전송
-  - **해결**: `asyncio.Queue`로 실시간 이벤트 스트리밍 구현
-  - **파일**: `workflow_executor.py:1218-1254, 1342-1408`
-
-- **문제 2**: Input 노드 로그에 병렬 노드 로그가 안찍히는 문제
-  - **원인**: 동일 (이벤트 지연 전송)
-  - **해결**: 실시간 스트리밍으로 해결
-
-- **문제 3**: 중단 시 병렬 워커가 멈추지 않는 문제
-  - **원인**: 취소 API 부재, CancelledError 처리 미흡
-  - **해결**:
-    - 취소 API 추가: `POST /api/workflows/sessions/{session_id}/cancel` (`workflows.py:652-700`)
-    - `CancelledError` 처리 구현 (`workflow_executor.py:1428-1456`)
-    - 모든 병렬 태스크 정리 및 취소 이벤트 생성
-
-### 노드 좌표 영속성 저장 버그 수정
-- **문제**: 노드 이동 후 저장/로드 시 위치가 초기화됨
-- **원인**: React Flow의 position 변경이 Zustand 스토어에 반영되지 않음
-- **해결**:
-  - `updateNodePosition` 함수 추가 (`workflowStore.ts:147-154`)
-  - position 변경 시 명시적 업데이트 (`WorkflowCanvas.tsx:194-196`)
-- **파일**: `workflowStore.ts`, `WorkflowCanvas.tsx`
-
-### {{parent}} 템플릿 변수 버그 수정
-- **문제**: 병합 노드 → 다음 노드 연결 시, 다음 노드 입력에 Input 노드 값이 들어감
-- **원인**: `_render_task_template`에서 부모 노드를 잘못 찾음 (노드 ID가 템플릿에 포함되어 있는지 확인)
-- **해결**: 부모 노드 출력을 올바르게 치환하도록 수정
-- **파일**: `workflow_executor.py:332-348`
-
-### 병렬 실행 체크박스 영속성 저장 버그 수정 (이전)
-- **문제**: `parallel_execution` 체크박스 상태가 저장/로드 시 유지되지 않음
-- **원인**: Pydantic `model_dump()`가 기본값(False) 필드를 생략
-- **해결**: `model_dump(mode='json', exclude_none=False)` 사용
-- **파일**: `projects.py:235`
-
-### fix: 노드별 세션 유지 기능 구현 (완료)
-- **날짜**: 2025-10-30 17:40 (Asia/Seoul)
-- **버그 수정** (2025-10-30 17:45):
-  - **문제**: `NameError: name 'session_id' is not defined` 발생
-  - **원인**: 파라미터를 `resume_session_id`로 변경했지만 로그에서 `session_id` 참조
-  - **해결**: `sdk_executor.py:614` 라인 수정 (`session_id` → `resume_session_id`)
-  - **테스트**: 구문 검사 통과
-- **문제**: 워크플로우 재실행 시 각 노드가 이전 대화 컨텍스트를 유지하지 못함
-- **시도 1**: 노드 ID를 세션 ID로 직접 사용
-  - **결과**: ❌ `Exception: Control request timeout: initialize` 발생
-  - **원인**: `resume` 파라미터는 SDK가 생성한 실제 세션 ID가 필요함
-- **해결 방법**: 첫 실행과 재개를 구분하여 SDK 세션 ID 저장 및 재사용
-  1. **WorkflowExecutor** (`workflow_executor.py:1274-1345`):
-     - `_node_sessions: Dict[str, str]`에 노드ID → SDK세션ID 매핑 저장
-     - 첫 실행: 이전 세션 ID 없음 → 새로 생성 → SDK 세션 ID 저장
-     - 이후 실행: 저장된 SDK 세션 ID로 `resume_session_id` 전달
-  2. **WorkerAgent** (`worker_client.py:206-285`):
-     - `resume_session_id` 파라미터 추가
-     - SDK Executor에 전달 및 실행 후 세션 ID 반환
-  3. **SDKExecutor** (`sdk_executor.py:594-667`):
-     - `resume_session_id`가 있으면 `ClaudeAgentOptions(resume=...)`로 이전 세션 재개
-     - 없으면 새 세션 시작
-     - 첫 응답에서 `response.session_id` 추출하여 `last_session_id`에 저장
-- **구현 흐름**:
-  ```python
-  # 첫 실행
-  WorkflowExecutor: _node_sessions에 노드 ID 확인 → None
-    → WorkerAgent: resume_session_id=None 전달
-      → SDKExecutor: 새 세션 시작, response.session_id 추출
-        → last_session_id 저장
-    → WorkflowExecutor: SDK 세션 ID를 _node_sessions에 저장
-
-  # 이후 실행 (재개)
-  WorkflowExecutor: _node_sessions에서 SDK 세션 ID 조회
-    → WorkerAgent: resume_session_id=<SDK세션ID> 전달
-      → SDKExecutor: ClaudeAgentOptions(resume=...) 사용
-        → 이전 대화 컨텍스트 유지
-  ```
-- **파일**:
-  - `src/presentation/web/services/workflow_executor.py:1274-1345`
-  - `src/infrastructure/claude/worker_client.py:206-285`
-  - `src/infrastructure/claude/sdk_executor.py:594-667`
-- **영향범위**: 노드별 세션 유지, 워크플로우 재실행 시 컨텍스트 연속성
-- **기대효과**:
-  - 같은 노드를 여러 번 실행해도 이전 대화 기억
-  - 워크플로우 재실행 시 각 노드가 이전 컨텍스트 유지
-  - 불필요한 컨텍스트 반복 전달 방지 → 토큰 절약
-- **테스트**: 구문 검사 통과
-- **주의**: 서버 재시작 시 메모리 기반 세션 저장소 초기화됨
-- **참고**: [Claude Agent SDK Python 문서](https://docs.claude.com/en/api/agent-sdk/python)
-
-### feat: 로그 섹션 자동 스크롤 기능 추가 (완료)
-- **날짜**: 2025-10-30 17:20 (Asia/Seoul)
-- **목적**: 로그가 업데이트될 때마다 자동으로 맨 아래로 스크롤하여 최신 로그 확인 용이
-- **구현**:
-  - 기존 `AutoScrollContainer` 컴포넌트 활용
-  - Worker 노드와 Input 노드 설정 패널의 3개 로그 섹션에 적용
-    * 📥 입력 섹션
-    * 🔧 실행 과정 섹션
-    * 📤 출력 섹션
-  - `dependency` prop으로 로그 개수 전달 → 로그 추가 시 자동 스크롤
-- **특징**:
-  - 사용자가 수동으로 스크롤하면 자동 스크롤 일시 중지
-  - 맨 아래에서 50px 이내이면 자동 스크롤 재활성화
-  - "자동 스크롤 일시 중지됨" 알림 표시
-  - "맨 아래로" 버튼으로 수동 스크롤
-- **버그 수정** (2025-10-30 17:25):
-  - **문제**: 컨테이너 높이가 고정되지 않아 무한정 늘어나서 자동 스크롤 미작동
-  - **원인**: `maxHeight`만 설정하면 내용이 적을 때 컨테이너가 줄어듦
-  - **해결**: `height: maxHeight`로 고정 + padding을 내부 div로 분리
-    ```tsx
-    // 이전 (높이 가변)
-    <div className="overflow-y-auto p-3" style={{ maxHeight }}>
-      {children}
-    </div>
-
-    // 이후 (높이 고정)
-    <div className="overflow-y-auto" style={{ height: maxHeight, maxHeight }}>
-      <div className="p-3">
-        {children}
-      </div>
-    </div>
-    ```
-- **파일**:
-  - `src/presentation/web/frontend/src/components/node-config/WorkerNodeConfig.tsx` (입력/실행/출력 섹션)
-  - `src/presentation/web/frontend/src/components/node-config/InputNodeConfig.tsx` (입력/실행/출력 섹션)
-  - `src/presentation/web/frontend/src/components/AutoScrollContainer.tsx` (높이 고정 로직 개선)
-- **영향범위**: UX 개선, 로그 모니터링 편의성 향상
-- **테스트**: 프론트엔드 빌드 통과
-
-### refactor: 워커 실행 완료 메시지 간소화 (완료)
-- **날짜**: 2025-10-30 19:15 (Asia/Seoul)
-- **문제**: 워커 응답 끝에 너무 긴 구분선이 표시됨
-  ```
-  ======================================================================
-  ✅ [LOCAL] Worker execution completed
-  ======================================================================
-  ```
-- **해결**: 간결한 한 줄로 변경
-  ```
-  └─ ✅ [local] 완료
-  ```
-- **파일**: `src/infrastructure/claude/worker_client.py:300`
-- **영향범위**: 워커 실행 완료 표시, 로그 가독성
-- **사용자 경험**: 더 컴팩트하고 깔끔한 로그 출력
-
-### feat: 노드별 세션 이력 관리 및 선택 기능 (완료)
-- **날짜**: 2025-10-30 19:00 (Asia/Seoul)
-- **목적**: 각 노드의 세션 이력을 추적하고, 사용자가 이전 세션을 선택하여 대화를 계속할 수 있도록 지원
-- **구현**:
-  1. **백엔드 - 세션 이력 추적**:
-     - `_node_session_history: Dict[str, List[Dict]]` 추가 (workflow_executor.py:187-190)
-     - 각 세션 정보: session_id, agent_name, created_at, last_used_at
-     - 노드 실행 시 자동으로 이력에 추가 (1467-1494줄)
-     - 추가 프롬프트 사용 시 last_used_at 업데이트 (1707-1715줄)
-  2. **백엔드 - API 엔드포인트 추가**:
-     - `GET /api/workflows/nodes/{node_id}/sessions` (workflows.py:729-804)
-     - 응답: 현재 활성 세션 ID, 세션 이력 (최신 사용 순 정렬)
-  3. **프론트엔드 - API 클라이언트**:
-     - `getNodeSessions()` 함수 추가 (api.ts:893-904)
-     - 인터페이스: NodeSession, NodeSessionsResponse
-  4. **프론트엔드 - 세션 선택 UI**:
-     - 세션 선택 버튼 + 새로고침 버튼
-     - 세션 목록 드롭다운: 새 세션 시작 / 기존 세션 선택
-     - 선택된 세션 표시: "🆕 새 세션" 또는 "📝 세션: xxx..."
-     - 세션 정보: session_id (8자), 생성일, 마지막 사용일, 현재 세션 표시
-- **파일**:
-  - 백엔드:
-    * `src/presentation/web/services/workflow_executor.py:187-190,1467-1494,1707-1715`
-    * `src/presentation/web/routers/workflows.py:729-804`
-  - 프론트엔드:
-    * `src/presentation/web/frontend/src/lib/api.ts:875-904`
-    * `src/presentation/web/frontend/src/components/LogDetailModal.tsx:127-159,355-456`
-- **영향범위**: 노드별 세션 관리, 컨텍스트 유지, UX 향상
-- **사용자 경험**:
-  - 이전: 노드는 항상 마지막 세션 사용 (선택 불가)
-  - 이후: 세션 목록에서 원하는 세션 선택 또는 새 세션 시작 가능
-  - 예: "이전 대화 컨텍스트로 돌아가기" 또는 "새로운 관점으로 다시 시작"
-- **테스트**: 구문 검사 및 프론트엔드 빌드 통과
-- **참고**: 세션 이력은 메모리 기반 (서버 재시작 시 초기화)
-
-### feat: 로그 상세보기 모달 탭 UI 개선 (완료)
-- **날짜**: 2025-10-30 18:30 (Asia/Seoul)
-- **문제**: 세로로 3개 섹션(입력/실행/출력)이 분할되어 각각 200-300px 높이로 제한됨 → 스크롤이 많아서 보기 힘듦
-- **해결**: 탭 방식으로 전환하여 전체 화면 활용
-  - **탭 버튼 추가**:
-    * 📥 입력, 🔧 실행 과정, 📤 출력, ❌ 에러, 📝 기타
-    * 각 탭에 로그 개수 뱃지 표시
-    * 활성 탭은 색상 강조 (blue/purple/green/red/gray)
-  - **로그 표시 영역**: 활성 탭만 전체 높이로 표시
-  - **초기 탭 선택 로직**:
-    * 에러 우선 → 출력 → 실행 과정 → 입력 → 기타 순서
-    * 로그가 추가/변경될 때 유효성 검사
-  - **자동 스크롤**: 활성 탭의 로그에 자동 스크롤 적용
-- **파일**: `src/presentation/web/frontend/src/components/LogDetailModal.tsx`
-- **영향범위**: 로그 상세보기 모달 UX 개선, 화면 공간 효율 향상
-- **테스트**: 프론트엔드 빌드 통과
-- **사용자 경험**:
-  - 이전: 3개 섹션이 세로로 분할 (각 200-300px) → 스크롤 많음
-  - 이후: 탭 전환으로 전체 화면 사용 → 가독성 향상
-
-### fix: 추가 프롬프트 기능 버그 수정 (완료)
-- **날짜**: 2025-10-30 18:00 (Asia/Seoul)
-- **문제 1**: 추가 프롬프트 입력 시 아무런 반응 없음
-  - **원인**:
-    1. `WorkflowSessionStore`에 `save_session()` 메서드 누락
-    2. `workflows.py`에서 잘못된 메서드 이름 사용
-       - `add_log_to_session()` → `append_log()`
-       - `update_session_status()` → `update_session()`
-  - **해결**:
-    1. **workflow_session_store.py**: `save_session()` 메서드 추가 (293-306줄)
-    2. **workflows.py**: 메서드 이름 수정 (829, 839, 848줄)
-- **문제 2**: UUID 형식 에러 발생
-  - **에러**: `Error: --resume requires a valid session ID when used with --print`
-  - **원인**: SDK 세션 ID를 잘못된 방법으로 추출
-    1. 첫 번째 응답에서 `session_id` 확인 (❌) → `ResultMessage`는 보통 마지막 응답
-    2. SDK 세션 ID가 없을 때 노드 ID를 폴백으로 사용 (❌) → 노드 ID는 UUID 형식 아님
-  - **해결**:
-    1. **sdk_executor.py**: `ResultMessage` 타입에서 `session_id` 추출 (715-721줄)
-       - 첫 응답이 아닌 모든 응답 확인
-       - `type(response).__name__ == 'ResultMessage'` 체크
-       - `ResultMessage.session_id` 추출
-    2. **workflow_executor.py**: 노드 ID 폴백 제거 (1460-1475줄)
-       - SDK 세션 ID가 있을 때만 저장
-       - 없으면 경고 로그만 출력 (추가 프롬프트 사용 불가 안내)
-- **파일**:
-  - `src/presentation/web/services/workflow_session_store.py:293-306`
-  - `src/presentation/web/routers/workflows.py:829,839,848`
-  - `src/infrastructure/claude/sdk_executor.py:715-721,775-780`
-  - `src/presentation/web/services/workflow_executor.py:1460-1475`
-- **영향범위**: 노드 추가 대화 기능, SDK 세션 관리, 컨텍스트 유지
-- **테스트**: 구문 검사 통과
-- **참고**: [Claude Agent SDK - ResultMessage](https://docs.claude.com/en/api/agent-sdk/python)
-- **후속 조치**: 실제 브라우저에서 추가 프롬프트 입력 테스트
-
-### fix: ClaudeSDKClient API 호환성 수정 (완료)
-- **날짜**: 2025-10-30 17:12 (Asia/Seoul)
-- **문제**:
-  1. `TypeError: ClaudeSDKClient.query() got an unexpected keyword argument 'options'`
-  2. `CLIConnectionError: Not connected. Call connect() first.`
-- **원인**: Claude Agent SDK API 변경
-  - `options`는 `query()` 메서드가 아닌 **생성자**에 전달해야 함
-  - `query()` 메서드는 `prompt`와 `session_id`만 받음
-  - 응답은 `receive_response()`로 수신해야 함
-  - **Context manager로 사용해야 함** (`async with`)
-- **해결**:
-  - **이전 (잘못된 사용법)**:
-    ```python
-    client = ClaudeSDKClient()
-    async for response in client.query(
-        prompt=prompt,
-        options=ClaudeAgentOptions(**options_dict),  # ❌
-        session_id=session_id
-    ):
-    ```
-  - **중간 시도 (부분적으로 잘못됨)**:
-    ```python
-    client = ClaudeSDKClient(options=ClaudeAgentOptions(**options_dict))
-    await client.query(prompt=prompt, session_id=session_id)  # ❌ connect() 필요
-    async for response in client.receive_response():
-    ```
-  - **이후 (올바른 사용법)**:
-    ```python
-    async with ClaudeSDKClient(options=ClaudeAgentOptions(**options_dict)) as client:  # ✅
-        await client.query(prompt=prompt, session_id=session_id)
-        async for response in client.receive_response():  # ✅
-    ```
-- **파일**: `src/infrastructure/claude/sdk_executor.py:634-676`
-- **영향범위**: Worker Agent 실행, SDK 호환성, 연결 관리
-- **참고**: [Claude Agent SDK Python 문서](https://docs.claude.com/en/api/agent-sdk/python)
-- **테스트**: 구문 검사 통과
-
-### 커스텀 워커 지원 (이전)
-- **문제**: 커스텀 워커 노드 실행 시 "Agent를 찾을 수 없습니다" 에러
-- **해결**: WorkflowExecutor에서 프로젝트 경로 기반 커스텀 워커 자동 로드
-- **파일**: `workflow_executor.py`, `workflows.py`
-
----
+- Claude Agent SDK: `claude-agent-sdk-features.md`
+- Project History: Check Git commit logs
+- Workflow Examples: `prompts/workflow_designer.txt`
