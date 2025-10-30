@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from src.application.ports import IConfigLoader, ISystemConfig
 from src.domain.models import AgentConfig
 from src.infrastructure.logging import get_logger
 
@@ -18,13 +17,33 @@ logger = get_logger(__name__, component="ConfigLoader")
 
 
 @dataclass
-class SystemConfig(ISystemConfig):
+class SystemConfig:
     """
     시스템 설정 구현
 
     JSON 파일에서 로드된 설정
     딕셔너리 접근도 지원 (하위 호환성)
     """
+    # Manager 설정
+    manager_model: str = "claude-sonnet-4-5-20250929"
+    max_history_messages: int = 20
+    max_turns: int = 10
+
+    # Performance 설정
+    enable_caching: bool = True
+    worker_retry_enabled: bool = True
+    worker_retry_max_attempts: int = 3
+    worker_retry_base_delay: float = 1.0
+
+    # Security 설정
+    max_input_length: int = 5000
+    enable_input_validation: bool = True
+
+    # Logging 설정
+    log_level: str = "INFO"
+    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    enable_structured_logging: bool = False
+
     _raw_data: dict = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self):
@@ -72,7 +91,7 @@ class SystemConfig(ISystemConfig):
         raise KeyError(f"설정 키를 찾을 수 없습니다: {key}")
 
 
-class JsonConfigLoader(IConfigLoader):
+class JsonConfigLoader:
     """
     JSON 설정 로더
 
@@ -140,7 +159,7 @@ class JsonConfigLoader(IConfigLoader):
             logger.error("Config loading failed", config_path=str(self.agent_config_path), error=str(e))
             raise ValueError(f"설정 파일 로드 실패: {e}")
 
-    def load_system_config(self) -> ISystemConfig:
+    def load_system_config(self) -> SystemConfig:
         """
         시스템 설정 로드
 

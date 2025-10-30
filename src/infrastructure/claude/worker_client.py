@@ -13,9 +13,7 @@ from claude_agent_sdk import query
 from claude_agent_sdk.types import ClaudeAgentOptions
 
 from src.domain.models import AgentConfig
-from src.domain.services import ProjectContext
 from src.infrastructure.config import get_claude_cli_path, get_project_root
-from src.infrastructure.storage import JsonContextRepository
 from src.infrastructure.logging import get_logger, log_exception_silently
 from .sdk_executor import (
     SDKExecutionConfig,
@@ -41,37 +39,17 @@ class WorkerAgent:
     def __init__(
         self,
         config: AgentConfig,
-        project_context: Optional[ProjectContext] = None,
         project_dir: Optional[str] = None
     ):
         """
         Args:
             config: 에이전트 설정
-            project_context: 프로젝트 컨텍스트 (선택)
             project_dir: 프로젝트 디렉토리 경로 (CLAUDE.md 로드용, 선택)
         """
         self.config = config
         self.project_dir = project_dir
-        self.project_context = project_context or self._load_project_context()
         self.system_prompt = self._load_system_prompt()
         self.last_session_id: Optional[str] = None  # 마지막 실행의 세션 ID 저장
-
-    def _load_project_context(self) -> Optional[ProjectContext]:
-        """
-        프로젝트 컨텍스트 로드
-
-        Returns:
-            ProjectContext 또는 None
-        """
-        try:
-            repo = JsonContextRepository(get_project_root() / ".context.json")
-            context = repo.load()
-            if context:
-                logger.info(f"✅ 프로젝트 컨텍스트 로드: {context.project_name}")
-            return context
-        except Exception as e:
-            logger.warning(f"⚠️  프로젝트 컨텍스트 로드 실패: {e}")
-            return None
 
     def _load_system_prompt(self) -> str:
         """
@@ -103,12 +81,6 @@ class WorkerAgent:
                     logger.warning(f"⚠️  프롬프트 파일 없음: {prompt_path}, 기본값 사용")
             except Exception as e:
                 logger.error(f"❌ 프롬프트 로드 실패: {e}, 기본값 사용")
-
-        # 프로젝트 컨텍스트 추가 (.context.json)
-        if self.project_context:
-            context_text = self.project_context.to_prompt_context()
-            prompt_text = f"{prompt_text}\n\n{context_text}"
-            logger.info(f"✅ 프로젝트 컨텍스트 추가: {self.project_context.project_name}")
 
         # 프로젝트 CLAUDE.md 추가 (사용자가 선택한 프로젝트의 가이드라인)
         if self.project_dir:
@@ -173,22 +145,6 @@ Use your thinking process liberally throughout your response to show your reason
             lines.append(f"   {line}")
         lines.append("-"*70)
 
-        # 3. 프로젝트 컨텍스트 정보 (상세)
-        if self.project_context:
-            lines.append(f"\n🏗️  Project Context:")
-            lines.append(f"   - Project: {self.project_context.project_name}")
-            lines.append(f"   - Description: {self.project_context.description}")
-
-            if self.project_context.coding_style:
-                style = self.project_context.coding_style
-                lines.append(f"   - Coding Style:")
-                lines.append(f"     • Docstring: {style.docstring_style}")
-                lines.append(f"     • Type Hints: {'사용' if style.type_hints else '미사용'}")
-                lines.append(f"     • Line Length: {style.line_length}")
-                lines.append(f"     • Quote Style: {style.quote_style}")
-                lines.append(f"     • Import Style: {style.import_style}")
-        else:
-            lines.append(f"\n🏗️  Project Context: None")
 
         # 4. 작업 설명 (전체 표시)
         lines.append(f"\n📝 Task Description:")
