@@ -29,6 +29,12 @@ export interface LogItem {
   timestamp: number
 }
 
+export interface PendingUserInput {
+  nodeId: string
+  question: string
+  sessionId: string
+}
+
 interface WorkflowExecutionState {
   isExecuting: boolean
   currentNodeId: string | null
@@ -41,6 +47,7 @@ interface WorkflowExecutionState {
     output_tokens: number
     total_tokens: number
   }
+  pendingUserInput: PendingUserInput | null  // Human-in-the-Loop
 }
 
 interface WorkflowStore {
@@ -92,6 +99,10 @@ interface WorkflowStore {
   addLog: (nodeId: string, type: WorkflowExecutionState['logs'][0]['type'], message: string) => void
   clearExecution: () => void
 
+  // Human-in-the-Loop
+  setPendingUserInput: (input: PendingUserInput | null) => void
+  clearPendingUserInput: () => void
+
   // 노드별 실행 상태 관리
   setNodeStatus: (nodeId: string, status: NodeExecutionStatus) => void
   setNodeStartTime: (nodeId: string, timestamp: number) => void
@@ -121,6 +132,7 @@ const initialExecutionState: WorkflowExecutionState = {
     output_tokens: 0,
     total_tokens: 0,
   },
+  pendingUserInput: null,  // Human-in-the-Loop
 }
 
 export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
@@ -346,6 +358,23 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set({
       execution: initialExecutionState,
     }),
+
+  // Human-in-the-Loop 구현
+  setPendingUserInput: (input) =>
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        pendingUserInput: input,
+      },
+    })),
+
+  clearPendingUserInput: () =>
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        pendingUserInput: null,
+      },
+    })),
 
   // 노드별 실행 상태 관리 구현
   setNodeStatus: (nodeId, status) =>
@@ -583,6 +612,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         output_tokens: 0,
         total_tokens: 0,
       },
+      pendingUserInput: null,  // 세션 복원 시 사용자 입력 요청 없음
     }
 
     // 전체 토큰 사용량 계산

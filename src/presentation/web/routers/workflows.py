@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any
 from functools import lru_cache
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Body
 from sse_starlette.sse import EventSourceResponse
 
 from src.infrastructure.config import JsonConfigLoader, get_project_root
@@ -63,11 +63,15 @@ def get_config_loader() -> JsonConfigLoader:
     return JsonConfigLoader(project_root)
 
 
+# 프로젝트별 WorkflowExecutor 캐시
+_executors: Dict[str, WorkflowExecutor] = {}
+
+
 def get_workflow_executor(
     config_loader: JsonConfigLoader = Depends(get_config_loader)
 ) -> WorkflowExecutor:
     """
-    WorkflowExecutor 인스턴스 반환 (FastAPI Depends)
+    WorkflowExecutor 인스턴스 반환 (프로젝트별 캐싱)
 
     Args:
         config_loader: ConfigLoader 의존성 주입
@@ -77,7 +81,16 @@ def get_workflow_executor(
     """
     # projects 라우터에서 현재 프로젝트 경로 가져오기
     from src.presentation.web.routers.projects import _current_project_path
-    return WorkflowExecutor(config_loader, _current_project_path)
+
+    # 캐시 키 생성
+    cache_key = _current_project_path or "~default"
+
+    # 캐시에서 인스턴스 확인
+    if cache_key not in _executors:
+        logger.info(f"새 WorkflowExecutor 생성 (프로젝트: {cache_key})")
+        _executors[cache_key] = WorkflowExecutor(config_loader, _current_project_path)
+
+    return _executors[cache_key]
 
 
 def get_background_manager(
@@ -170,6 +183,11 @@ async def execute_workflow(
 
         # 백그라운드 워크플로우 시작 (프로젝트 경로, start_node_id 전달)
         try:
+            logger.info(
+                f"[{session_id}] [DEBUG] 워크플로우 실행 시작:\n"
+                f"  - executor 인스턴스: {id(bg_manager.executor)}\n"
+                f"  - 프로젝트 경로: {_current_project_path}"
+            )
             await bg_manager.start_workflow(
                 session_id=session_id,
                 workflow=request.workflow,
@@ -705,6 +723,195 @@ async def cancel_workflow_session(
         raise HTTPException(
             status_code=500,
             detail=f"워크플로우 취소 실패: {str(e)}",
+        )
+
+
+@router.post("/nodes/{node_id}/continue")
+async def continue_node_conversation(
+    node_id: str,
+    prompt: str = Body(..., embed=True),
+    bg_manager: BackgroundWorkflowManager = Depends(get_background_manager),
+) -> Dict[str, str]:
+    """
+    노드에 추가 프롬프트를 전송하여 대화 계속 (주도적 대화)
+
+    사용자가 로그 상세 모달에서 추가 질문/지시를 입력할 때 사용합니다.
+    해당 노드의 이전 세션을 이어서 실행합니다.
+
+    Args:
+        node_id: 노드 ID
+        prompt: 추가 프롬프트
+        bg_manager: 백그라운드 워크플로우 관리자
+
+    Returns:
+        Dict[str, str]: 응답 메시지 및 새 실행 세션 ID
+
+    Example:
+        POST /api/workflows/nodes/node-123/continue
+        {
+            "prompt": "테스트 코드도 작성해줘"
+        }
+
+        Response:
+        {
+            "message": "노드 실행이 시작되었습니다",
+            "node_id": "node-123",
+            "session_id": "new-session-456"
+        }
+    """
+    try:
+        logger.info(f"노드 추가 대화 요청: {node_id}, 프롬프트: {prompt[:50]}...")
+
+        # 새 세션 ID 생성
+        import uuid
+        new_session_id = str(uuid.uuid4())
+
+        # Executor를 통해 노드 재실행
+        executor = bg_manager.executor
+
+        # 디버깅: executor 인스턴스 및 저장된 세션 확인
+        logger.info(
+            f"[DEBUG] 추가 대화 API 호출:\n"
+            f"  - node_id: {node_id}\n"
+            f"  - prompt: {prompt[:50]}...\n"
+            f"  - executor 인스턴스: {id(executor)}\n"
+            f"  - executor._node_sessions 크기: {len(executor._node_sessions)}\n"
+            f"  - executor._node_sessions 키: {list(executor._node_sessions.keys())}"
+        )
+
+        # 노드의 이전 세션 ID 확인
+        previous_session_id = executor._node_sessions.get(node_id)
+        if not previous_session_id:
+            raise ValueError(f"노드 {node_id}의 이전 세션을 찾을 수 없습니다. 먼저 워크플로우를 실행해주세요.")
+
+        logger.info(f"노드 {node_id} 재실행 (이전 세션: {previous_session_id[:8]}...)")
+
+        # 백그라운드 태스크 생성 및 이벤트 저장
+        from src.presentation.web.services.background_workflow_manager import BackgroundWorkflowTask
+        from collections import deque
+
+        # BackgroundWorkflowTask 생성
+        event_queue = deque()
+
+        async def run_node_continue():
+            try:
+                logger.info(f"노드 {node_id} 추가 대화 실행 시작")
+                async for event in executor.execute_single_node_continue(
+                    node_id=node_id,
+                    additional_prompt=prompt,
+                    project_path=executor.project_path,
+                ):
+                    # 이벤트를 큐에 저장 (SSE로 전송 가능하도록)
+                    event_queue.append(event)
+                    logger.debug(
+                        f"노드 {node_id} 추가 대화 이벤트: {event.event_type} "
+                        f"({event.data.get('chunk_type', 'N/A')})"
+                    )
+
+                # 완료 시 task 상태 업데이트
+                if new_session_id in bg_manager.tasks:
+                    bg_manager.tasks[new_session_id].completed = True
+                logger.info(f"노드 {node_id} 추가 대화 완료")
+
+            except Exception as e:
+                logger.error(f"노드 {node_id} 추가 대화 실패: {e}", exc_info=True)
+                # 에러 시 task 상태 업데이트
+                if new_session_id in bg_manager.tasks:
+                    bg_manager.tasks[new_session_id].error = str(e)
+                    bg_manager.tasks[new_session_id].completed = True
+
+        # 백그라운드 태스크 시작
+        import asyncio
+        task = asyncio.create_task(run_node_continue())
+
+        # BackgroundWorkflowTask 저장 (SSE로 이벤트 스트리밍 가능하도록)
+        bg_manager.tasks[new_session_id] = BackgroundWorkflowTask(
+            session_id=new_session_id,
+            task=task,
+            event_queue=event_queue,
+        )
+
+        return {
+            "message": "노드 추가 대화가 시작되었습니다",
+            "node_id": node_id,
+            "session_id": new_session_id,
+        }
+
+    except ValueError as e:
+        logger.warning(f"노드 추가 대화 실패: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"노드 추가 대화 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"노드 추가 대화 실패: {str(e)}",
+        )
+
+
+@router.post("/sessions/{session_id}/user-input")
+async def send_user_input(
+    session_id: str,
+    answer: str = Body(..., embed=True),
+    bg_manager: BackgroundWorkflowManager = Depends(get_background_manager),
+) -> Dict[str, str]:
+    """
+    사용자 입력을 Worker에게 전달 (Human-in-the-Loop)
+
+    Worker가 "@ASK_USER:" 패턴으로 질문을 했을 때,
+    웹 UI에서 사용자 답변을 이 엔드포인트로 전송합니다.
+
+    Args:
+        session_id: 세션 ID
+        answer: 사용자 답변
+        bg_manager: 백그라운드 워크플로우 관리자
+
+    Returns:
+        Dict[str, str]: 응답 메시지
+
+    Example:
+        POST /api/workflows/sessions/abc-123/user-input
+        {
+            "answer": "네, 진행해주세요"
+        }
+
+        Response:
+        {
+            "message": "사용자 입력이 전달되었습니다",
+            "session_id": "abc-123"
+        }
+    """
+    try:
+        logger.info(f"사용자 입력 전달: {session_id}, 답변: {answer[:50]}...")
+
+        # Executor를 통해 Queue에 답변 전달
+        executor = bg_manager.executor
+        if session_id not in executor.user_input_queues:
+            raise ValueError(f"세션 {session_id}의 입력 Queue를 찾을 수 없습니다")
+
+        queue = executor.user_input_queues[session_id]
+        await queue.put(answer)
+
+        logger.info(f"사용자 입력 Queue에 답변 전달 완료: {session_id}")
+
+        return {
+            "message": "사용자 입력이 전달되었습니다",
+            "session_id": session_id,
+        }
+
+    except ValueError as e:
+        logger.warning(f"사용자 입력 전달 실패: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"사용자 입력 전달 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"사용자 입력 전달 실패: {str(e)}",
         )
 
 

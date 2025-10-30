@@ -9,8 +9,8 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { ListChecks, HelpCircle, CheckCircle2, Save, Search, Maximize2 } from 'lucide-react'
-import { WorkflowNode, getAgents, Agent, getTools, Tool } from '@/lib/api'
+import { ListChecks, HelpCircle, CheckCircle2, Save, Search, Maximize2, Loader2 } from 'lucide-react'
+import { WorkflowNode, getAgents, Agent, getTools, Tool, sendUserInput } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -38,6 +38,11 @@ interface WorkerNodeData {
 export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   const [activeTab, setActiveTab] = useState('basic')
   const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
+
+  // 대화 입력 상태 (Human-in-the-Loop)
+  const [userInput, setUserInput] = useState('')
+  const [isSending, setIsSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [tools, setTools] = useState<Tool[]>([])
   const [toolSearchQuery, setToolSearchQuery] = useState('')
@@ -49,6 +54,8 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   const logs = useWorkflowStore((state) => state.execution.logs)
   const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
   const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
+  const pendingUserInput = useWorkflowStore((state) => state.execution.pendingUserInput)
+  const clearPendingUserInput = useWorkflowStore((state) => state.clearPendingUserInput)
 
   // Agent 및 Tool 목록 로드
   useEffect(() => {
@@ -703,6 +710,83 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                 </div>
               </div>
             </div>
+
+            {/* 대화 입력 섹션 (Human-in-the-Loop) */}
+            {pendingUserInput && pendingUserInput.nodeId === node.id && (
+              <div className="border-2 rounded-md p-4 bg-amber-50 border-amber-300 space-y-3">
+                <div className="flex items-start gap-2">
+                  <div className="text-lg">💬</div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-amber-900 mb-2">
+                      Worker가 입력을 요청했습니다
+                    </div>
+                    <div className="text-sm text-amber-800 mb-3 p-2 bg-white rounded border border-amber-200">
+                      {pendingUserInput.question}
+                    </div>
+                    {sendError && (
+                      <div className="text-sm text-red-600 mb-2 p-2 bg-red-50 rounded border border-red-200">
+                        ❌ 전송 실패: {sendError}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={userInput}
+                        onChange={(e) => setUserInput(e.target.value)}
+                        onKeyPress={async (e) => {
+                          if (e.key === 'Enter' && userInput.trim() && !isSending) {
+                            setIsSending(true)
+                            setSendError(null)
+                            try {
+                              await sendUserInput(pendingUserInput.sessionId, userInput)
+                              clearPendingUserInput()
+                              setUserInput('')
+                            } catch (error) {
+                              console.error('사용자 입력 전송 실패:', error)
+                              setSendError(error instanceof Error ? error.message : '알 수 없는 에러')
+                            } finally {
+                              setIsSending(false)
+                            }
+                          }
+                        }}
+                        placeholder="답변을 입력하세요..."
+                        className="flex-1 px-3 py-2 text-sm border border-amber-300 rounded focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        disabled={isSending}
+                        autoFocus
+                      />
+                      <Button
+                        onClick={async () => {
+                          if (!userInput.trim() || isSending) return
+                          setIsSending(true)
+                          setSendError(null)
+                          try {
+                            await sendUserInput(pendingUserInput.sessionId, userInput)
+                            clearPendingUserInput()
+                            setUserInput('')
+                          } catch (error) {
+                            console.error('사용자 입력 전송 실패:', error)
+                            setSendError(error instanceof Error ? error.message : '알 수 없는 에러')
+                          } finally {
+                            setIsSending(false)
+                          }
+                        }}
+                        disabled={!userInput.trim() || isSending}
+                        className="bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
+                      >
+                        {isSending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            전송 중...
+                          </>
+                        ) : (
+                          '전송'
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>

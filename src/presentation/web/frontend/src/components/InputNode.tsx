@@ -41,6 +41,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
     setNodeStartTime,
     setNodeCompleted,
     setNodeError,
+    setPendingUserInput,
   } = useWorkflowStore()
 
   // 상태별 스타일 (WorkerNode 패턴과 동일)
@@ -146,6 +147,19 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
                 completeMsg += ` [${token_usage.total_tokens.toLocaleString()} tokens]`
               }
               addLog(node_id, 'complete', completeMsg)
+              break
+
+            case 'user_input_request':
+              // Human-in-the-Loop: 사용자 입력 요청
+              console.log('[InputNode] user_input_request 이벤트:', eventData)
+              if (eventData.question && eventData.session_id) {
+                setPendingUserInput({
+                  nodeId: node_id,
+                  question: eventData.question,
+                  sessionId: eventData.session_id,
+                })
+                addLog(node_id, 'execution', `💬 사용자 입력 요청: ${eventData.question}`)
+              }
               break
 
             case 'node_error':

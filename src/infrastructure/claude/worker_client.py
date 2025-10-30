@@ -4,7 +4,7 @@
 WorkerAgent: Claude Code의 agentic harness를 사용하여 파일 읽기/쓰기, 코드 실행 등 수행
 """
 
-from typing import List, AsyncIterator, Optional, Callable
+from typing import List, AsyncIterator, Optional, Callable, Awaitable
 from pathlib import Path
 import logging
 import os
@@ -207,15 +207,18 @@ Use your thinking process liberally throughout your response to show your reason
         self,
         task_description: str,
         usage_callback: Optional[Callable[[dict], None]] = None,
-        resume_session_id: Optional[str] = None
+        resume_session_id: Optional[str] = None,
+        user_input_callback: Optional[Callable[[str], Awaitable[str]]] = None
     ) -> AsyncIterator[str]:
         """
-        Claude Agent SDK를 사용하여 작업 실행
+        Claude Agent SDK를 사용하여 작업 실행 (Human-in-the-Loop 지원)
 
         Args:
             task_description: 작업 설명
             usage_callback: 토큰 사용량 정보를 받을 콜백 함수 (선택)
             resume_session_id: 재개할 SDK 세션 ID (선택, 이전 실행의 컨텍스트 유지)
+            user_input_callback: 사용자 입력이 필요할 때 호출되는 async 함수 (선택)
+                                 질문(str)을 받아서 답변(str)을 반환해야 함
 
         Yields:
             스트리밍 응답 청크
@@ -272,8 +275,12 @@ Use your thinking process liberally throughout your response to show your reason
                 worker_name=self.config.name
             )
 
-            # 스트림 실행 (resume_session_id 전달하여 이전 컨텍스트 재개)
-            async for text in executor.execute_stream(full_prompt, resume_session_id=resume_session_id):
+            # 스트림 실행 (resume_session_id 및 user_input_callback 전달)
+            async for text in executor.execute_stream(
+                prompt=full_prompt,
+                resume_session_id=resume_session_id,
+                user_input_callback=user_input_callback
+            ):
                 yield text
 
             # 실제 SDK 세션 ID 저장 (다음 실행에서 재활용)

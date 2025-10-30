@@ -1,7 +1,10 @@
-import { X, Maximize2 } from 'lucide-react'
-import { LogItem } from '@/stores/workflowStore'
+import { X, Maximize2, Send, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { LogItem, useWorkflowStore } from '@/stores/workflowStore'
 import { ParsedContent } from './ParsedContent'
 import { AutoScrollContainer } from './AutoScrollContainer'
+import { Button } from './ui/button'
+import { continueNodeConversation, API_BASE } from '@/lib/api'
 
 interface NodeLogSection {
   nodeId: string
@@ -82,12 +85,144 @@ export function LogDetailModal({ isOpen, onClose, sections, title = "실행 로�
 }
 
 function LogSection({ section }: { section: NodeLogSection }) {
+  // 추가 프롬프트 입력 상태
+  const [userInput, setUserInput] = useState('')
+  const [isSending, setIsSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [continueSessionId, setContinueSessionId] = useState<string | null>(null)
+
+  // Zustand store
+  const addLog = useWorkflowStore((state) => state.addLog)
+
   // 로그 타입별 분류
   const inputLogs = section.logs.filter(log => log.type === 'input')
   const executionLogs = section.logs.filter(log => log.type === 'execution')
   const outputLogs = section.logs.filter(log => log.type === 'output')
   const errorLogs = section.logs.filter(log => log.type === 'error')
   const otherLogs = section.logs.filter(log => !['input', 'execution', 'output', 'error'].includes(log.type))
+
+  // 추가 프롬프트 전송
+  const handleSendPrompt = async () => {
+    if (!userInput.trim() || isSending) return
+
+    setIsSending(true)
+    setSendError(null)
+
+    try {
+      // API 호출
+      const apiResponse = await continueNodeConversation(section.nodeId, userInput.trim())
+      const sessionId = apiResponse.session_id
+
+      // 입력 로그 추가
+      addLog(section.nodeId, 'input', `📝 추가 프롬프트: ${userInput.trim()}`)
+      setUserInput('') // 입력 초기화
+
+      // SSE 연결 시작 (fetch + ReadableStream 패턴)
+      setContinueSessionId(sessionId)
+
+      const sseResponse = await fetch(`${API_BASE}/workflows/sessions/${sessionId}/stream`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/event-stream',
+        },
+      })
+
+      if (!sseResponse.ok) {
+        throw new Error(`SSE 연결 실패: ${sseResponse.status}`)
+      }
+
+      const reader = sseResponse.body?.getReader()
+      if (!reader) {
+        throw new Error('SSE 스트림을 읽을 수 없습니다')
+      }
+
+      const decoder = new TextDecoder('utf-8')
+      let buffer = ''
+
+      // 백그라운드에서 SSE 읽기
+      ;(async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+
+            if (done) {
+              setIsSending(false)
+              setContinueSessionId(null)
+              break
+            }
+
+            // 청크를 문자열로 변환
+            const chunk = decoder.decode(value, { stream: true })
+            buffer += chunk
+
+            // SSE 메시지 파싱 (빈 줄로 구분)
+            const messages = buffer.split(/\r\n\r\n|\n\n/)
+            buffer = messages.pop() || ''
+
+            for (const message of messages) {
+              if (!message.trim()) continue
+
+              const lines = message.split(/\r\n|\n/)
+              let dataContent = ''
+
+              for (const line of lines) {
+                const trimmedLine = line.trim()
+                if (trimmedLine.startsWith('data:')) {
+                  const lineData = trimmedLine.substring(5).trim()
+                  if (lineData !== '[DONE]') {
+                    dataContent += lineData
+                  }
+                }
+              }
+
+              if (!dataContent) continue
+
+              try {
+                const event = JSON.parse(dataContent)
+                const { event_type, node_id, data } = event
+
+                // 청크 타입에 따라 로그 타입 결정
+                let logType: 'input' | 'execution' | 'output' | 'error' | 'complete' | 'start' = 'execution'
+                if (data?.chunk_type === 'text') {
+                  logType = 'output'
+                } else if (data?.chunk_type === 'thinking' || data?.chunk_type === 'tool') {
+                  logType = 'execution'
+                }
+
+                switch (event_type) {
+                  case 'node_start':
+                    addLog(node_id, 'start', '🚀 노드 추가 대화 시작')
+                    break
+                  case 'node_output':
+                    if (data?.chunk) {
+                      addLog(node_id, logType, data.chunk)
+                    }
+                    break
+                  case 'node_complete':
+                    addLog(node_id, 'complete', '✅ 노드 추가 대화 완료')
+                    break
+                  case 'node_error':
+                    addLog(node_id, 'error', `❌ 에러: ${data?.error || '알 수 없는 오류'}`)
+                    break
+                }
+              } catch (parseError) {
+                console.error('SSE 메시지 파싱 에러:', parseError)
+              }
+            }
+          }
+        } catch (streamError) {
+          console.error('SSE 스트림 에러:', streamError)
+          setIsSending(false)
+          setContinueSessionId(null)
+        }
+      })()
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다'
+      setSendError(errorMessage)
+      setIsSending(false)
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -206,6 +341,53 @@ function LogSection({ section }: { section: NodeLogSection }) {
             )}
           </>
         )}
+      </div>
+
+      {/* 추가 프롬프트 입력 UI */}
+      <div className="p-3 border-t border-gray-200 bg-blue-50">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSendPrompt()
+                }
+              }}
+              placeholder="이 노드에 추가 프롬프트 입력..."
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isSending}
+            />
+            <Button
+              onClick={handleSendPrompt}
+              disabled={!userInput.trim() || isSending}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isSending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>전송 중...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  <span>전송</span>
+                </>
+              )}
+            </Button>
+          </div>
+          {sendError && (
+            <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-md border border-red-200">
+              ❌ {sendError}
+            </div>
+          )}
+          <p className="text-xs text-gray-600">
+            💡 이 노드의 이전 대화 컨텍스트를 유지하며 추가 작업을 요청할 수 있습니다
+          </p>
+        </div>
       </div>
     </div>
   )

@@ -184,6 +184,16 @@ class WorkflowExecutor:
         # 여러 워크플로우 실행에 걸쳐 유지되어 컨텍스트 재활용
         self._node_sessions: Dict[str, str] = {}
 
+        # 노드 에이전트 이름 매핑 (노드별 agent_name 저장)
+        # {node_id: agent_name}
+        # execute_single_node_continue에서 사용
+        self._node_agent_names: Dict[str, str] = {}
+
+        # 사용자 입력 Queue 관리 (세션별)
+        # {session_id: asyncio.Queue}
+        # Human-in-the-Loop 지원: Worker가 사용자 입력을 요청할 때 사용
+        self.user_input_queues: Dict[str, asyncio.Queue] = {}
+
         # 커스텀 워커 로드 (프로젝트 경로가 주어진 경우)
         self.custom_worker_names = set()
         if project_path:
@@ -1299,12 +1309,44 @@ class WorkflowExecutor:
                         f"(입력: {node_token_usage.input_tokens}, 출력: {node_token_usage.output_tokens})"
                     )
 
-                # Worker 실행 (이전 세션 ID 전달 - resume 용도)
+                # 사용자 입력 콜백 정의 (Human-in-the-Loop)
+                async def user_input_callback_impl(question: str) -> str:
+                    """사용자 입력을 Queue에서 대기"""
+                    logger.info(f"[{session_id}] 💬 사용자 입력 대기: {question[:100]}...")
+                    answer = await user_input_queue.get()
+                    logger.info(f"[{session_id}] ✅ 사용자 답변 수신: {answer[:100]}...")
+                    return answer
+
+                # Worker 실행 (이전 세션 ID 및 user_input_callback 전달)
                 async for chunk in worker.execute_task(
                     task_description,
                     usage_callback=usage_callback,
-                    resume_session_id=previous_session_id
+                    resume_session_id=previous_session_id,
+                    user_input_callback=user_input_callback_impl
                 ):
+                    # 특수 이벤트 마커 감지 (Human-in-the-Loop)
+                    if chunk.startswith("@EVENT:user_input_request:"):
+                        import json
+                        # 마커 제거 및 JSON 파싱
+                        json_str = chunk[len("@EVENT:user_input_request:"):]
+                        event_data = json.loads(json_str)
+                        question = event_data.get("question", "")
+
+                        # user_input_request 이벤트 전송
+                        user_input_event = WorkflowNodeExecutionEvent(
+                            event_type="user_input_request",
+                            node_id=node_id,
+                            data={
+                                "question": question,
+                                "session_id": session_id,
+                            },
+                        )
+                        logger.info(f"[{session_id}] 💬 이벤트 생성: user_input_request (node: {node_id})")
+                        yield user_input_event
+
+                        # 이 청크는 출력에 포함하지 않음 (내부 제어용)
+                        continue
+
                     node_output_chunks.append(chunk)
 
                     # 청크 타입 분류
@@ -1343,6 +1385,16 @@ class WorkflowExecutor:
                     logger.warning(
                         f"[{session_id}] 노드 {node_id}: SDK 세션 ID를 받지 못함"
                     )
+
+                # 노드의 agent_name 저장 (주도적 대화에서 사용)
+                self._node_agent_names[node_id] = agent_name
+                logger.info(
+                    f"[{session_id}] 노드 정보 저장 완료:\n"
+                    f"  - node_id: {node_id}\n"
+                    f"  - agent_name: {agent_name}\n"
+                    f"  - SDK 세션: {worker.last_session_id[:8] if worker.last_session_id else 'None'}...\n"
+                    f"  - 총 저장된 노드: {len(self._node_sessions)}개"
+                )
 
                 elapsed_time = time.time() - start_time
 
@@ -1421,6 +1473,157 @@ class WorkflowExecutor:
             )
             await event_queue.put(e)  # 예외를 큐에 넣음
 
+    async def execute_single_node_continue(
+        self,
+        node_id: str,
+        additional_prompt: str,
+        project_path: Optional[str] = None,
+    ) -> AsyncIterator[WorkflowNodeExecutionEvent]:
+        """
+        단일 노드에 추가 프롬프트를 전송하여 대화 계속 (주도적 대화)
+
+        Args:
+            node_id: 실행할 노드 ID
+            additional_prompt: 추가 프롬프트
+            project_path: 프로젝트 디렉토리 경로
+
+        Yields:
+            WorkflowNodeExecutionEvent: 노드 실행 이벤트
+
+        Raises:
+            ValueError: 노드를 찾을 수 없거나 이전 세션이 없는 경우
+        """
+        # 디버깅: 현재 저장된 노드 세션 확인
+        logger.info(
+            f"[DEBUG] 추가 대화 요청: node_id={node_id}\n"
+            f"[DEBUG] 저장된 노드 세션 목록: {list(self._node_sessions.keys())}\n"
+            f"[DEBUG] 저장된 agent_name 목록: {list(self._node_agent_names.keys())}"
+        )
+
+        # 노드의 이전 세션 ID 확인
+        previous_session_id = self._node_sessions.get(node_id)
+        if not previous_session_id:
+            available_nodes = ", ".join(self._node_sessions.keys()) if self._node_sessions else "(없음)"
+            raise ValueError(
+                f"노드 {node_id}의 이전 세션을 찾을 수 없습니다.\n"
+                f"사용 가능한 노드: {available_nodes}\n"
+                f"먼저 워크플로우를 실행해주세요."
+            )
+
+        # 노드의 agent_name 확인
+        agent_name = self._node_agent_names.get(node_id)
+        if not agent_name:
+            available_agents = ", ".join(self._node_agent_names.keys()) if self._node_agent_names else "(없음)"
+            raise ValueError(
+                f"노드 {node_id}의 Agent 정보를 찾을 수 없습니다.\n"
+                f"사용 가능한 노드: {available_agents}"
+            )
+
+        logger.info(
+            f"노드 {node_id} 추가 대화 시작: {agent_name} "
+            f"(이전 세션: {previous_session_id[:8]}...)"
+        )
+
+        # Agent 설정 조회
+        agent_config = self._get_agent_config(agent_name)
+
+        # node_start 이벤트
+        yield WorkflowNodeExecutionEvent(
+            event_type="node_start",
+            node_id=node_id,
+            data={
+                "additional_prompt": True,
+                "agent_name": agent_name,
+            },
+            timestamp=datetime.now().isoformat(),
+        )
+
+        # Worker 실행 (이전 세션 재개)
+        try:
+            worker = WorkerAgent(config=agent_config, project_dir=project_path)
+            node_output_chunks = []
+            node_token_usage: Optional[TokenUsage] = None
+
+            def usage_callback(usage_info: Dict[str, Any]):
+                nonlocal node_token_usage
+                node_token_usage = TokenUsage(
+                    input_tokens=usage_info.get("input_tokens", 0),
+                    output_tokens=usage_info.get("output_tokens", 0),
+                    total_tokens=usage_info.get("total_tokens", 0),
+                )
+                logger.debug(
+                    f"💰 토큰 사용량: {node_token_usage.total_tokens} "
+                    f"(입력: {node_token_usage.input_tokens}, 출력: {node_token_usage.output_tokens})"
+                )
+
+            # Worker 실행 (이전 세션 ID로 재개, user_input_callback은 None)
+            async for chunk in worker.execute_task(
+                additional_prompt,
+                usage_callback=usage_callback,
+                resume_session_id=previous_session_id,
+                user_input_callback=None,  # 주도적 대화에서는 사용자 입력 요청 없음
+            ):
+                node_output_chunks.append(chunk)
+
+                # 청크 타입 분류
+                chunk_type = classify_chunk_type(chunk)
+
+                output_event = WorkflowNodeExecutionEvent(
+                    event_type="node_output",
+                    node_id=node_id,
+                    data={
+                        "chunk": chunk,
+                        "chunk_type": chunk_type,
+                    },
+                )
+                logger.debug(f"📝 이벤트 생성: node_output (node: {node_id}, type: {chunk_type})")
+                yield output_event
+
+            # 전체 출력에서 최종 텍스트만 추출
+            full_output = "".join(node_output_chunks)
+            final_text = extract_text_from_worker_output(full_output)
+
+            logger.info(
+                f"노드 출력 처리 완료: {node_id} "
+                f"(전체: {len(full_output)}자, 최종 텍스트: {len(final_text)}자)"
+            )
+
+            # Worker에서 반환된 실제 SDK 세션 ID 업데이트 (동일해야 하지만 갱신)
+            if worker.last_session_id:
+                self._node_sessions[node_id] = worker.last_session_id
+                logger.info(
+                    f"노드 세션 업데이트: {node_id} → "
+                    f"SDK 세션 {worker.last_session_id[:8]}..."
+                )
+
+            # node_complete 이벤트
+            complete_event = WorkflowNodeExecutionEvent(
+                event_type="node_complete",
+                node_id=node_id,
+                data={
+                    "agent_name": agent_name,
+                    "output_length": len(final_text),
+                },
+                timestamp=datetime.now().isoformat(),
+                token_usage=node_token_usage,
+            )
+            logger.info(f"✅ 이벤트 생성: node_complete (node: {node_id}, agent: {agent_name})")
+            yield complete_event
+
+            logger.info(
+                f"노드 추가 대화 완료: {node_id} ({agent_name}) "
+                f"- 출력 길이: {len(final_text)}"
+            )
+
+        except Exception as e:
+            logger.error(f"노드 {node_id} 추가 대화 실패: {e}", exc_info=True)
+            yield WorkflowNodeExecutionEvent(
+                event_type="node_error",
+                node_id=node_id,
+                data={"error": str(e)},
+                timestamp=datetime.now().isoformat(),
+            )
+
     async def execute_workflow(
         self,
         workflow: Workflow,
@@ -1451,6 +1654,11 @@ class WorkflowExecutor:
 
         # 세션별 Condition 노드 반복 횟수 초기화
         self._condition_iterations[session_id] = {}
+
+        # 세션별 사용자 입력 Queue 생성 (Human-in-the-Loop)
+        user_input_queue = asyncio.Queue()
+        self.user_input_queues[session_id] = user_input_queue
+        logger.info(f"[{session_id}] 사용자 입력 Queue 생성 (Human-in-the-Loop 지원)")
 
         # 실행 중인 병렬 태스크 추적 (취소 시 정리용)
         running_tasks: List[asyncio.Task] = []
@@ -1631,3 +1839,8 @@ class WorkflowExecutor:
         finally:
             # 세션별 파일 핸들러 제거 (메모리 누수 방지)
             remove_session_file_handlers(session_id)
+
+            # 사용자 입력 Queue 정리
+            if session_id in self.user_input_queues:
+                del self.user_input_queues[session_id]
+                logger.info(f"[{session_id}] 사용자 입력 Queue 정리 완료")

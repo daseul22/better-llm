@@ -6,7 +6,7 @@ Agent SDK 실행 래퍼 모듈.
 
 import json
 from dataclasses import dataclass
-from typing import AsyncIterator, Callable, Optional, Any, List
+from typing import AsyncIterator, Callable, Optional, Any, List, Awaitable
 from abc import ABC, abstractmethod
 
 from claude_agent_sdk import (
@@ -591,18 +591,30 @@ class WorkerSDKExecutor:
         self.logger = get_logger(__name__, component=self.worker_name)
         self.last_session_id: Optional[str] = None  # 마지막 실행의 세션 ID 저장
 
-    async def execute_stream(self, prompt: str, resume_session_id: Optional[str] = None) -> AsyncIterator[str]:
-        """스트림 실행.
+    async def execute_stream(
+        self,
+        prompt: str,
+        resume_session_id: Optional[str] = None,
+        user_input_callback: Optional[Callable[[str], Awaitable[str]]] = None
+    ) -> AsyncIterator[str]:
+        """스트림 실행 (연속 대화 지원).
 
         Args:
             prompt: 프롬프트
             resume_session_id: 재개할 SDK 세션 ID (선택, 이전 실행의 컨텍스트 유지)
+            user_input_callback: 사용자 입력이 필요할 때 호출되는 async 함수
+                                 질문(str)을 받아서 답변(str)을 반환해야 함
 
         Yields:
             str: 응답 텍스트 청크
 
         Raises:
             WorkerExecutionError: SDK 실행 중 에러 발생 시
+
+        Note:
+            Worker가 "@ASK_USER: 질문내용" 패턴으로 출력하면
+            user_input_callback이 호출되어 사용자 입력을 받고,
+            같은 세션에서 대화를 계속 진행합니다.
         """
         from claude_agent_sdk.types import ClaudeAgentOptions
 
@@ -645,33 +657,88 @@ class WorkerSDKExecutor:
 
             # ClaudeSDKClient를 context manager로 사용 (자동 connect/disconnect)
             async with ClaudeSDKClient(options=ClaudeAgentOptions(**options_dict)) as client:
-                # query 메서드로 질의 전송
-                # resume 옵션으로 이전 세션 재개 시 session_id는 자동 할당됨
-                await client.query(prompt=prompt)
+                current_prompt = prompt
+                conversation_turn = 0
+                max_conversation_turns = 10  # 무한 루프 방지
 
-                # receive_response()로 응답 스트리밍 수신
-                async for response in client.receive_response():
-                    chunk_count += 1
-                    last_response = response  # 마지막 응답 저장
-
+                while conversation_turn < max_conversation_turns:
+                    conversation_turn += 1
                     self.logger.info(
-                        f"[{self.worker_name}] response #{chunk_count} 수신: "
-                        f"{type(response).__name__}"
+                        f"[{self.worker_name}] 대화 턴 {conversation_turn} 시작"
                     )
 
-                    # 첫 응답에서 실제 SDK 세션 ID 추출 (session_id 필드가 있으면)
-                    if chunk_count == 1 and hasattr(response, 'session_id'):
-                        self.last_session_id = response.session_id
+                    # query 메서드로 질의 전송
+                    await client.query(prompt=current_prompt)
+
+                    # 응답 수집을 위한 버퍼
+                    collected_texts = []
+
+                    # receive_response()로 응답 스트리밍 수신
+                    async for response in client.receive_response():
+                        chunk_count += 1
+                        last_response = response  # 마지막 응답 저장
+
                         self.logger.info(
-                            f"[{self.worker_name}] SDK 세션 ID 감지: {self.last_session_id[:8]}..."
+                            f"[{self.worker_name}] response #{chunk_count} 수신: "
+                            f"{type(response).__name__}"
                         )
 
-                    async for text in self.response_handler.process_response(response):
-                        yield text
+                        # 첫 응답에서 실제 SDK 세션 ID 추출 (session_id 필드가 있으면)
+                        if chunk_count == 1 and hasattr(response, 'session_id'):
+                            self.last_session_id = response.session_id
+                            self.logger.info(
+                                f"[{self.worker_name}] SDK 세션 ID 감지: {self.last_session_id[:8]}..."
+                            )
+
+                        # 응답 처리하면서 텍스트 수집
+                        async for text in self.response_handler.process_response(response):
+                            collected_texts.append(text)
+                            yield text
+
+                    # 전체 응답 확인
+                    full_response = "".join(collected_texts)
+
+                    # 사용자 입력 요청 패턴 확인
+                    if "@ASK_USER:" in full_response and user_input_callback:
+                        question = self._extract_question_from_response(full_response)
+                        self.logger.info(
+                            f"[{self.worker_name}] 사용자 입력 요청 감지: {question[:50]}..."
+                        )
+
+                        try:
+                            # 특수 이벤트 마커 전송 (workflow_executor가 감지하여 이벤트 생성)
+                            import json as json_module
+                            event_marker = "@EVENT:user_input_request:" + json_module.dumps({"question": question}, ensure_ascii=False)
+                            yield event_marker
+
+                            # 사용자 입력 받기 (Queue 대기)
+                            user_answer = await user_input_callback(question)
+                            self.logger.info(
+                                f"[{self.worker_name}] 사용자 답변 수신: {user_answer[:50]}..."
+                            )
+
+                            # 다음 프롬프트로 설정
+                            current_prompt = user_answer
+
+                            # 대화 구분자 출력
+                            yield f"\n\n{'='*60}\n💬 사용자 답변: {user_answer}\n{'='*60}\n\n"
+
+                            # 루프 계속
+                            continue
+
+                        except Exception as e:
+                            self.logger.error(
+                                f"[{self.worker_name}] 사용자 입력 처리 중 에러: {e}"
+                            )
+                            # 에러 발생 시 대화 종료
+                            break
+                    else:
+                        # 사용자 입력 요청 없음 → 대화 종료
+                        break
 
                 self.logger.info(
                     f"[{self.worker_name}] Claude Agent SDK 실행 완료. "
-                    f"총 {chunk_count}개 청크 수신"
+                    f"총 {chunk_count}개 청크, {conversation_turn}개 대화 턴"
                 )
 
                 # 마지막 응답에서 usage 정보 재확인
@@ -743,3 +810,34 @@ class WorkerSDKExecutor:
                     f"\n[시스템 오류] {self.worker_name} Worker 실행 중 "
                     f"예상하지 못한 오류가 발생했습니다: {type(e).__name__}"
                 )
+
+    def _extract_question_from_response(self, response: str) -> str:
+        """응답에서 사용자 입력 요청 질문 추출.
+
+        Args:
+            response: Worker의 전체 응답 텍스트
+
+        Returns:
+            str: 추출된 질문 (패턴이 없으면 전체 응답 반환)
+
+        Note:
+            "@ASK_USER: 질문내용" 패턴에서 질문을 추출합니다.
+            여러 개의 패턴이 있으면 마지막 것을 사용합니다.
+        """
+        marker = "@ASK_USER:"
+        if marker not in response:
+            return response.strip()
+
+        # 마지막 @ASK_USER 위치 찾기
+        last_index = response.rfind(marker)
+        question_start = last_index + len(marker)
+
+        # 질문 추출 (다음 줄바꿈 또는 끝까지)
+        question = response[question_start:].strip()
+
+        # 다음 마커가 있으면 그 전까지만
+        next_marker_index = question.find("@")
+        if next_marker_index > 0:
+            question = question[:next_marker_index].strip()
+
+        return question if question else response.strip()

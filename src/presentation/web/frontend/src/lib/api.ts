@@ -4,7 +4,7 @@
  * 백엔드 API와 통신하는 함수들을 제공합니다.
  */
 
-const API_BASE = '/api'
+export const API_BASE = '/api'
 
 /**
  * Agent 정보
@@ -94,7 +94,7 @@ export interface Workflow {
  * 워크플로우 실행 이벤트
  */
 export interface WorkflowExecutionEvent {
-  event_type: 'node_start' | 'node_output' | 'node_complete' | 'node_error' | 'workflow_complete'
+  event_type: 'node_start' | 'node_output' | 'node_complete' | 'node_error' | 'workflow_complete' | 'user_input_request'
   node_id: string
   data: Record<string, any>
   timestamp?: string  // ISO 8601 형식
@@ -735,6 +735,48 @@ export async function cancelWorkflowSession(sessionId: string): Promise<void> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
     throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+}
+
+/**
+ * 사용자 입력을 Worker에게 전달 (Human-in-the-Loop)
+ */
+export async function sendUserInput(sessionId: string, answer: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/workflows/sessions/${sessionId}/user-input`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ answer }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+}
+
+/**
+ * 노드에 추가 프롬프트를 전달하여 대화 계속하기 (Proactive)
+ */
+export async function continueNodeConversation(nodeId: string, prompt: string): Promise<{ session_id: string; node_id: string }> {
+  const response = await fetch(`${API_BASE}/workflows/nodes/${nodeId}/continue`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const data = await response.json()
+  return {
+    session_id: data.session_id,
+    node_id: data.node_id,
   }
 }
 
