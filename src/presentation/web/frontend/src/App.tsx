@@ -70,7 +70,10 @@ function App() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
 
   // 저장 상태 표시
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved'>('idle')
+
+  // 자동 저장 타이머 추적
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // 토스트 알림 상태
   const [toasts, setToasts] = useState<Array<{
@@ -330,6 +333,13 @@ function App() {
     }
 
     if (currentProjectPath && nodes.length > 0) {
+      // 자동 저장 타이머가 있으면 취소
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+        autoSaveTimerRef.current = null
+        console.log('🚫 자동 저장 타이머 취소됨 (수동 저장 시작)')
+      }
+
       setSaveStatus('saving')
       const workflow = getCurrentWorkflow()
       saveProjectWorkflowByName(currentWorkflowFileName, workflow)
@@ -357,16 +367,6 @@ function App() {
       if (cmdOrCtrl && e.key === 's') {
         e.preventDefault()
         handleManualSave()
-      }
-
-      // Del/Backspace: 선택된 노드 삭제
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !showProjectDialog) {
-        const selectedNodeId = useWorkflowStore.getState().selectedNodeId
-        if (selectedNodeId) {
-          const deleteNode = useWorkflowStore.getState().deleteNode
-          deleteNode(selectedNodeId)
-          addToast('info', '노드가 삭제되었습니다')
-        }
       }
 
       // Esc: 선택 해제
@@ -397,10 +397,12 @@ function App() {
       return
     }
 
-    // 저장 대기 상태
-    setSaveStatus('saving')
+    // 자동 저장 대기 상태 (5초 타이머 시작)
+    setSaveStatus('pending')
 
     const timer = setTimeout(() => {
+      // 실제 저장 시작 - 상태를 'saving'으로 변경
+      setSaveStatus('saving')
       const workflow = getCurrentWorkflow()
 
       saveProjectWorkflowByName(currentWorkflowFileName, workflow)
@@ -408,18 +410,28 @@ function App() {
           console.log('✅ 자동 저장 완료')
           setSaveStatus('saved')
           addToast('success', '워크플로우가 자동 저장되었습니다')
+          autoSaveTimerRef.current = null
           // 2초 후 상태 초기화
           setTimeout(() => setSaveStatus('idle'), 2000)
         })
         .catch((err) => {
           console.error('❌ 자동 저장 실패:', err)
           setSaveStatus('idle')
+          autoSaveTimerRef.current = null
           const errorMsg = err instanceof Error ? err.message : String(err)
           addToast('error', `자동 저장 실패: ${errorMsg}`)
         })
     }, 5000) // 5초 debounce
 
-    return () => clearTimeout(timer)
+    // 타이머를 ref에 저장 (수동 저장 시 취소 가능하도록)
+    autoSaveTimerRef.current = timer
+
+    return () => {
+      clearTimeout(timer)
+      if (autoSaveTimerRef.current === timer) {
+        autoSaveTimerRef.current = null
+      }
+    }
   }, [nodes, edges, workflowName, currentProjectPath, execution.isExecuting, getCurrentWorkflow, addToast, currentWorkflowFileName])
 
   // Display 설정 변경 시 자동 저장 (debounce)
@@ -616,6 +628,12 @@ function App() {
               {/* 저장 상태 표시 */}
               {currentProjectPath && (
                 <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  {saveStatus === 'pending' && (
+                    <>
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
+                      <span>자동 저장 대기 중...</span>
+                    </>
+                  )}
                   {saveStatus === 'saving' && (
                     <>
                       <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
@@ -636,8 +654,8 @@ function App() {
               <Button
                 onClick={handleManualSave}
                 variant="outline"
-                disabled={!currentProjectPath || nodes.length === 0 || saveStatus === 'saving' || execution.isExecuting}
-                title={execution.isExecuting ? '워크플로우 실행 중에는 저장할 수 없습니다' : '워크플로우 저장'}
+                disabled={!currentProjectPath || nodes.length === 0 || execution.isExecuting}
+                title={execution.isExecuting ? '워크플로우 실행 중에는 저장할 수 없습니다' : '워크플로우 저장 (Cmd+S)'}
               >
                 <Save className="mr-2 h-4 w-4" />
                 저장

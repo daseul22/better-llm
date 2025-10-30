@@ -872,6 +872,75 @@ async def continue_node_conversation(
         )
 
 
+@router.get("/sessions/{session_id}/stream")
+async def stream_session_events(
+    session_id: str,
+    bg_manager: BackgroundWorkflowManager = Depends(get_background_manager),
+):
+    """
+    세션의 이벤트를 SSE로 스트리밍 (추가 프롬프트 실행 결과 수신용)
+
+    로그 상세 모달에서 추가 프롬프트를 전송한 후,
+    이 엔드포인트로 SSE 연결하여 실행 결과를 실시간으로 받습니다.
+
+    Args:
+        session_id: 세션 ID (continue_node_conversation에서 받은 새 세션 ID)
+        bg_manager: 백그라운드 워크플로우 관리자
+
+    Returns:
+        EventSourceResponse: SSE 스트리밍 응답
+
+    Example:
+        GET /api/workflows/sessions/abc-123/stream
+    """
+    logger.info(f"SSE 스트리밍 시작: session_id={session_id}")
+
+    async def event_generator():
+        """SSE 이벤트 생성기"""
+        try:
+            # 세션이 존재하는지 확인
+            if session_id not in bg_manager.tasks:
+                error_msg = f"세션을 찾을 수 없습니다: {session_id}"
+                logger.warning(error_msg)
+                yield {"data": json.dumps({"error": error_msg})}
+                return
+
+            # 이벤트 스트리밍
+            async for event in bg_manager.stream_events(session_id, start_from_index=0):
+                # 이벤트를 JSON 문자열로 변환
+                event_dict = {
+                    "event_type": event.event_type,
+                    "node_id": event.node_id,
+                    "data": event.data,
+                    "timestamp": event.timestamp,
+                }
+                yield {"data": json.dumps(event_dict)}
+
+                # 워크플로우 완료 또는 에러 시 종료
+                if event.event_type in ["workflow_complete", "workflow_error"]:
+                    logger.info(f"SSE 스트리밍 종료: session_id={session_id}, event={event.event_type}")
+                    break
+
+            # 종료 신호
+            yield {"data": "[DONE]"}
+
+        except Exception as e:
+            error_msg = f"SSE 스트리밍 에러: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            yield {"data": json.dumps({"error": error_msg})}
+            yield {"data": "[DONE]"}
+
+    # EventSourceResponse로 SSE 스트리밍 반환
+    return EventSourceResponse(
+        event_generator(),
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @router.post("/sessions/{session_id}/user-input")
 async def send_user_input(
     session_id: str,

@@ -26,8 +26,8 @@ export function LogDetailModal({ isOpen, onClose, sections, title = "실행 로�
   const singleSection = sections.length === 1
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full h-full max-w-7xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" data-modal="log-detail">
+      <div className="bg-white rounded-lg w-full h-full max-w-7xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200" role="dialog" aria-modal="true">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
           <div className="flex items-center gap-2">

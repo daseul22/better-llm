@@ -713,6 +713,14 @@ class WorkerSDKExecutor:
 
                         # 첫 응답에서 실제 SDK 세션 ID 추출 (session_id 필드가 있으면)
                         if chunk_count == 1:
+                            # 디버깅: response 객체의 모든 속성 로깅
+                            self.logger.debug(
+                                f"[{self.worker_name}] Response 타입: {type(response).__name__}"
+                            )
+                            self.logger.debug(
+                                f"[{self.worker_name}] Response 속성: {dir(response)}"
+                            )
+
                             if hasattr(response, 'session_id') and response.session_id:
                                 self.last_session_id = response.session_id
                                 self.logger.info(
@@ -721,7 +729,8 @@ class WorkerSDKExecutor:
                             else:
                                 self.logger.warning(
                                     f"[{self.worker_name}] ⚠️ 첫 응답에 session_id가 없습니다. "
-                                    "추가 프롬프트 기능을 사용할 수 없습니다."
+                                    "추가 프롬프트 기능을 사용할 수 없습니다. "
+                                    f"(Response 타입: {type(response).__name__})"
                                 )
 
                         # 응답 처리하면서 텍스트 수집

@@ -69,7 +69,12 @@ export const WorkflowCanvas: React.FC = () => {
 
   // Zustand 상태와 로컬 상태 동기화
   React.useEffect(() => {
-    setLocalNodes(storeNodes)
+    // 모든 노드에 deletable: false 추가 (키보드 삭제 방지)
+    const nodesWithDeletable = storeNodes.map(node => ({
+      ...node,
+      deletable: false,
+    }))
+    setLocalNodes(nodesWithDeletable)
   }, [storeNodes, setLocalNodes])
 
   // 실시간 워크플로우 검증 (debounce 1초)
@@ -188,17 +193,15 @@ export const WorkflowCanvas: React.FC = () => {
     setLocalNodes,
   })
 
-  // 노드 변경 핸들러 (삭제 포함)
+
+  // 노드 변경 핸들러
   const handleNodesChange: OnNodesChange = useCallback(
     (changes) => {
       onNodesChange(changes)
 
       // 노드 변경 처리
       changes.forEach((change) => {
-        if (change.type === 'remove') {
-          // 삭제된 노드를 Zustand에 반영
-          deleteNode(change.id)
-        } else if (change.type === 'position' && change.position) {
+        if (change.type === 'position' && change.position) {
           // 디버그 로그
           console.log('[WorkflowCanvas] position change:', {
             id: change.id,
@@ -215,19 +218,17 @@ export const WorkflowCanvas: React.FC = () => {
         }
       })
     },
-    [onNodesChange, deleteNode, updateNodePosition]
+    [onNodesChange, updateNodePosition]
   )
 
-  // 엣지 변경 핸들러 (삭제 포함)
+  // 엣지 변경 핸들러
   const handleEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
       onEdgesChange(changes)
 
-      // 선택/삭제된 엣지 처리
+      // 선택된 엣지 처리
       changes.forEach((change) => {
-        if (change.type === 'remove') {
-          deleteEdge(change.id)
-        } else if (change.type === 'select') {
+        if (change.type === 'select') {
           // 선택된 엣지 강조
           setLocalEdges((eds) =>
             eds.map((edge) => {
@@ -257,7 +258,7 @@ export const WorkflowCanvas: React.FC = () => {
         return eds
       })
     },
-    [onEdgesChange, deleteEdge, setEdges, setLocalEdges]
+    [onEdgesChange, setEdges, setLocalEdges]
   )
 
   // 엣지 연결 핸들러
@@ -348,6 +349,7 @@ export const WorkflowCanvas: React.FC = () => {
     },
     [project, addNode]
   )
+
 
   return (
     <div ref={reactFlowWrapper} className="w-full h-full">

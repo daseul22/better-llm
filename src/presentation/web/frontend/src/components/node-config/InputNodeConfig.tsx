@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { Terminal, HelpCircle, CheckCircle2, Save, Maximize2 } from 'lucide-react'
+import { Terminal, HelpCircle, CheckCircle2, Save, Maximize2, Trash2 } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -208,6 +208,17 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
   const [activeTab, setActiveTab] = useState('basic')
   const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
 
+  const deleteNode = useWorkflowStore((state) => state.deleteNode)
+  const setSelectedNodeId = useWorkflowStore((state) => state.setSelectedNodeId)
+
+  // 노드 삭제 핸들러
+  const handleDelete = () => {
+    if (confirm(`"Input" 노드를 삭제하시겠습니까?`)) {
+      deleteNode(node.id)
+      setSelectedNodeId(null)
+    }
+  }
+
   // 노드 설정 Hook 사용
   const { data, setData, hasChanges, saveMessage, save, reset } = useNodeConfig<InputNodeData>({
     nodeId: node.id,
@@ -312,11 +323,24 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
   return (
     <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
       <CardHeader className="pb-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Terminal className="h-5 w-5 text-emerald-600" />
-          Input 노드 설정
-        </CardTitle>
-        <div className="text-sm text-muted-foreground">워크플로우 시작점</div>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Terminal className="h-5 w-5 text-emerald-600" />
+              Input 노드 설정
+            </CardTitle>
+            <div className="text-sm text-muted-foreground">워크플로우 시작점</div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDelete}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            title="노드 삭제"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </CardHeader>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">

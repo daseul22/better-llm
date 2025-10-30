@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { ListChecks, HelpCircle, CheckCircle2, Save, Search, Maximize2, Loader2 } from 'lucide-react'
+import { ListChecks, HelpCircle, CheckCircle2, Save, Search, Maximize2, Loader2, Trash2 } from 'lucide-react'
 import { WorkflowNode, getAgents, Agent, getTools, Tool, sendUserInput } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -54,6 +54,8 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   const logs = useWorkflowStore((state) => state.execution.logs)
   const pendingUserInput = useWorkflowStore((state) => state.execution.pendingUserInput)
   const clearPendingUserInput = useWorkflowStore((state) => state.clearPendingUserInput)
+  const deleteNode = useWorkflowStore((state) => state.deleteNode)
+  const setSelectedNodeId = useWorkflowStore((state) => state.setSelectedNodeId)
 
   // Agent 및 Tool 목록 로드
   useEffect(() => {
@@ -195,18 +197,39 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
     }]
   }, [logs, node.id, node.data.agent_name])
 
+  // 노드 삭제 핸들러
+  const handleDelete = () => {
+    if (confirm(`"${node.data.agent_name || 'Worker'}" 노드를 삭제하시겠습니까?`)) {
+      deleteNode(node.id)
+      setSelectedNodeId(null)
+    }
+  }
+
   return (
     <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
       <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <ListChecks className="h-5 w-5 text-blue-600" />
-          Worker 노드 설정
-        </CardTitle>
-        <div className="text-sm text-muted-foreground flex items-center gap-2">
-          <span className="font-medium">{node.data.agent_name}</span>
-          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-            {currentAgent?.role || '워커'}
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-blue-600" />
+              Worker 노드 설정
+            </CardTitle>
+            <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+              <span className="font-medium">{node.data.agent_name}</span>
+              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                {currentAgent?.role || '워커'}
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDelete}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            title="노드 삭제"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
       </CardHeader>
 
