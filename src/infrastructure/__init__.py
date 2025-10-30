@@ -5,9 +5,8 @@ External dependency implementations
 
 Structure:
 - config: Configuration loaders (JSON-based)
-- storage: Repositories (Session, Context)
+- storage: Custom worker repository
 - claude: Claude SDK client (Worker)
-- template: Template engine and repository
 """
 
 from .config import (
@@ -18,16 +17,10 @@ from .config import (
     get_project_root,
 )
 from .storage import (
-    JsonSessionRepository,
-    JsonContextRepository,
+    CustomWorkerRepository,
 )
 from .claude import (
     WorkerAgent,
-)
-from .template import (
-    Jinja2TemplateEngine,
-    FileBasedTemplateRepository,
-    get_builtin_templates,
 )
 
 __all__ = [
@@ -38,12 +31,7 @@ __all__ = [
     "get_claude_cli_path",
     "get_project_root",
     # Storage
-    "JsonSessionRepository",
-    "JsonContextRepository",
+    "CustomWorkerRepository",
     # Claude
     "WorkerAgent",
-    # Template
-    "Jinja2TemplateEngine",
-    "FileBasedTemplateRepository",
-    "get_builtin_templates",
 ]
