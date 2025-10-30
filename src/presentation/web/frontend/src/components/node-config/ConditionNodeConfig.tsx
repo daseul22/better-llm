@@ -295,36 +295,20 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
         </TabsContent>
       </Tabs>
 
-      {/* 저장 버튼 */}
-      <div className="border-t p-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {saveMessage && (
-            <span className="text-sm text-green-600 flex items-center gap-1">
-              <Save className="h-4 w-4" />
-              {saveMessage}
-            </span>
-          )}
+      {/* 자동 저장 안내 */}
+      <div className="border-t p-4 space-y-2">
+        <div className="text-xs text-muted-foreground text-center py-2">
+          💡 변경사항은 자동으로 저장됩니다. 워크플로우 저장 버튼을 눌러 파일에 저장하세요.
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={reset}
-            disabled={!hasChanges}
-          >
-            <RotateCcw className="h-4 w-4 mr-1" />
-            초기화
-          </Button>
-          <Button
-            size="sm"
-            onClick={save}
-            disabled={!hasChanges}
-            className="bg-amber-600 hover:bg-amber-700"
-          >
-            <Save className="h-4 w-4 mr-1" />
-            저장
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={reset}
+          className="w-full"
+        >
+          <RotateCcw className="h-4 w-4 mr-1" />
+          초기화
+        </Button>
       </div>
     </div>
   )

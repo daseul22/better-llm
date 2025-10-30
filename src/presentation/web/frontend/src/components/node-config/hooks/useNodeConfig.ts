@@ -1,10 +1,11 @@
 /**
  * 노드 설정 공통 로직 Hook
  *
- * 저장, 초기화, 변경사항 추적 등 노드 설정 패널에서 공통으로 사용되는 로직을 제공합니다.
+ * 변경사항을 즉시 Zustand 스토어에 반영합니다.
+ * 개별 저장 버튼은 제거되고, 워크플로우 저장 버튼으로 파일에 저장됩니다.
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useWorkflowStore } from '@/stores/workflowStore'
 
 export interface UseNodeConfigOptions<T> {
@@ -16,24 +17,21 @@ export interface UseNodeConfigOptions<T> {
 export interface UseNodeConfigReturn<T> {
   data: T
   setData: (data: T | ((prev: T) => T)) => void
-  hasChanges: boolean
-  saveMessage: string | null
-  save: () => void
+  hasChanges: boolean  // 항상 false (호환성 유지용)
+  saveMessage: string | null  // 항상 null (호환성 유지용)
+  save: () => void  // 더 이상 사용되지 않음 (호환성 유지용)
   reset: () => void
 }
 
 /**
  * 노드 설정 공통 로직 Hook
  *
+ * 변경사항은 디바운스(300ms) 후 자동으로 스토어에 반영됩니다.
+ *
  * @example
- * const { data, setData, hasChanges, save, reset } = useNodeConfig({
+ * const { data, setData, reset } = useNodeConfig({
  *   nodeId: selectedNode.id,
  *   initialData: { taskTemplate: '', outputFormat: 'plain_text' },
- *   onValidate: (data) => {
- *     const errors = {}
- *     if (!data.taskTemplate) errors.taskTemplate = '작업 템플릿을 입력하세요'
- *     return errors
- *   }
  * })
  */
 export function useNodeConfig<T extends Record<string, any>>({
@@ -44,57 +42,71 @@ export function useNodeConfig<T extends Record<string, any>>({
   const updateNode = useWorkflowStore((state) => state.updateNode)
 
   const [data, setData] = useState<T>(initialData)
-  const [hasChanges, setHasChanges] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const isInitialMount = useRef(true)
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null)
 
   // 초기 데이터 변경 시 로컬 상태 업데이트
   useEffect(() => {
     setData(initialData)
-    setHasChanges(false)
-  }, [JSON.stringify(initialData)]) // initialData 객체 비교
+  }, [JSON.stringify(initialData)])
 
-  // 변경사항 추적
+  // 데이터 변경 시 자동으로 스토어에 반영 (디바운스 적용)
   useEffect(() => {
-    const changed = JSON.stringify(data) !== JSON.stringify(initialData)
-    setHasChanges(changed)
-  }, [data, JSON.stringify(initialData)])
-
-  // 저장
-  const save = useCallback(() => {
-    // 검증
-    if (onValidate) {
-      const errors = onValidate(data)
-      if (Object.keys(errors).length > 0) {
-        console.warn('검증 실패:', errors)
-        setSaveMessage('❌ 검증 실패')
-        setTimeout(() => setSaveMessage(null), 3000)
-        return
-      }
+    // 첫 마운트 시에는 스킵
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
     }
 
-    // Zustand 스토어 업데이트
-    updateNode(nodeId, data)
-    setHasChanges(false)
-    setSaveMessage('✅ 저장됨')
+    // 초기 데이터와 동일하면 스킵
+    if (JSON.stringify(data) === JSON.stringify(initialData)) {
+      return
+    }
 
-    // 3초 후 메시지 제거
-    setTimeout(() => setSaveMessage(null), 3000)
+    // 이전 타이머 취소
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
 
-    console.log('💾 노드 설정 저장:', { nodeId, data })
-  }, [nodeId, data, updateNode, onValidate])
+    // 300ms 디바운스 후 스토어 업데이트
+    debounceTimer.current = setTimeout(() => {
+      // 검증 (실패 시 업데이트 안 함)
+      if (onValidate) {
+        const errors = onValidate(data)
+        if (Object.keys(errors).length > 0) {
+          console.warn('⚠️ 검증 실패 (스토어 업데이트 안 함):', errors)
+          return
+        }
+      }
+
+      // Zustand 스토어 업데이트
+      updateNode(nodeId, data)
+      console.log('💾 노드 설정 자동 저장:', { nodeId, data })
+    }, 300)
+
+    // 클린업
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+    }
+  }, [data, nodeId, updateNode, onValidate])
+
+  // save() - 호환성 유지용 (더 이상 사용되지 않음)
+  const save = useCallback(() => {
+    console.log('ℹ️ save() 호출됨 (변경사항은 이미 스토어에 반영되어 있음)')
+  }, [])
 
   // 초기화
   const reset = useCallback(() => {
     setData(initialData)
-    setHasChanges(false)
-    setSaveMessage(null)
   }, [initialData])
 
   return {
     data,
     setData,
-    hasChanges,
-    saveMessage,
+    hasChanges: false,  // 항상 false (호환성 유지용)
+    saveMessage: null,  // 항상 null (호환성 유지용)
     save,
     reset,
   }

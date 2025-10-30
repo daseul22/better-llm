@@ -767,26 +767,14 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
 
       {/* 저장/초기화 버튼 */}
       <div className="border-t p-4 space-y-2">
-        {saveMessage && (
-          <div className="text-xs text-center py-1 px-2 rounded bg-green-100 text-green-700">
-            <CheckCircle2 className="inline h-3 w-3 mr-1" />
-            {saveMessage}
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <Button className="flex-1" onClick={save} disabled={!hasChanges}>
-            <Save className="mr-2 h-4 w-4" />
-            저장
-          </Button>
-          <Button variant="outline" onClick={reset} disabled={!hasChanges}>
-            초기화
-          </Button>
+        {/* 변경사항은 자동으로 저장됩니다 (디바운스 300ms) */}
+        <div className="text-xs text-muted-foreground text-center py-2">
+          💡 변경사항은 자동으로 저장됩니다. 워크플로우 저장 버튼을 눌러 파일에 저장하세요.
         </div>
 
-        {hasChanges && !saveMessage && (
-          <div className="text-xs text-yellow-600 text-center">변경사항이 있습니다. 3초 후 자동 저장됩니다.</div>
-        )}
+        <Button variant="outline" onClick={reset} className="w-full">
+          초기화
+        </Button>
 
         <div className="text-xs text-muted-foreground text-center border-t pt-2">
           <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Cmd+S</kbd> 저장 ·{' '}
