@@ -129,26 +129,25 @@ function App() {
           console.log('🔄 세션 복원 시도:', lastSessionId)
           const session = await getWorkflowSession(lastSessionId)
 
-          // 실행 중인 세션만 복원 (완료된 세션은 복구하지 않음)
-          if (session.status === 'running') {
-            // 1️⃣ 세션에서 프로젝트 경로 복원 (세션에 저장된 project_path 사용)
-            if (session.project_path) {
-              try {
-                const result = await selectProject(session.project_path)
-                setCurrentProjectPath(result.project_path)
-                console.log(`✅ 세션에서 프로젝트 경로 복원: ${session.project_path}`)
-              } catch (err) {
-                console.warn('세션 프로젝트 경로 복원 실패:', err)
-              }
-            } else {
-              console.warn('⚠️  세션에 프로젝트 경로 정보 없음')
+          // 1️⃣ 세션에서 프로젝트 경로 복원 (세션에 저장된 project_path 사용)
+          if (session.project_path) {
+            try {
+              const result = await selectProject(session.project_path)
+              setCurrentProjectPath(result.project_path)
+              console.log(`✅ 세션에서 프로젝트 경로 복원: ${session.project_path}`)
+            } catch (err) {
+              console.warn('세션 프로젝트 경로 복원 실패:', err)
             }
+          } else {
+            console.warn('⚠️  세션에 프로젝트 경로 정보 없음')
+          }
 
-            // 2️⃣ 워크플로우 세션 복원 (기존 로그 복원)
-            restoreFromSession(session)
-            console.log('✅ 세션 복원 완료:', session.session_id)
+          // 2️⃣ 워크플로우 세션 복원 (기존 로그 복원 - 모든 세션)
+          restoreFromSession(session)
+          console.log('✅ 세션 복원 완료:', session.session_id)
 
-            // 3️⃣ 자동으로 스트림 재접속
+          // 3️⃣ 실행 중인 세션만 스트림 재접속
+          if (session.status === 'running') {
             console.log('🔌 실행 중인 세션 감지 - 스트림 자동 재접속 시작')
 
               // 현재 로그 개수 확인 (중복 방지용)
@@ -245,12 +244,10 @@ function App() {
                   addToast('error', `스트림 재접속 실패: ${err.message}`)
                 })
               })
-
-            return // 세션 복원 성공 시 워크플로우 로드 스킵
-          } else {
-            // 세션이 에러 또는 취소된 경우 localStorage 정리
-            localStorage.removeItem(STORAGE_KEY_SESSION_ID)
           }
+
+          // 세션 복원 성공 시 워크플로우 로드 스킵
+          return
         } catch (err) {
           console.warn('세션 복원 실패 (세션 삭제됨 또는 만료):', err)
           localStorage.removeItem(STORAGE_KEY_SESSION_ID)

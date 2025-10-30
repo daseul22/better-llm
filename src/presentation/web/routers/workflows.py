@@ -726,6 +726,84 @@ async def cancel_workflow_session(
         )
 
 
+@router.get("/nodes/{node_id}/sessions")
+async def get_node_sessions(
+    node_id: str,
+    bg_manager: BackgroundWorkflowManager = Depends(get_background_manager),
+) -> Dict[str, Any]:
+    """
+    노드의 세션 목록 조회
+
+    사용자가 이전 세션을 확인하고 선택하여 대화를 계속할 수 있도록 합니다.
+
+    Args:
+        node_id: 노드 ID
+        bg_manager: 백그라운드 워크플로우 관리자
+
+    Returns:
+        Dict[str, Any]: 세션 목록 및 현재 활성 세션 정보
+
+    Example:
+        GET /api/workflows/nodes/node-123/sessions
+
+        Response:
+        {
+            "node_id": "node-123",
+            "agent_name": "Backend Coder",
+            "current_session_id": "uuid-456",
+            "session_history": [
+                {
+                    "session_id": "uuid-456",
+                    "agent_name": "Backend Coder",
+                    "created_at": "2025-10-30T18:00:00",
+                    "last_used_at": "2025-10-30T18:05:00",
+                    "is_current": true
+                }
+            ]
+        }
+    """
+    try:
+        executor = bg_manager.executor
+
+        # 현재 활성 세션 ID
+        current_session_id = executor._node_sessions.get(node_id)
+
+        # 세션 이력
+        session_history = executor._node_session_history.get(node_id, [])
+
+        # 세션 이력에 is_current 플래그 추가
+        session_history_with_flag = [
+            {
+                **session,
+                "is_current": session["session_id"] == current_session_id
+            }
+            for session in session_history
+        ]
+
+        # 최신 사용 순으로 정렬
+        session_history_with_flag.sort(
+            key=lambda s: s["last_used_at"],
+            reverse=True
+        )
+
+        # 에이전트 이름
+        agent_name = executor._node_agent_names.get(node_id, "Unknown")
+
+        return {
+            "node_id": node_id,
+            "agent_name": agent_name,
+            "current_session_id": current_session_id,
+            "session_history": session_history_with_flag,
+        }
+
+    except Exception as e:
+        logger.error(f"노드 세션 목록 조회 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"노드 세션 목록 조회 실패: {str(e)}",
+        )
+
+
 @router.post("/nodes/{node_id}/continue")
 async def continue_node_conversation(
     node_id: str,

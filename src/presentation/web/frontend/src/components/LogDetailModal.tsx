@@ -1,10 +1,10 @@
-import { X, Maximize2, Send, Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import { X, Maximize2, Send, Loader2, RefreshCw, History } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { LogItem, useWorkflowStore } from '@/stores/workflowStore'
 import { ParsedContent } from './ParsedContent'
 import { AutoScrollContainer } from './AutoScrollContainer'
 import { Button } from './ui/button'
-import { continueNodeConversation, API_BASE } from '@/lib/api'
+import { continueNodeConversation, API_BASE, getNodeSessions, type NodeSession } from '@/lib/api'
 
 interface NodeLogSection {
   nodeId: string
@@ -84,7 +84,52 @@ export function LogDetailModal({ isOpen, onClose, sections, title = "실행 로�
   )
 }
 
+type TabType = 'input' | 'execution' | 'output' | 'error' | 'other'
+
 function LogSection({ section }: { section: NodeLogSection }) {
+  // 로그 타입별 분류
+  const inputLogs = section.logs.filter(log => log.type === 'input')
+  const executionLogs = section.logs.filter(log => log.type === 'execution')
+  const outputLogs = section.logs.filter(log => log.type === 'output')
+  const errorLogs = section.logs.filter(log => log.type === 'error')
+  const otherLogs = section.logs.filter(log => !['input', 'execution', 'output', 'error'].includes(log.type))
+
+  // 탭 정의 (로그가 있는 탭만 표시)
+  const tabs = [
+    { id: 'input' as TabType, label: '📥 입력', logs: inputLogs, color: 'blue' },
+    { id: 'execution' as TabType, label: '🔧 실행 과정', logs: executionLogs, color: 'purple' },
+    { id: 'output' as TabType, label: '📤 출력', logs: outputLogs, color: 'green' },
+    { id: 'error' as TabType, label: '❌ 에러', logs: errorLogs, color: 'red' },
+    { id: 'other' as TabType, label: '📝 기타', logs: otherLogs, color: 'gray' },
+  ].filter(tab => tab.logs.length > 0)
+
+  // 초기 탭 선택: 로그가 있는 첫 번째 탭 (에러 우선, 그 다음 출력)
+  const getInitialTab = (): TabType => {
+    if (errorLogs.length > 0) return 'error'
+    if (outputLogs.length > 0) return 'output'
+    if (executionLogs.length > 0) return 'execution'
+    if (inputLogs.length > 0) return 'input'
+    if (otherLogs.length > 0) return 'other'
+    return 'output' // 폴백
+  }
+
+  // 탭 상태
+  const [activeTab, setActiveTab] = useState<TabType>(getInitialTab())
+
+  // 로그가 변경되면 활성 탭이 유효한지 확인
+  useEffect(() => {
+    const currentTabHasLogs = tabs.some(tab => tab.id === activeTab && tab.logs.length > 0)
+    if (!currentTabHasLogs && tabs.length > 0) {
+      setActiveTab(tabs[0].id)
+    }
+  }, [section.logs.length, activeTab, tabs])
+
+  // 세션 관리 상태
+  const [sessions, setSessions] = useState<NodeSession[]>([])
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false)
+  const [showSessionSelect, setShowSessionSelect] = useState(false)
+
   // 추가 프롬프트 입력 상태
   const [userInput, setUserInput] = useState('')
   const [isSending, setIsSending] = useState(false)
@@ -94,12 +139,25 @@ function LogSection({ section }: { section: NodeLogSection }) {
   // Zustand store
   const addLog = useWorkflowStore((state) => state.addLog)
 
-  // 로그 타입별 분류
-  const inputLogs = section.logs.filter(log => log.type === 'input')
-  const executionLogs = section.logs.filter(log => log.type === 'execution')
-  const outputLogs = section.logs.filter(log => log.type === 'output')
-  const errorLogs = section.logs.filter(log => log.type === 'error')
-  const otherLogs = section.logs.filter(log => !['input', 'execution', 'output', 'error'].includes(log.type))
+  // 세션 목록 불러오기
+  const loadSessions = async () => {
+    setIsLoadingSessions(true)
+    try {
+      const data = await getNodeSessions(section.nodeId)
+      setSessions(data.session_history)
+      setSelectedSessionId(data.current_session_id)
+    } catch (error) {
+      console.error('세션 목록 불러오기 실패:', error)
+    } finally {
+      setIsLoadingSessions(false)
+    }
+  }
+
+  // 컴포넌트 마운트 시 세션 목록 불러오기
+  useEffect(() => {
+    loadSessions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section.nodeId])
 
   // 추가 프롬프트 전송
   const handleSendPrompt = async () => {
@@ -224,6 +282,9 @@ function LogSection({ section }: { section: NodeLogSection }) {
     }
   }
 
+  // 활성 탭의 로그
+  const activeTabLogs = tabs.find(tab => tab.id === activeTab)?.logs || []
+
   return (
     <div className="flex flex-col h-full">
       {/* 노드 제목 */}
@@ -232,120 +293,164 @@ function LogSection({ section }: { section: NodeLogSection }) {
         <p className="text-xs text-gray-600 mt-1">Node ID: {section.nodeId}</p>
       </div>
 
-      {/* 로그 내용 */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
+      {/* 탭 버튼 */}
+      {section.logs.length > 0 && tabs.length > 0 && (
+        <div className="flex border-b border-gray-200 bg-gray-50">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id
+            const colorClasses = {
+              blue: isActive ? 'bg-blue-500 text-white' : 'text-blue-700 hover:bg-blue-50',
+              purple: isActive ? 'bg-purple-500 text-white' : 'text-purple-700 hover:bg-purple-50',
+              green: isActive ? 'bg-green-500 text-white' : 'text-green-700 hover:bg-green-50',
+              red: isActive ? 'bg-red-500 text-white' : 'text-red-700 hover:bg-red-50',
+              gray: isActive ? 'bg-gray-500 text-white' : 'text-gray-700 hover:bg-gray-100',
+            }
+
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`
+                  flex items-center gap-2 px-4 py-2 font-medium text-sm transition-colors
+                  ${colorClasses[tab.color as keyof typeof colorClasses]}
+                  ${isActive ? 'border-b-2 border-current' : ''}
+                `}
+              >
+                <span>{tab.label}</span>
+                <span className={`
+                  px-2 py-0.5 rounded-full text-xs font-semibold
+                  ${isActive ? 'bg-white/20' : 'bg-gray-200 text-gray-700'}
+                `}>
+                  {tab.logs.length}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* 로그 내용 - 고정 높이 영역 */}
+      <div className="flex-1 overflow-y-auto bg-white min-h-0">
         {section.logs.length === 0 ? (
-          <div className="text-center text-gray-500 py-8">
+          <div className="h-full flex items-center justify-center text-gray-500">
             로그가 없습니다
           </div>
         ) : (
-          <>
-            {/* 입력 섹션 */}
-            {inputLogs.length > 0 && (
-              <div className="border rounded-md overflow-hidden">
-                <div className="bg-blue-50 px-3 py-2 border-b border-blue-200">
-                  <h4 className="text-sm font-semibold text-blue-900">📥 입력</h4>
-                </div>
-                <AutoScrollContainer
-                  className="p-3"
-                  maxHeight="200px"
-                  dependency={inputLogs.length}
-                >
-                  <div className="space-y-2">
-                    {inputLogs.map((log, idx) => (
-                      <LogItemComponent key={idx} log={log} />
-                    ))}
-                  </div>
-                </AutoScrollContainer>
-              </div>
-            )}
-
-            {/* 실행 과정 섹션 */}
-            {executionLogs.length > 0 && (
-              <div className="border rounded-md overflow-hidden">
-                <div className="bg-purple-50 px-3 py-2 border-b border-purple-200">
-                  <h4 className="text-sm font-semibold text-purple-900">🔧 실행 과정</h4>
-                </div>
-                <AutoScrollContainer
-                  className="p-3"
-                  maxHeight="300px"
-                  dependency={executionLogs.length}
-                >
-                  <div className="space-y-2">
-                    {executionLogs.map((log, idx) => (
-                      <LogItemComponent key={idx} log={log} />
-                    ))}
-                  </div>
-                </AutoScrollContainer>
-              </div>
-            )}
-
-            {/* 출력 섹션 */}
-            {outputLogs.length > 0 && (
-              <div className="border rounded-md overflow-hidden">
-                <div className="bg-green-50 px-3 py-2 border-b border-green-200">
-                  <h4 className="text-sm font-semibold text-green-900">📤 출력</h4>
-                </div>
-                <AutoScrollContainer
-                  className="p-3"
-                  maxHeight="300px"
-                  dependency={outputLogs.length}
-                >
-                  <div className="space-y-2">
-                    {outputLogs.map((log, idx) => (
-                      <LogItemComponent key={idx} log={log} />
-                    ))}
-                  </div>
-                </AutoScrollContainer>
-              </div>
-            )}
-
-            {/* 에러 섹션 */}
-            {errorLogs.length > 0 && (
-              <div className="border rounded-md overflow-hidden">
-                <div className="bg-red-50 px-3 py-2 border-b border-red-200">
-                  <h4 className="text-sm font-semibold text-red-900">❌ 에러</h4>
-                </div>
-                <AutoScrollContainer
-                  className="p-3"
-                  maxHeight="250px"
-                  dependency={errorLogs.length}
-                >
-                  <div className="space-y-2">
-                    {errorLogs.map((log, idx) => (
-                      <LogItemComponent key={idx} log={log} />
-                    ))}
-                  </div>
-                </AutoScrollContainer>
-              </div>
-            )}
-
-            {/* 기타 로그 */}
-            {otherLogs.length > 0 && (
-              <div className="border rounded-md overflow-hidden">
-                <div className="bg-gray-50 px-3 py-2 border-b border-gray-200">
-                  <h4 className="text-sm font-semibold text-gray-900">📝 기타</h4>
-                </div>
-                <AutoScrollContainer
-                  className="p-3"
-                  maxHeight="200px"
-                  dependency={otherLogs.length}
-                >
-                  <div className="space-y-2">
-                    {otherLogs.map((log, idx) => (
-                      <LogItemComponent key={idx} log={log} />
-                    ))}
-                  </div>
-                </AutoScrollContainer>
-              </div>
-            )}
-          </>
+          <div className="p-4 space-y-2">
+            {activeTabLogs.map((log, idx) => (
+              <LogItemComponent key={idx} log={log} />
+            ))}
+          </div>
         )}
       </div>
 
-      {/* 추가 프롬프트 입력 UI */}
-      <div className="p-3 border-t border-gray-200 bg-blue-50">
+      {/* 추가 프롬프트 입력 UI - 고정 하단 */}
+      <div className="flex-shrink-0 p-3 border-t border-gray-200 bg-blue-50 relative">
         <div className="space-y-2">
+          {/* 세션 선택 버튼 */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSessionSelect(!showSessionSelect)}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm"
+            >
+              <History className="w-4 h-4" />
+              <span>세션 선택 ({sessions.length})</span>
+            </button>
+            <button
+              onClick={loadSessions}
+              disabled={isLoadingSessions}
+              className="p-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              title="새로고침"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoadingSessions ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {/* 세션 목록 드롭다운 - absolute positioning으로 위로 표시 */}
+          {showSessionSelect && (
+            <div className="absolute bottom-full left-3 right-3 mb-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto z-10">
+              {sessions.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                  세션이 없습니다
+                </div>
+              ) : (
+                <>
+                  {/* 새 세션 시작 옵션 */}
+                  <button
+                    onClick={() => {
+                      setSelectedSessionId(null)
+                      setShowSessionSelect(false)
+                    }}
+                    className={`w-full px-4 py-2 text-left hover:bg-blue-50 border-b border-gray-200 ${
+                      selectedSessionId === null ? 'bg-blue-100' : ''
+                    }`}
+                  >
+                    <div className="font-medium text-sm text-blue-600">
+                      🆕 새 세션 시작
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      새로운 컨텍스트로 시작합니다
+                    </div>
+                  </button>
+
+                  {/* 기존 세션 목록 */}
+                  {sessions.map((session) => (
+                    <button
+                      key={session.session_id}
+                      onClick={() => {
+                        setSelectedSessionId(session.session_id)
+                        setShowSessionSelect(false)
+                      }}
+                      className={`w-full px-4 py-2 text-left hover:bg-gray-50 ${
+                        selectedSessionId === session.session_id ? 'bg-gray-100' : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium text-sm">
+                          {session.session_id.substring(0, 8)}...
+                          {session.is_current && (
+                            <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                              현재
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(session.last_used_at).toLocaleString('ko-KR', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        생성: {new Date(session.created_at).toLocaleString('ko-KR', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </div>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* 선택된 세션 표시 */}
+          {selectedSessionId === null ? (
+            <div className="text-xs text-gray-600 px-2">
+              🆕 새 세션으로 시작합니다
+            </div>
+          ) : (
+            <div className="text-xs text-gray-600 px-2">
+              📝 세션: {selectedSessionId.substring(0, 8)}... 사용 중
+            </div>
+          )}
+
+          {/* 입력 필드 */}
           <div className="flex items-center gap-2">
             <input
               type="text"

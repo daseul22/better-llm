@@ -873,6 +873,37 @@ export async function sendUserInput(sessionId: string, answer: string): Promise<
 }
 
 /**
+ * 노드의 세션 목록 조회
+ */
+export interface NodeSession {
+  session_id: string
+  agent_name: string
+  created_at: string
+  last_used_at: string
+  is_current: boolean
+}
+
+export interface NodeSessionsResponse {
+  node_id: string
+  agent_name: string
+  current_session_id: string | null
+  session_history: NodeSession[]
+}
+
+export async function getNodeSessions(nodeId: string): Promise<NodeSessionsResponse> {
+  const response = await fetch(`${API_BASE}/workflows/nodes/${nodeId}/sessions`, {
+    method: "GET",
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
  * 노드에 추가 프롬프트를 전달하여 대화 계속하기 (Proactive)
  */
 export async function continueNodeConversation(nodeId: string, prompt: string): Promise<{ session_id: string; node_id: string }> {

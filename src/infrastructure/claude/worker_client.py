@@ -297,7 +297,7 @@ Use your thinking process liberally throughout your response to show your reason
                 )
 
             # Worker 실행 완료 표시
-            yield f"\n{'='*70}\n✅ [{self.config.name.upper()}] Worker execution completed\n{'='*70}\n"
+            yield f"\n└─ ✅ [{self.config.name}] 완료\n"
 
         finally:
             # Working directory 복원

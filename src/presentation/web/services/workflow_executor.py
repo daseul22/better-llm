@@ -178,11 +178,16 @@ class WorkflowExecutor:
         # {session_id: {node_id: iteration_count}}
         self._condition_iterations: Dict[str, Dict[str, int]] = {}
 
-        # 노드 세션 관리 (노드별 SDK 세션 ID 저장)
+        # 노드 세션 관리 (노드별 현재 활성 SDK 세션 ID 저장)
         # {node_id: session_id}
         # 메모리 기반: 서버 재시작 시 초기화
         # 여러 워크플로우 실행에 걸쳐 유지되어 컨텍스트 재활용
         self._node_sessions: Dict[str, str] = {}
+
+        # 노드 세션 이력 (노드별 모든 세션 목록)
+        # {node_id: [SessionInfo, ...]}
+        # 사용자가 세션 목록을 보고 선택할 수 있도록 지원
+        self._node_session_history: Dict[str, List[Dict[str, Any]]] = {}
 
         # 노드 에이전트 이름 매핑 (노드별 agent_name 저장)
         # {node_id: agent_name}
@@ -1462,10 +1467,34 @@ class WorkflowExecutor:
                 if worker.last_session_id:
                     self._node_sessions[node_id] = worker.last_session_id
                     self._node_agent_names[node_id] = agent_name  # agent_name도 함께 저장
+
+                    # 세션 이력에 추가 (새 세션이거나 기존 세션 업데이트)
+                    if node_id not in self._node_session_history:
+                        self._node_session_history[node_id] = []
+
+                    # 이미 존재하는 세션인지 확인
+                    existing_session = next(
+                        (s for s in self._node_session_history[node_id]
+                         if s["session_id"] == worker.last_session_id),
+                        None
+                    )
+
+                    if existing_session:
+                        # 기존 세션 업데이트 (last_used_at)
+                        existing_session["last_used_at"] = datetime.now().isoformat()
+                    else:
+                        # 새 세션 추가
+                        self._node_session_history[node_id].append({
+                            "session_id": worker.last_session_id,
+                            "agent_name": agent_name,
+                            "created_at": datetime.now().isoformat(),
+                            "last_used_at": datetime.now().isoformat(),
+                        })
+
                     logger.info(
                         f"[{session_id}] ✓ 노드 세션 저장 완료: {node_id} ({agent_name}) → "
                         f"SDK 세션 {worker.last_session_id[:8]}... "
-                        f"(총 {len(self._node_sessions)}개 노드, 다음 실행에서 컨텍스트 재활용)"
+                        f"(총 {len(self._node_sessions)}개 노드, 이력: {len(self._node_session_history.get(node_id, []))}개)"
                     )
                 else:
                     logger.warning(
@@ -1670,6 +1699,17 @@ class WorkflowExecutor:
             # Worker에서 반환된 실제 SDK 세션 ID 업데이트 (동일해야 하지만 갱신)
             if worker.last_session_id:
                 self._node_sessions[node_id] = worker.last_session_id
+
+                # 세션 이력 업데이트 (last_used_at)
+                if node_id in self._node_session_history:
+                    existing_session = next(
+                        (s for s in self._node_session_history[node_id]
+                         if s["session_id"] == worker.last_session_id),
+                        None
+                    )
+                    if existing_session:
+                        existing_session["last_used_at"] = datetime.now().isoformat()
+
                 logger.info(
                     f"노드 세션 업데이트: {node_id} → "
                     f"SDK 세션 {worker.last_session_id[:8]}..."
