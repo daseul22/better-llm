@@ -826,7 +826,7 @@ async def continue_node_conversation(
                     event_queue.append(event)
 
                     # 세션 저장소에도 저장
-                    await bg_manager.session_store.add_log_to_session(new_session_id, event.model_dump())
+                    await bg_manager.session_store.append_log(new_session_id, event)
 
                     logger.debug(
                         f"노드 {node_id} 추가 대화 이벤트: {event.event_type} "
@@ -836,7 +836,7 @@ async def continue_node_conversation(
                 # 완료 시 task 상태 및 세션 업데이트
                 if new_session_id in bg_manager.tasks:
                     bg_manager.tasks[new_session_id].completed = True
-                await bg_manager.session_store.update_session_status(new_session_id, "completed")
+                await bg_manager.session_store.update_session(new_session_id, status="completed")
                 logger.info(f"노드 {node_id} 추가 대화 완료")
 
             except Exception as e:
@@ -845,7 +845,7 @@ async def continue_node_conversation(
                 if new_session_id in bg_manager.tasks:
                     bg_manager.tasks[new_session_id].error = str(e)
                     bg_manager.tasks[new_session_id].completed = True
-                await bg_manager.session_store.update_session_status(new_session_id, "error")
+                await bg_manager.session_store.update_session(new_session_id, status="error", error=str(e))
 
         # 백그라운드 태스크 시작
         import asyncio

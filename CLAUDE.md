@@ -1184,6 +1184,40 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
 - **영향범위**: UX 개선, 로그 모니터링 편의성 향상
 - **테스트**: 프론트엔드 빌드 통과
 
+### fix: 추가 프롬프트 기능 버그 수정 (완료)
+- **날짜**: 2025-10-30 18:00 (Asia/Seoul)
+- **문제 1**: 추가 프롬프트 입력 시 아무런 반응 없음
+  - **원인**:
+    1. `WorkflowSessionStore`에 `save_session()` 메서드 누락
+    2. `workflows.py`에서 잘못된 메서드 이름 사용
+       - `add_log_to_session()` → `append_log()`
+       - `update_session_status()` → `update_session()`
+  - **해결**:
+    1. **workflow_session_store.py**: `save_session()` 메서드 추가 (293-306줄)
+    2. **workflows.py**: 메서드 이름 수정 (829, 839, 848줄)
+- **문제 2**: UUID 형식 에러 발생
+  - **에러**: `Error: --resume requires a valid session ID when used with --print`
+  - **원인**: SDK 세션 ID를 잘못된 방법으로 추출
+    1. 첫 번째 응답에서 `session_id` 확인 (❌) → `ResultMessage`는 보통 마지막 응답
+    2. SDK 세션 ID가 없을 때 노드 ID를 폴백으로 사용 (❌) → 노드 ID는 UUID 형식 아님
+  - **해결**:
+    1. **sdk_executor.py**: `ResultMessage` 타입에서 `session_id` 추출 (715-721줄)
+       - 첫 응답이 아닌 모든 응답 확인
+       - `type(response).__name__ == 'ResultMessage'` 체크
+       - `ResultMessage.session_id` 추출
+    2. **workflow_executor.py**: 노드 ID 폴백 제거 (1460-1475줄)
+       - SDK 세션 ID가 있을 때만 저장
+       - 없으면 경고 로그만 출력 (추가 프롬프트 사용 불가 안내)
+- **파일**:
+  - `src/presentation/web/services/workflow_session_store.py:293-306`
+  - `src/presentation/web/routers/workflows.py:829,839,848`
+  - `src/infrastructure/claude/sdk_executor.py:715-721,775-780`
+  - `src/presentation/web/services/workflow_executor.py:1460-1475`
+- **영향범위**: 노드 추가 대화 기능, SDK 세션 관리, 컨텍스트 유지
+- **테스트**: 구문 검사 통과
+- **참고**: [Claude Agent SDK - ResultMessage](https://docs.claude.com/en/api/agent-sdk/python)
+- **후속 조치**: 실제 브라우저에서 추가 프롬프트 입력 테스트
+
 ### fix: ClaudeSDKClient API 호환성 수정 (완료)
 - **날짜**: 2025-10-30 17:12 (Asia/Seoul)
 - **문제**:

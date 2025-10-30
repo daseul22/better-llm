@@ -1458,13 +1458,10 @@ class WorkflowExecutor:
                 )
 
                 # Worker에서 반환된 실제 SDK 세션 ID 저장
-                # 폴백: SDK에서 세션 ID를 제공하지 않으면 노드 ID를 세션 ID로 사용
-                session_to_save = worker.last_session_id or node_id
-
-                self._node_sessions[node_id] = session_to_save
-                self._node_agent_names[node_id] = agent_name  # agent_name도 함께 저장
-
+                # SDK 세션 ID가 있을 때만 저장 (UUID 형식이어야 함)
                 if worker.last_session_id:
+                    self._node_sessions[node_id] = worker.last_session_id
+                    self._node_agent_names[node_id] = agent_name  # agent_name도 함께 저장
                     logger.info(
                         f"[{session_id}] ✓ 노드 세션 저장 완료: {node_id} ({agent_name}) → "
                         f"SDK 세션 {worker.last_session_id[:8]}... "
@@ -1473,8 +1470,8 @@ class WorkflowExecutor:
                 else:
                     logger.warning(
                         f"[{session_id}] ⚠️  노드 {node_id}: SDK 세션 ID를 받지 못함. "
-                        f"노드 ID를 세션 ID로 사용합니다. "
-                        f"(총 {len(self._node_sessions)}개 노드 세션 저장됨)"
+                        f"추가 프롬프트 기능을 사용할 수 없습니다. "
+                        f"(Response에 session_id 필드가 없거나 None)"
                     )
 
 

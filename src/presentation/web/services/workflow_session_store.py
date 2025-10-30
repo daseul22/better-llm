@@ -290,6 +290,21 @@ class WorkflowSessionStore:
         # 파일로 저장 (비동기 + 락)
         await self._save_to_file(session)
 
+    async def save_session(self, session: WorkflowSession) -> None:
+        """
+        기존 세션 객체를 저장 (캐시 + 파일)
+
+        Args:
+            session: 저장할 세션 객체
+        """
+        # 메모리 캐시에 저장
+        self._cache[session.session_id] = session
+
+        # 파일로 저장
+        await self._save_to_file(session)
+
+        logger.info(f"세션 저장: {session.session_id}")
+
     async def delete_session(self, session_id: str) -> None:
         """
         세션 삭제 (캐시 + 파일)

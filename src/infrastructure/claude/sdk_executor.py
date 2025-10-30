@@ -711,26 +711,13 @@ class WorkerSDKExecutor:
                             f"{type(response).__name__}"
                         )
 
-                        # 첫 응답에서 실제 SDK 세션 ID 추출 (session_id 필드가 있으면)
-                        if chunk_count == 1:
-                            # 디버깅: response 객체의 모든 속성 로깅
-                            self.logger.debug(
-                                f"[{self.worker_name}] Response 타입: {type(response).__name__}"
-                            )
-                            self.logger.debug(
-                                f"[{self.worker_name}] Response 속성: {dir(response)}"
-                            )
-
+                        # ResultMessage에서 session_id 추출 (보통 마지막 응답)
+                        if type(response).__name__ == 'ResultMessage':
                             if hasattr(response, 'session_id') and response.session_id:
                                 self.last_session_id = response.session_id
                                 self.logger.info(
-                                    f"[{self.worker_name}] ✓ SDK 세션 ID 저장 성공: {self.last_session_id[:8]}..."
-                                )
-                            else:
-                                self.logger.warning(
-                                    f"[{self.worker_name}] ⚠️ 첫 응답에 session_id가 없습니다. "
-                                    "추가 프롬프트 기능을 사용할 수 없습니다. "
-                                    f"(Response 타입: {type(response).__name__})"
+                                    f"[{self.worker_name}] ✓ SDK 세션 ID 저장 성공: {self.last_session_id[:8]}... "
+                                    f"(ResultMessage에서 추출)"
                                 )
 
                         # 응답 처리하면서 텍스트 수집
@@ -783,6 +770,14 @@ class WorkerSDKExecutor:
                     f"[{self.worker_name}] Claude Agent SDK 실행 완료. "
                     f"총 {chunk_count}개 청크, {conversation_turn}개 대화 턴"
                 )
+
+                # 세션 ID를 받지 못한 경우 경고
+                if not self.last_session_id:
+                    self.logger.warning(
+                        f"[{self.worker_name}] ⚠️  SDK 세션 ID를 받지 못했습니다. "
+                        f"추가 프롬프트 기능을 사용할 수 없습니다. "
+                        f"(ResultMessage를 받지 못함)"
+                    )
 
                 # 마지막 응답에서 usage 정보 재확인
                 if last_response:
