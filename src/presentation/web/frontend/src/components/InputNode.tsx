@@ -109,7 +109,19 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
             case 'node_output':
               addNodeOutput(node_id, eventData.chunk)
               if (eventData.chunk && eventData.chunk.trim().length > 0) {
-                addLog(node_id, 'output', eventData.chunk)
+                // chunk_type에 따라 로그 타입 결정
+                const chunkType = eventData.chunk_type || 'text'
+                let logType: 'input' | 'execution' | 'output' = 'output'
+
+                if (chunkType === 'input') {
+                  logType = 'input'
+                } else if (chunkType === 'thinking' || chunkType === 'tool') {
+                  logType = 'execution'
+                } else {
+                  logType = 'output'
+                }
+
+                addLog(node_id, logType, eventData.chunk)
               }
               break
 

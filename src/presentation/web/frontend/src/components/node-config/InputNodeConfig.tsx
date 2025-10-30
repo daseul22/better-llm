@@ -9,13 +9,14 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { Terminal, HelpCircle, CheckCircle2, Save } from 'lucide-react'
+import { Terminal, HelpCircle, CheckCircle2, Save, Maximize2 } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { ParsedContent } from '@/components/ParsedContent'
 import { AutoScrollContainer } from '@/components/AutoScrollContainer'
+import { LogDetailModal } from '@/components/LogDetailModal'
 
 interface InputNodeConfigProps {
   node: WorkflowNode
@@ -31,14 +32,44 @@ interface InputNodeData {
  */
 const NodeExecutionLogs: React.FC = () => {
   const nodes = useWorkflowStore((state) => state.nodes)
-  const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
-  const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
+  const logs = useWorkflowStore((state) => state.execution.logs)
   const { isExecuting, totalTokenUsage } = useWorkflowStore((state) => state.execution)
 
-  // 실행된 노드들만 필터링
-  const executedNodes = nodes.filter(
-    (node) => nodeInputs[node.id] || nodeOutputs[node.id]
-  )
+  // 유효한 로그만 필터링 (nodeId가 있고 실제 노드가 존재하는 것)
+  const validLogs = logs.filter(log => {
+    // nodeId가 없거나 빈 문자열이면 제외
+    if (!log.nodeId || log.nodeId.trim() === '') return false
+    // 실제 노드가 존재하는지 확인
+    const nodeExists = nodes.some(node => node.id === log.nodeId)
+    if (!nodeExists) return false
+
+    // 시스템 메시지 제외 (워크플로우 실행 시작, 완료 메시지 등)
+    const systemMessagePatterns = [
+      '워크플로우 실행 시작',
+      '워크플로우 완료',
+      '워크플로우 중단',
+      'Input 완료',
+      'Worker 완료',
+      'Merge 완료',
+      'Condition 완료',
+      'Loop 완료',
+      '완료 ('  // "✅ Input 완료 (0.0초)" 같은 패턴
+    ]
+
+    const isSystemMessage = systemMessagePatterns.some(pattern =>
+      log.message.includes(pattern)
+    )
+
+    return !isSystemMessage
+  })
+
+  const executedNodeIds = new Set(validLogs.map(log => log.nodeId))
+  const executedNodes = nodes.filter(node => {
+    if (!executedNodeIds.has(node.id)) return false
+    // 알려진 노드 타입만 표시
+    const validTypes = ['input', 'worker', 'manager', 'condition', 'loop', 'merge']
+    return validTypes.includes(node.type)
+  })
 
   return (
     <div className="space-y-4">
@@ -103,60 +134,56 @@ const NodeExecutionLogs: React.FC = () => {
                 </div>
               </div>
 
-              {/* 노드 입력 */}
-              {nodeInputs[execNode.id] && (
+              {/* 입력 섹션 */}
+              {validLogs.filter(log => log.nodeId === execNode.id && log.type === 'input').length > 0 && (
                 <div className="border rounded-md overflow-hidden">
                   <div className="bg-blue-50 px-3 py-2 border-b">
-                    <div className="text-sm font-medium text-blue-900">노드 입력</div>
-                    <div className="text-xs text-blue-700">이 노드가 받은 입력 데이터</div>
+                    <div className="text-sm font-medium text-blue-900">📥 입력</div>
+                    <div className="text-xs text-blue-700">이 노드가 받은 작업 설명</div>
                   </div>
-                  <div className="p-3">
-                    <AutoScrollContainer maxHeight="300px" dependency={nodeInputs[execNode.id]}>
-                      <ParsedContent content={nodeInputs[execNode.id]} />
-                    </AutoScrollContainer>
+                  <div className="p-3 max-h-60 overflow-y-auto">
+                    {validLogs
+                      .filter(log => log.nodeId === execNode.id && log.type === 'input')
+                      .map((log, idx) => (
+                        <ParsedContent key={idx} content={log.message} />
+                      ))}
                   </div>
                 </div>
               )}
 
-              {/* 노드 출력 */}
-              {nodeOutputs[execNode.id] && (
+              {/* 실행 과정 섹션 */}
+              {validLogs.filter(log => log.nodeId === execNode.id && log.type === 'execution').length > 0 && (
+                <div className="border rounded-md overflow-hidden">
+                  <div className="bg-purple-50 px-3 py-2 border-b">
+                    <div className="text-sm font-medium text-purple-900">🔧 실행 과정</div>
+                    <div className="text-xs text-purple-700">Thinking, 도구 호출 등</div>
+                  </div>
+                  <div className="p-3 max-h-60 overflow-y-auto">
+                    {validLogs
+                      .filter(log => log.nodeId === execNode.id && log.type === 'execution')
+                      .map((log, idx) => (
+                        <ParsedContent key={idx} content={log.message} />
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 출력 섹션 */}
+              {validLogs.filter(log => log.nodeId === execNode.id && log.type === 'output').length > 0 && (
                 <div className="border rounded-md overflow-hidden">
                   <div className="bg-green-50 px-3 py-2 border-b">
-                    <div className="text-sm font-medium text-green-900">노드 출력</div>
-                    <div className="text-xs text-green-700">이 노드가 생성한 출력 데이터</div>
+                    <div className="text-sm font-medium text-green-900">📤 출력</div>
+                    <div className="text-xs text-green-700">최종 결과 (다음 노드로 전달됨)</div>
                   </div>
-                  <div className="p-3">
-                    <AutoScrollContainer maxHeight="300px" dependency={nodeOutputs[execNode.id]}>
-                      <ParsedContent content={nodeOutputs[execNode.id]} />
-                    </AutoScrollContainer>
+                  <div className="p-3 max-h-60 overflow-y-auto">
+                    {validLogs
+                      .filter(log => log.nodeId === execNode.id && log.type === 'output')
+                      .map((log, idx) => (
+                        <ParsedContent key={idx} content={log.message} />
+                      ))}
                   </div>
                 </div>
               )}
-
-              {/* 통계 정보 */}
-              <div className="border rounded-md p-3 bg-purple-50 border-purple-200">
-                <div className="text-sm font-medium mb-2 text-purple-900">통계</div>
-                <div className="space-y-1 text-xs text-purple-800">
-                  <div>
-                    <span className="font-medium">입력 길이:</span>{' '}
-                    {nodeInputs[execNode.id] ? `${nodeInputs[execNode.id].length.toLocaleString()}자` : '0자'}
-                  </div>
-                  <div>
-                    <span className="font-medium">출력 길이:</span>{' '}
-                    {nodeOutputs[execNode.id] ? `${nodeOutputs[execNode.id].length.toLocaleString()}자` : '0자'}
-                  </div>
-                  <div>
-                    <span className="font-medium">상태:</span>{' '}
-                    {nodeOutputs[execNode.id] ? (
-                      <span className="text-green-600 font-medium">✓ 완료</span>
-                    ) : nodeInputs[execNode.id] ? (
-                      <span className="text-yellow-600 font-medium">⏳ 진행중</span>
-                    ) : (
-                      <span className="text-gray-500">⏸ 대기중</span>
-                    )}
-                  </div>
-                </div>
-              </div>
             </div>
           ))}
         </div>
@@ -167,6 +194,7 @@ const NodeExecutionLogs: React.FC = () => {
 
 export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
   const [activeTab, setActiveTab] = useState('basic')
+  const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
 
   // 노드 설정 Hook 사용
   const { data, setData, hasChanges, saveMessage, save, reset } = useNodeConfig<InputNodeData>({
@@ -206,6 +234,69 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
   const edges = useWorkflowStore((state) => state.edges)
   const connectedEdges = edges.filter((e) => e.source === node.id)
 
+  // 로그 상세 모달용 sections 생성
+  const nodes = useWorkflowStore((state) => state.nodes)
+  const logs = useWorkflowStore((state) => state.execution.logs)
+
+  const logSections = React.useMemo(() => {
+    // 유효한 로그만 필터링 (NodeExecutionLogs와 동일한 로직)
+    const validLogs = logs.filter(log => {
+      if (!log.nodeId || log.nodeId.trim() === '') return false
+      const nodeExists = nodes.some(node => node.id === log.nodeId)
+      if (!nodeExists) return false
+
+      const systemMessagePatterns = [
+        '워크플로우 실행 시작',
+        '워크플로우 완료',
+        '워크플로우 중단',
+        'Input 완료',
+        'Worker 완료',
+        'Merge 완료',
+        'Condition 완료',
+        'Loop 완료',
+        '완료 ('
+      ]
+
+      const isSystemMessage = systemMessagePatterns.some(pattern =>
+        log.message.includes(pattern)
+      )
+
+      return !isSystemMessage
+    })
+
+    // 노드별로 로그 그룹화
+    const nodeLogsMap = new Map<string, typeof validLogs>()
+    validLogs.forEach(log => {
+      if (!nodeLogsMap.has(log.nodeId)) {
+        nodeLogsMap.set(log.nodeId, [])
+      }
+      nodeLogsMap.get(log.nodeId)!.push(log)
+    })
+
+    // sections 배열 생성
+    return Array.from(nodeLogsMap.entries())
+      .map(([nodeId, nodeLogs]) => {
+        const nodeInfo = nodes.find(n => n.id === nodeId)
+
+        // 알 수 없는 노드 타입은 제외
+        const validTypes = ['input', 'worker', 'manager', 'condition', 'loop', 'merge']
+        if (!nodeInfo || !validTypes.includes(nodeInfo.type)) {
+          return null
+        }
+
+        const nodeName = nodeInfo.type === 'worker'
+          ? (nodeInfo.data.agent_name || 'Worker')
+          : (nodeInfo.type === 'input' ? 'Input' : nodeInfo.type || 'Unknown')
+
+        return {
+          nodeId,
+          nodeName: `${nodeName} (${nodeId.substring(0, 8)})`,
+          logs: nodeLogs
+        }
+      })
+      .filter((section): section is NonNullable<typeof section> => section !== null)
+  }, [logs, nodes])
+
   return (
     <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
       <CardHeader className="pb-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b">
@@ -218,17 +309,29 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
         {/* 탭 헤더 */}
-        <TabsList className="flex w-auto mx-4 mt-4 gap-1">
-          <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
-            기본
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
-            실행 로그
-          </TabsTrigger>
-          <TabsTrigger value="info" className="text-xs flex-1 min-w-0">
-            정보
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex items-center gap-2 mx-4 mt-4">
+          <TabsList className="flex w-auto gap-1 flex-1">
+            <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
+              기본
+            </TabsTrigger>
+            <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
+              실행 로그
+            </TabsTrigger>
+            <TabsTrigger value="info" className="text-xs flex-1 min-w-0">
+              정보
+            </TabsTrigger>
+          </TabsList>
+          {activeTab === 'logs' && (
+            <button
+              onClick={() => setIsLogDetailOpen(true)}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              title="로그 상세 보기"
+            >
+              <Maximize2 className="w-3 h-3" />
+              상세
+            </button>
+          )}
+        </div>
 
         {/* 탭 컨텐츠 */}
         <div className="flex-1 overflow-hidden">
@@ -414,6 +517,14 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
           <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Esc</kbd> 초기화
         </div>
       </div>
+
+      {/* 로그 상세 모달 */}
+      <LogDetailModal
+        isOpen={isLogDetailOpen}
+        onClose={() => setIsLogDetailOpen(false)}
+        sections={logSections}
+        title="워크플로우 실행 로그 상세"
+      />
     </Card>
   )
 }

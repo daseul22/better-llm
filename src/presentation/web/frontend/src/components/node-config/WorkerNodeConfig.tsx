@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { ListChecks, HelpCircle, CheckCircle2, Save, Search } from 'lucide-react'
+import { ListChecks, HelpCircle, CheckCircle2, Save, Search, Maximize2 } from 'lucide-react'
 import { WorkflowNode, getAgents, Agent, getTools, Tool } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -17,6 +17,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { generateTemplatePreview } from '@/lib/templateRenderer'
 import { ParsedContent } from '@/components/ParsedContent'
 import { AutoScrollContainer } from '@/components/AutoScrollContainer'
+import { LogDetailModal } from '@/components/LogDetailModal'
 
 interface WorkerNodeConfigProps {
   node: WorkflowNode
@@ -36,6 +37,7 @@ interface WorkerNodeData {
 
 export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   const [activeTab, setActiveTab] = useState('basic')
+  const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
   const [agents, setAgents] = useState<Agent[]>([])
   const [tools, setTools] = useState<Tool[]>([])
   const [toolSearchQuery, setToolSearchQuery] = useState('')
@@ -44,6 +46,7 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   const [systemPrompt, setSystemPrompt] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const nodes = useWorkflowStore((state) => state.nodes)
+  const logs = useWorkflowStore((state) => state.execution.logs)
   const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
   const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
 
@@ -175,6 +178,18 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   // 현재 Agent 정보
   const currentAgent = agents.find((a) => a.name === node.data.agent_name)
 
+  // 로그 상세 모달용 sections 생성
+  const logSections = React.useMemo(() => {
+    const nodeLogs = logs.filter(log => log.nodeId === node.id)
+    if (nodeLogs.length === 0) return []
+
+    return [{
+      nodeId: node.id,
+      nodeName: `${node.data.agent_name || 'Worker'} (${node.id.substring(0, 8)})`,
+      logs: nodeLogs
+    }]
+  }, [logs, node.id, node.data.agent_name])
+
   return (
     <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
       <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
@@ -191,23 +206,35 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
       </CardHeader>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="flex w-auto mx-4 mt-4 gap-1">
-          <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
-            기본
-          </TabsTrigger>
-          <TabsTrigger value="tools" className="text-xs flex-1 min-w-0">
-            도구
-          </TabsTrigger>
-          <TabsTrigger value="advanced" className="text-xs flex-1 min-w-0">
-            고급
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
-            로그
-          </TabsTrigger>
-          <TabsTrigger value="info" className="text-xs flex-1 min-w-0">
-            정보
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex items-center gap-2 mx-4 mt-4">
+          <TabsList className="flex w-auto gap-1 flex-1">
+            <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
+              기본
+            </TabsTrigger>
+            <TabsTrigger value="tools" className="text-xs flex-1 min-w-0">
+              도구
+            </TabsTrigger>
+            <TabsTrigger value="advanced" className="text-xs flex-1 min-w-0">
+              고급
+            </TabsTrigger>
+            <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
+              로그
+            </TabsTrigger>
+            <TabsTrigger value="info" className="text-xs flex-1 min-w-0">
+              정보
+            </TabsTrigger>
+          </TabsList>
+          {activeTab === 'logs' && (
+            <button
+              onClick={() => setIsLogDetailOpen(true)}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              title="로그 상세 보기"
+            >
+              <Maximize2 className="w-3 h-3" />
+              상세
+            </button>
+          )}
+        </div>
 
         {/* 기본 설정 탭 */}
         <TabsContent value="basic" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
@@ -580,32 +607,63 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
         <TabsContent value="logs" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
           <div className="space-y-4">
             <div className="text-sm text-muted-foreground">
-              이 노드의 입력과 출력을 확인할 수 있습니다 (디버깅용)
+              이 노드의 입력, 실행 과정, 출력을 확인할 수 있습니다
             </div>
 
-            {/* 노드 입력 */}
+            {/* 입력 섹션 */}
             <div className="border rounded-md overflow-hidden">
               <div className="bg-blue-50 px-3 py-2 border-b">
-                <div className="text-sm font-medium text-blue-900">노드 입력</div>
-                <div className="text-xs text-blue-700">이 노드가 받은 입력 데이터</div>
+                <div className="text-sm font-medium text-blue-900">📥 입력</div>
+                <div className="text-xs text-blue-700">이 노드가 받은 작업 설명</div>
               </div>
-              <div className="p-3">
-                <AutoScrollContainer maxHeight="400px" dependency={nodeInputs[node.id]}>
-                  <ParsedContent content={nodeInputs[node.id] || ''} />
-                </AutoScrollContainer>
+              <div className="p-3 max-h-60 overflow-y-auto">
+                {logs.filter(log => log.nodeId === node.id && log.type === 'input').length > 0 ? (
+                  logs
+                    .filter(log => log.nodeId === node.id && log.type === 'input')
+                    .map((log, idx) => (
+                      <ParsedContent key={idx} content={log.message} />
+                    ))
+                ) : (
+                  <div className="text-xs text-gray-500">입력 대기 중...</div>
+                )}
               </div>
             </div>
 
-            {/* 노드 출력 */}
+            {/* 실행 과정 섹션 */}
+            <div className="border rounded-md overflow-hidden">
+              <div className="bg-purple-50 px-3 py-2 border-b">
+                <div className="text-sm font-medium text-purple-900">🔧 실행 과정</div>
+                <div className="text-xs text-purple-700">Thinking, 도구 호출 등</div>
+              </div>
+              <div className="p-3 max-h-80 overflow-y-auto">
+                {logs.filter(log => log.nodeId === node.id && log.type === 'execution').length > 0 ? (
+                  logs
+                    .filter(log => log.nodeId === node.id && log.type === 'execution')
+                    .map((log, idx) => (
+                      <ParsedContent key={idx} content={log.message} />
+                    ))
+                ) : (
+                  <div className="text-xs text-gray-500">실행 대기 중...</div>
+                )}
+              </div>
+            </div>
+
+            {/* 출력 섹션 */}
             <div className="border rounded-md overflow-hidden">
               <div className="bg-green-50 px-3 py-2 border-b">
-                <div className="text-sm font-medium text-green-900">노드 출력</div>
-                <div className="text-xs text-green-700">이 노드가 생성한 출력 데이터</div>
+                <div className="text-sm font-medium text-green-900">📤 출력</div>
+                <div className="text-xs text-green-700">최종 결과 (다음 노드로 전달됨)</div>
               </div>
-              <div className="p-3">
-                <AutoScrollContainer maxHeight="400px" dependency={nodeOutputs[node.id]}>
-                  <ParsedContent content={nodeOutputs[node.id] || ''} />
-                </AutoScrollContainer>
+              <div className="p-3 max-h-80 overflow-y-auto">
+                {logs.filter(log => log.nodeId === node.id && log.type === 'output').length > 0 ? (
+                  logs
+                    .filter(log => log.nodeId === node.id && log.type === 'output')
+                    .map((log, idx) => (
+                      <ParsedContent key={idx} content={log.message} />
+                    ))
+                ) : (
+                  <div className="text-xs text-gray-500">출력 대기 중...</div>
+                )}
               </div>
             </div>
 
@@ -666,6 +724,14 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
           <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Esc</kbd> 초기화
         </div>
       </div>
+
+      {/* 로그 상세 모달 */}
+      <LogDetailModal
+        isOpen={isLogDetailOpen}
+        onClose={() => setIsLogDetailOpen(false)}
+        sections={logSections}
+        title={`${node.data.agent_name || 'Worker'} 실행 로그 상세`}
+      />
     </Card>
   )
 }

@@ -30,7 +30,7 @@ interface WorkflowExecutionState {
   nodeMeta: Record<string, NodeExecutionMeta>
   logs: Array<{
     nodeId: string
-    type: 'start' | 'output' | 'complete' | 'error'
+    type: 'start' | 'input' | 'execution' | 'output' | 'complete' | 'error'
     message: string
     timestamp: number
   }>

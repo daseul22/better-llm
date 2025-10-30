@@ -169,8 +169,8 @@ Worker 출력:
         try:
             # Claude Haiku 호출 (빠르고 저렴)
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=1024,
+                model="claude-4-5-haiku-20251001",
+                max_tokens=8000,
                 temperature=0.3,
                 messages=[{"role": "user", "content": prompt}]
             )

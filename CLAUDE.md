@@ -154,7 +154,8 @@ prompts/                       # Worker Agent 시스템 프롬프트
 ├── log_analyzer.txt          # 로그 분석 (read, bash, glob, grep) - 분석형
 ├── summarizer.txt            # 텍스트 요약 (read, glob) - 분석형
 ├── worker_prompt_engineer.txt # 커스텀 워커 프롬프트 생성 (read, glob)
-└── workflow_designer.txt     # 워크플로우 자동 설계 (read, glob, grep)
+├── workflow_designer.txt     # 워크플로우 자동 설계 (read, glob, grep)
+└── local.txt                 # 범용 AI 어시스턴트 (빈 파일, 유저/프로젝트 설정만 사용)
 ```
 
 ### Worker 출력 형식 표준화
@@ -317,6 +318,7 @@ Worker별 도구 제한으로 역할 경계 명확화:
 | Committer | bash, read, glob, grep | Git 커밋만 |
 | Worker Prompt Engineer | read, glob | 커스텀 워커 프롬프트 생성 |
 | Workflow Designer | read, glob, grep | 워크플로우 설계 및 생성 |
+| Local | read, write, edit, bash, glob, grep | 범용 AI 어시스턴트 (유저/프로젝트 설정만 사용) |
 
 ### system_config.json - 주요 설정
 
@@ -611,6 +613,68 @@ export PERMISSION_MODE=acceptEdits  # 동적 변경
   - 개발 생산성: 25% 향상
 - **파일**: `CODEBASE_ANALYSIS.md`, `CODEBASE_ANALYSIS_SUMMARY.txt`
 - **후속 조치**: Phase 1 항목부터 순차적으로 진행
+
+---
+
+## 최근 작업 (2025-10-30)
+
+### feat: 노드 출력 파싱 및 로그 분류 개선 (완료)
+- **날짜**: 2025-10-30 13:00 (Asia/Seoul)
+- **문제**:
+  1. Worker 노드의 모든 출력(thinking, tool_use, tool_result, text)이 다음 노드 입력으로 전달되어 혼란 야기
+  2. 로그가 "입력", "출력"으로만 구분되어 실행 과정 파악 어려움
+- **해결**:
+  - **백엔드 (workflow_executor.py)**:
+    * `extract_text_from_worker_output()` 함수 추가 (35-82줄): JSON 블록에서 type="text"만 추출
+    * `classify_chunk_type()` 함수 추가 (85-113줄): 청크를 "thinking", "tool", "text"로 분류
+    * Worker 노드 실행 시 입력을 별도 이벤트로 전송 (chunk_type="input")
+    * 출력 청크를 chunk_type에 따라 분류하여 전송
+    * `node_outputs`에는 최종 텍스트만 저장 (1267줄)
+  - **프론트엔드 (stores/workflowStore.ts)**:
+    * 로그 타입 확장: `'start' | 'input' | 'execution' | 'output' | 'complete' | 'error'` (33줄)
+  - **프론트엔드 (InputNode.tsx)**:
+    * chunk_type에 따라 로그 타입 결정 (112-124줄)
+    * input → "input", thinking/tool → "execution", text → "output"
+  - **프론트엔드 (WorkerNodeConfig.tsx, InputNodeConfig.tsx)**:
+    * 로그 탭을 3개 섹션으로 구분 (587-641줄, 105-153줄)
+    * 📥 입력 (파란색): 노드가 받은 작업 설명
+    * 🔧 실행 과정 (보라색): Thinking, 도구 호출 등
+    * 📤 출력 (녹색): 최종 결과 (다음 노드로 전달됨)
+- **영향범위**: 노드 간 데이터 전달, 로그 가독성, 디버깅 편의성
+- **사용자 경험**:
+  - **이전**: 다음 노드가 thinking/tool 블록까지 받아서 혼란
+  - **이후**: 최종 텍스트만 전달되어 명확함
+  - 로그에서 입력/실행/출력을 명확히 구분하여 디버깅 용이
+- **파일**:
+  - `src/presentation/web/services/workflow_executor.py` (+78줄)
+  - `src/presentation/web/frontend/src/stores/workflowStore.ts` (로그 타입 확장)
+  - `src/presentation/web/frontend/src/components/InputNode.tsx` (chunk_type 처리)
+  - `src/presentation/web/frontend/src/components/node-config/WorkerNodeConfig.tsx` (로그 탭 개선)
+  - `src/presentation/web/frontend/src/components/node-config/InputNodeConfig.tsx` (로그 탭 개선)
+- **테스트**: 구문 검사 통과
+
+---
+
+### fix: 조건분기 LLM 모드 순환참조 오류 수정 (완료)
+- **날짜**: 2025-10-30 12:00 (Asia/Seoul)
+- **문제**: Condition 노드(condition_type: "llm")를 사용한 순환 워크플로우에서 `max_iterations`가 설정되지 않으면 순환참조 오류 발생
+- **원인**:
+  - Validator가 `max_iterations`가 설정된 Condition 노드만 제어 노드로 간주
+  - 따라서 `max_iterations` 없는 Condition 노드는 순환 경로에서 에러 발생
+- **해결**:
+  - **workflow_validator.py (133-150줄)**:
+    * 모든 Condition 노드를 제어 노드로 간주 (max_iterations 없어도 허용)
+    * 순환 경로의 Condition 노드에 `max_iterations` 없으면 경고 표시
+    * `_check_condition_nodes` 함수 추가 (389-453줄): 순환 경로의 Condition 노드 검증
+  - **workflow_executor.py (745-757줄)**:
+    * `max_iterations`가 None인 경우 기본값 10 적용
+    * 무한 루프 방지
+- **영향범위**: Condition 노드 기반 피드백 루프, 순환 워크플로우 검증
+- **사용자 경험**:
+  - 이전: `max_iterations` 미설정 시 워크플로우 검증 실패 (순환참조 에러)
+  - 이후: 검증 통과 (경고만 표시), Executor에서 기본값 10 적용
+- **테스트**: 구문 검사 통과
+- **권장사항**: 순환 경로의 Condition 노드에는 `max_iterations: 3-10` 명시적 설정 권장
 
 ---
 

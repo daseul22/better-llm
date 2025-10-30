@@ -8,13 +8,14 @@ import React, { useState } from 'react'
 import { CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Merge, Save, RotateCcw, FileText } from 'lucide-react'
+import { Merge, Save, RotateCcw, FileText, Maximize2 } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { ParsedContent } from '@/components/ParsedContent'
 import { AutoScrollContainer } from '@/components/AutoScrollContainer'
+import { LogDetailModal } from '@/components/LogDetailModal'
 
 interface MergeNodeConfigProps {
   node: WorkflowNode
@@ -28,6 +29,7 @@ interface MergeNodeData {
 
 export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
   const [activeTab, setActiveTab] = useState('basic')
+  const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
   const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
   const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
 
@@ -69,6 +71,46 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
     e.stopPropagation()
   }
 
+  // 로그 상세 모달용 sections 생성 (Merge 노드 + 부모 노드들)
+  const edges = useWorkflowStore((state) => state.edges)
+  const nodes = useWorkflowStore((state) => state.nodes)
+  const logs = useWorkflowStore((state) => state.execution.logs)
+
+  const logSections = React.useMemo(() => {
+    const sections = []
+
+    // Merge 노드 자체 로그
+    const mergeLogs = logs.filter(log => log.nodeId === node.id)
+    if (mergeLogs.length > 0) {
+      sections.push({
+        nodeId: node.id,
+        nodeName: `Merge (${node.id.substring(0, 8)})`,
+        logs: mergeLogs
+      })
+    }
+
+    // 부모 노드들의 로그
+    const parentEdges = edges.filter(e => e.target === node.id)
+    parentEdges.forEach(edge => {
+      const parentNode = nodes.find(n => n.id === edge.source)
+      const parentLogs = logs.filter(log => log.nodeId === edge.source)
+
+      if (parentLogs.length > 0) {
+        const nodeName = parentNode?.type === 'worker'
+          ? (parentNode.data.agent_name || 'Worker')
+          : (parentNode?.type === 'input' ? 'Input' : parentNode?.type || 'Unknown')
+
+        sections.push({
+          nodeId: edge.source,
+          nodeName: `${nodeName} (${edge.source.substring(0, 8)})`,
+          logs: parentLogs
+        })
+      }
+    })
+
+    return sections
+  }, [logs, node.id, edges, nodes])
+
   return (
     <div className="h-full flex flex-col">
       <CardHeader className="pb-4 border-b">
@@ -79,15 +121,27 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
       </CardHeader>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="flex w-auto mx-4 mt-4 gap-1">
-          <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
-            기본
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
-            <FileText className="h-3 w-3 mr-1" />
-            로그
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex items-center gap-2 mx-4 mt-4">
+          <TabsList className="flex w-auto gap-1 flex-1">
+            <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
+              기본
+            </TabsTrigger>
+            <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
+              <FileText className="h-3 w-3 mr-1" />
+              로그
+            </TabsTrigger>
+          </TabsList>
+          {activeTab === 'logs' && (
+            <button
+              onClick={() => setIsLogDetailOpen(true)}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              title="로그 상세 보기"
+            >
+              <Maximize2 className="w-3 h-3" />
+              상세
+            </button>
+          )}
+        </div>
 
         {/* 기본 설정 탭 */}
         <TabsContent value="basic" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
@@ -298,6 +352,14 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
           </Button>
         </div>
       </div>
+
+      {/* 로그 상세 모달 */}
+      <LogDetailModal
+        isOpen={isLogDetailOpen}
+        onClose={() => setIsLogDetailOpen(false)}
+        sections={logSections}
+        title="Merge 노드 실행 로그 상세"
+      />
     </div>
   )
 }

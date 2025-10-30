@@ -329,6 +329,21 @@
       ],
       "model": "claude-sonnet-4-5-20250929",
       "thinking": true
+    },
+    {
+      "name": "local",
+      "role": "범용 AI 어시스턴트 (유저/프로젝트 설정만 사용)",
+      "system_prompt_file": "prompts/local.txt",
+      "allowed_tools": [
+        "read",
+        "write",
+        "edit",
+        "bash",
+        "glob",
+        "grep"
+      ],
+      "model": "claude-sonnet-4-5-20250929",
+      "thinking": true
     }
   ]
 }

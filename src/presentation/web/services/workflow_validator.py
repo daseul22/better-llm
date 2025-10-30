@@ -124,14 +124,16 @@ class WorkflowValidator:
         # 5. Input 노드 존재 여부 검사
         errors.extend(self._check_input_node(workflow))
 
+        # 6. Condition 노드 검증 (순환 경로의 max_iterations 확인)
+        errors.extend(self._check_condition_nodes(workflow))
+
         return errors
 
     def _check_cycles(self, workflow: Workflow) -> List[ValidationError]:
         """
         순환 참조 검사 (DFS)
 
-        Loop 노드 또는 max_iterations가 설정된 Condition 노드를 통한
-        제어된 피드백 루프는 허용합니다.
+        Loop 노드 또는 Condition 노드를 통한 제어된 피드백 루프는 허용합니다.
         제어 노드가 없는 무한 순환만 에러로 처리합니다.
 
         Args:
@@ -142,20 +144,12 @@ class WorkflowValidator:
         """
         errors: List[ValidationError] = []
 
-        # 제어 노드 ID 집합 (max_iterations 설정된 Condition 노드)
+        # 제어 노드 ID 집합 (모든 Condition 노드)
+        # Condition 노드는 max_iterations 여부와 관계없이 제어 노드로 간주
         control_nodes = set()
         for node in workflow.nodes:
             if node.type == "condition":
-                # max_iterations가 설정된 Condition 노드만 제어 노드로 간주
-                if hasattr(node.data, "max_iterations"):
-                    max_iterations = node.data.max_iterations
-                elif isinstance(node.data, dict):
-                    max_iterations = node.data.get("max_iterations")
-                else:
-                    max_iterations = None
-
-                if max_iterations is not None:
-                    control_nodes.add(node.id)
+                control_nodes.add(node.id)
 
         # 그래프 구성 (인접 리스트)
         graph: Dict[str, List[str]] = {node.id: [] for node in workflow.nodes}
@@ -389,5 +383,71 @@ class WorkflowValidator:
                 suggestion="워크플로우 시작점으로 Input 노드를 추가하세요."
             ))
         # 여러 개의 Input 노드 허용 (병렬 작업 실행 가능)
+
+        return errors
+
+    def _check_condition_nodes(self, workflow: Workflow) -> List[ValidationError]:
+        """
+        Condition 노드 검증
+
+        순환 경로에 포함된 Condition 노드의 max_iterations 설정을 확인합니다.
+
+        Args:
+            workflow: 검증할 워크플로우
+
+        Returns:
+            Condition 노드 에러 목록
+        """
+        errors: List[ValidationError] = []
+
+        # 그래프 구성
+        graph: Dict[str, List[str]] = {node.id: [] for node in workflow.nodes}
+        for edge in workflow.edges:
+            if edge.source in graph:
+                graph[edge.source].append(edge.target)
+
+        # 순환 경로에 포함된 노드 찾기
+        nodes_in_cycles = set()
+
+        def find_cycles_from(start_id: str, visited: Set[str], rec_stack: Set[str]) -> None:
+            """DFS로 순환 경로에 포함된 노드 찾기"""
+            visited.add(start_id)
+            rec_stack.add(start_id)
+
+            for neighbor in graph.get(start_id, []):
+                if neighbor not in visited:
+                    find_cycles_from(neighbor, visited, rec_stack)
+                elif neighbor in rec_stack:
+                    # 순환 발견 - 경로의 모든 노드를 nodes_in_cycles에 추가
+                    nodes_in_cycles.add(start_id)
+                    nodes_in_cycles.add(neighbor)
+
+            rec_stack.remove(start_id)
+
+        visited_global: Set[str] = set()
+        for node_id in graph:
+            if node_id not in visited_global:
+                find_cycles_from(node_id, visited_global, set())
+
+        # 순환 경로에 포함된 Condition 노드 검증
+        for node in workflow.nodes:
+            if node.type != "condition" or node.id not in nodes_in_cycles:
+                continue
+
+            # max_iterations 추출
+            max_iterations = None
+            if hasattr(node.data, "max_iterations"):
+                max_iterations = node.data.max_iterations
+            elif isinstance(node.data, dict):
+                max_iterations = node.data.get("max_iterations")
+
+            # max_iterations가 없으면 경고
+            if max_iterations is None:
+                errors.append(ValidationError(
+                    severity="warning",
+                    node_id=node.id,
+                    message="순환 경로의 Condition 노드에 max_iterations가 설정되지 않았습니다.",
+                    suggestion="무한 루프 방지를 위해 max_iterations를 설정하세요 (권장: 3-10). 설정하지 않으면 기본값 10이 적용됩니다."
+                ))
 
         return errors

@@ -32,6 +32,124 @@ from src.presentation.web.schemas.workflow import (
 logger = get_logger(__name__)
 
 
+def extract_text_from_worker_output(output: str) -> str:
+    """
+    Worker 출력에서 최종 텍스트만 추출
+
+    Worker 출력은 thinking, tool_use, tool_result, text 블록을 포함할 수 있습니다.
+    이 함수는 type="text"인 블록만 추출하여 반환합니다.
+
+    Args:
+        output: Worker의 전체 출력
+
+    Returns:
+        str: 최종 텍스트만 추출된 결과
+    """
+    import json
+
+    text_parts = []
+
+    # {"role": "assistant"로 시작하는 JSON 객체 찾기 (중괄호 카운팅)
+    start_pattern = '{"role":'
+    idx = 0
+
+    while idx < len(output):
+        # {"role": 패턴 찾기
+        start_idx = output.find(start_pattern, idx)
+        if start_idx == -1:
+            break
+
+        # 중괄호 카운팅으로 완전한 JSON 객체 추출
+        brace_count = 0
+        in_string = False
+        escape_next = False
+        end_idx = start_idx
+
+        for i in range(start_idx, len(output)):
+            char = output[i]
+
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\':
+                escape_next = True
+                continue
+
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+
+            if not in_string:
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_idx = i + 1
+                        break
+
+        # 완전한 JSON 객체 추출 시도
+        if end_idx > start_idx:
+            try:
+                json_str = output[start_idx:end_idx]
+                data = json.loads(json_str)
+
+                # content 배열에서 type="text"인 블록만 추출
+                if isinstance(data.get("content"), list):
+                    for block in data["content"]:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+
+            except json.JSONDecodeError as e:
+                logger.debug(f"JSON 파싱 실패 (위치: {start_idx}-{end_idx}): {e}")
+
+            idx = end_idx
+        else:
+            idx = start_idx + len(start_pattern)
+
+    # 텍스트 블록을 찾았으면 조합하여 반환
+    if text_parts:
+        result = "\n".join(text_parts).strip()
+        logger.debug(f"텍스트 추출 성공: {len(text_parts)}개 블록, {len(result)}자")
+        return result
+
+    # JSON 파싱 실패 시 전체 출력 반환 (안전장치)
+    logger.warning("텍스트 블록을 찾을 수 없어 전체 출력 반환")
+    return output
+
+
+def classify_chunk_type(chunk: str) -> str:
+    """
+    Worker 출력 청크의 타입을 분류합니다.
+
+    Args:
+        chunk: 출력 청크
+
+    Returns:
+        str: "thinking", "tool", "text" 중 하나
+    """
+    import json
+
+    # JSON 블록인지 확인
+    if chunk.strip().startswith('{"role":'):
+        try:
+            data = json.loads(chunk)
+            if isinstance(data.get("content"), list):
+                for block in data["content"]:
+                    if isinstance(block, dict):
+                        block_type = block.get("type", "")
+                        if block_type in ("thinking", "tool_use", "tool_result"):
+                            return "thinking" if block_type == "thinking" else "tool"
+                        elif block_type == "text":
+                            return "text"
+        except json.JSONDecodeError:
+            pass
+
+    # 기본적으로 text로 간주
+    return "text"
+
+
 class WorkflowExecutor:
     """
     워크플로우 실행 엔진
@@ -743,16 +861,18 @@ class WorkflowExecutor:
         )
 
         # max_iterations 체크 (반복 제한)
-        if node_data.max_iterations is not None:
-            if current_iteration >= node_data.max_iterations:
-                logger.warning(
-                    f"[{session_id}] 조건 노드 {node_id}: "
-                    f"최대 반복 횟수 도달 ({current_iteration}/{node_data.max_iterations}). "
-                    f"강제로 true 경로로 이동합니다."
-                )
-                # 최대 반복 횟수 도달 시 강제로 true 경로로 이동
-                condition_result = True
-                llm_reason = f"최대 반복 횟수 도달 ({node_data.max_iterations}회)"
+        # max_iterations가 None인 경우 기본값 10 사용
+        max_iterations = node_data.max_iterations if node_data.max_iterations is not None else 10
+
+        if current_iteration >= max_iterations:
+            logger.warning(
+                f"[{session_id}] 조건 노드 {node_id}: "
+                f"최대 반복 횟수 도달 ({current_iteration}/{max_iterations}). "
+                f"강제로 true 경로로 이동합니다."
+            )
+            # 최대 반복 횟수 도달 시 강제로 true 경로로 이동
+            condition_result = True
+            llm_reason = f"최대 반복 횟수 도달 ({max_iterations}회)"
 
         # 분기 경로 결정 (엣지의 sourceHandle을 사용)
         # sourceHandle이 "true"인 엣지 → True 경로
@@ -776,9 +896,7 @@ class WorkflowExecutor:
 
         # 조건 결과를 텍스트로 변환
         result_text = f"조건 평가 결과: {condition_result}\n"
-        result_text += f"반복 횟수: {current_iteration}"
-        if node_data.max_iterations:
-            result_text += f"/{node_data.max_iterations}"
+        result_text += f"반복 횟수: {current_iteration}/{max_iterations}"
         result_text += f"\n분기: {next_node_id}"
 
         if llm_reason:
@@ -1116,18 +1234,29 @@ class WorkflowExecutor:
                 initial_input=initial_input,
             )
 
-            # node_start 이벤트에 입력 포함
+            # node_start 이벤트
             start_event = WorkflowNodeExecutionEvent(
                 event_type="node_start",
                 node_id=node_id,
                 data={
                     "agent_name": agent_name,
-                    "input": task_description,  # 노드 입력 추가 (디버깅용)
                 },
                 timestamp=datetime.now().isoformat(),
             )
             logger.info(f"[{session_id}] 🟢 이벤트 생성: node_start (node: {node_id}, agent: {agent_name})")
             yield start_event
+
+            # 입력 이벤트 (별도 이벤트로 전송)
+            input_event = WorkflowNodeExecutionEvent(
+                event_type="node_output",
+                node_id=node_id,
+                data={
+                    "chunk": task_description,
+                    "chunk_type": "input",  # 입력임을 명시
+                },
+            )
+            logger.debug(f"[{session_id}] 📥 이벤트 생성: node_input (node: {node_id})")
+            yield input_event
 
             try:
 
@@ -1155,16 +1284,30 @@ class WorkflowExecutor:
                 async for chunk in worker.execute_task(task_description, usage_callback=usage_callback):
                     node_output_chunks.append(chunk)
 
+                    # 청크 타입 분류
+                    chunk_type = classify_chunk_type(chunk)
+
                     output_event = WorkflowNodeExecutionEvent(
                         event_type="node_output",
                         node_id=node_id,
-                        data={"chunk": chunk},
+                        data={
+                            "chunk": chunk,
+                            "chunk_type": chunk_type,  # "thinking", "tool", "text"
+                        },
                     )
-                    logger.debug(f"[{session_id}] 📝 이벤트 생성: node_output (node: {node_id}, chunk: {len(chunk)}자)")
+                    logger.debug(f"[{session_id}] 📝 이벤트 생성: node_output (node: {node_id}, type: {chunk_type}, chunk: {len(chunk)}자)")
                     yield output_event
 
-                node_output = "".join(node_output_chunks)
-                node_outputs[node_id] = node_output
+                # 전체 출력에서 최종 텍스트만 추출하여 저장
+                full_output = "".join(node_output_chunks)
+                final_text = extract_text_from_worker_output(full_output)
+                node_outputs[node_id] = final_text  # 다음 노드에는 최종 텍스트만 전달
+
+                logger.info(
+                    f"[{session_id}] 노드 출력 처리 완료: {node_id} "
+                    f"(전체: {len(full_output)}자, 최종 텍스트: {len(final_text)}자)"
+                )
+
                 elapsed_time = time.time() - start_time
 
                 complete_event = WorkflowNodeExecutionEvent(
@@ -1172,7 +1315,7 @@ class WorkflowExecutor:
                     node_id=node_id,
                     data={
                         "agent_name": agent_name,
-                        "output_length": len(node_output),
+                        "output_length": len(final_text),
                     },
                     timestamp=datetime.now().isoformat(),
                     elapsed_time=elapsed_time,
@@ -1183,7 +1326,7 @@ class WorkflowExecutor:
 
                 logger.info(
                     f"[{session_id}] 노드 완료: {node_id} ({agent_name}) "
-                    f"- 출력 길이: {len(node_output)}"
+                    f"- 출력 길이: {len(final_text)}"
                 )
 
             except Exception as e:

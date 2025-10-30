@@ -98,6 +98,118 @@ export const NodePanel: React.FC = () => {
     })
   }
 
+  // 역할별 템플릿 생성 함수
+  const getTemplateByRole = (agentName: string, agentRole: string): string => {
+    // Planner 그룹
+    const planners = ['feature_planner', 'refactoring_planner', 'bug_fix_planner', 'api_planner', 'database_planner', 'product_manager', 'ideator']
+    if (planners.includes(agentName)) {
+      return `아래의 요구사항에 대한 ${agentRole} 계획을 수립해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Coder 그룹
+    const coders = ['frontend_coder', 'backend_coder', 'test_coder', 'infrastructure_coder', 'database_coder']
+    if (coders.includes(agentName)) {
+      return `아래의 지침대로 ${agentRole}을 수행해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Reviewer 그룹
+    const reviewers = ['style_reviewer', 'security_reviewer', 'architecture_reviewer']
+    if (reviewers.includes(agentName)) {
+      return `아래의 코드/내용을 ${agentRole} 관점에서 리뷰해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Tester 그룹
+    const testers = ['unit_tester', 'integration_tester', 'e2e_tester', 'performance_tester']
+    if (testers.includes(agentName)) {
+      return `아래의 지침대로 ${agentRole}을 수행해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Summarizer 그룹
+    if (agentName === 'summarizer') {
+      return `아래 내용을 요약해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    if (agentName === 'log_analyzer') {
+      return `아래 로그를 분석해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Bug Fixer
+    if (agentName === 'bug_fixer') {
+      return `아래의 지침대로 버그를 수정해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Committer
+    if (agentName === 'committer') {
+      return `아래의 변경사항을 커밋해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Documenter
+    if (agentName === 'documenter') {
+      return `아래의 지침대로 문서를 작성해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Worker Prompt Engineer
+    if (agentName === 'worker_prompt_engineer') {
+      return `아래의 요구사항에 맞는 커스텀 워커 프롬프트를 생성해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // Workflow Designer
+    if (agentName === 'workflow_designer') {
+      return `아래의 요구사항에 맞는 워크플로우를 설계해주세요.
+
+---
+{{parent}}
+---`
+    }
+
+    // 기본 템플릿 (커스텀 워커 등)
+    return `아래의 지침대로 ${agentRole}을 수행해주세요.
+
+---
+{{parent}}
+---`
+  }
+
   // expanded_sections 변경 시 자동 저장 (debounce)
   useEffect(() => {
     // 프로젝트 선택되지 않았거나 초기 로드 중이면 스킵
@@ -129,7 +241,7 @@ export const NodePanel: React.FC = () => {
   }, [expandedSections, projectPath])
 
   // 워커 분류
-  const generalWorkers = ['planner', 'coder', 'reviewer', 'tester', 'committer', 'ideator', 'product_manager', 'documenter']
+  const generalWorkers = ['planner', 'coder', 'reviewer', 'tester', 'committer', 'ideator', 'product_manager', 'documenter', 'local']
   const specializedWorkers = [
     // 계획 특화
     'feature_planner', 'refactoring_planner', 'bug_fix_planner', 'api_planner', 'database_planner',
@@ -219,7 +331,7 @@ export const NodePanel: React.FC = () => {
       position: { x, y },
       data: {
         agent_name: agent.name,
-        task_template: `{{parent}}를 ${agent.role} 해주세요.`,
+        task_template: getTemplateByRole(agent.name, agent.role),
       },
     }
 
@@ -484,7 +596,7 @@ export const NodePanel: React.FC = () => {
                     className="w-full justify-start text-left hover:bg-slate-50 bg-white cursor-grab active:cursor-grabbing"
                     onClick={() => handleAddAgent(agent)}
                     draggable
-                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{parent}}를 ${agent.role} 해주세요.` })}
+                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: getTemplateByRole(agent.name, agent.role) })}
                   >
                     <Plus className="mr-2 h-4 w-4" />
                     <div className="flex flex-col items-start flex-1">
@@ -533,7 +645,7 @@ export const NodePanel: React.FC = () => {
                     className="w-full justify-start text-left hover:bg-orange-50 bg-white cursor-grab active:cursor-grabbing"
                     onClick={() => handleAddAgent(agent)}
                     draggable
-                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: `{{parent}}를 ${agent.role} 해주세요.` })}
+                    onDragStart={(e) => onDragStart(e, 'worker', { agent_name: agent.name, task_template: getTemplateByRole(agent.name, agent.role) })}
                   >
                     <Target className="mr-2 h-4 w-4 text-orange-600" />
                     <div className="flex flex-col items-start flex-1">
@@ -626,7 +738,7 @@ export const NodePanel: React.FC = () => {
                       className="w-full justify-start text-left hover:bg-indigo-50 bg-white cursor-grab active:cursor-grabbing"
                       onClick={() => handleAddAgent(agent)}
                       draggable
-                      onDragStart={(e) => onDragStart(e, 'worker', { agent_name: worker.name, task_template: `{{parent}}를 ${worker.role} 해주세요.` })}
+                      onDragStart={(e) => onDragStart(e, 'worker', { agent_name: worker.name, task_template: getTemplateByRole(worker.name, worker.role) })}
                     >
                       <Wand2 className="mr-2 h-4 w-4 text-indigo-600" />
                       <div className="flex flex-col items-start flex-1">
