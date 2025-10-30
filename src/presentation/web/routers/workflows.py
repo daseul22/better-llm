@@ -824,22 +824,28 @@ async def continue_node_conversation(
                 ):
                     # 이벤트를 큐에 저장 (SSE로 전송 가능하도록)
                     event_queue.append(event)
+
+                    # 세션 저장소에도 저장
+                    await bg_manager.session_store.add_log_to_session(new_session_id, event.model_dump())
+
                     logger.debug(
                         f"노드 {node_id} 추가 대화 이벤트: {event.event_type} "
                         f"({event.data.get('chunk_type', 'N/A')})"
                     )
 
-                # 완료 시 task 상태 업데이트
+                # 완료 시 task 상태 및 세션 업데이트
                 if new_session_id in bg_manager.tasks:
                     bg_manager.tasks[new_session_id].completed = True
+                await bg_manager.session_store.update_session_status(new_session_id, "completed")
                 logger.info(f"노드 {node_id} 추가 대화 완료")
 
             except Exception as e:
                 logger.error(f"노드 {node_id} 추가 대화 실패: {e}", exc_info=True)
-                # 에러 시 task 상태 업데이트
+                # 에러 시 task 상태 및 세션 업데이트
                 if new_session_id in bg_manager.tasks:
                     bg_manager.tasks[new_session_id].error = str(e)
                     bg_manager.tasks[new_session_id].completed = True
+                await bg_manager.session_store.update_session_status(new_session_id, "error")
 
         # 백그라운드 태스크 시작
         import asyncio
@@ -851,6 +857,23 @@ async def continue_node_conversation(
             task=task,
             event_queue=event_queue,
         )
+
+        # 세션 저장소에도 저장 (SSE 스트리밍을 위해 필요)
+        from src.presentation.web.services.workflow_session_store import WorkflowSession
+        workflow_session = WorkflowSession(
+            session_id=new_session_id,
+            workflow={
+                "name": f"추가 프롬프트 - {node_id}",
+                "nodes": [],  # 단일 노드 실행이므로 빈 배열
+                "edges": [],
+            },
+            initial_input=prompt,
+            project_path=executor.project_path,
+            status="running",
+            logs=[],
+        )
+        await bg_manager.session_store.save_session(workflow_session)
+        logger.info(f"세션 {new_session_id} 저장소에 저장 완료")
 
         return {
             "message": "노드 추가 대화가 시작되었습니다",
