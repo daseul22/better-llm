@@ -37,7 +37,7 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
 
   // 생성된 출력
   const [generatedOutput, setGeneratedOutput] = useState('')
-  const [outputChunks, setOutputChunks] = useState<string[]>([])
+  const [_outputChunks, setOutputChunks] = useState<string[]>([])
 
   // 파싱된 워크플로우
   const [parsedWorkflow, setParsedWorkflow] = useState<Workflow | null>(null)

@@ -56,6 +56,7 @@ interface WorkflowStore {
   edges: WorkflowEdge[]
   workflowName: string
   workflowDescription: string
+  currentWorkflowFileName: string  // 파일 시스템에서 사용하는 워크플로우 이름
 
   // 선택된 노드
   selectedNodeId: string | null
@@ -84,6 +85,7 @@ interface WorkflowStore {
   // 워크플로우 메타데이터
   setWorkflowName: (name: string) => void
   setWorkflowDescription: (description: string) => void
+  setCurrentWorkflowFileName: (fileName: string) => void
 
   // 워크플로우 전체 로드/저장
   loadWorkflow: (workflow: Workflow) => void
@@ -141,6 +143,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   edges: [],
   workflowName: '새 프로젝트',
   workflowDescription: '',
+  currentWorkflowFileName: 'default',
   selectedNodeId: null,
   execution: initialExecutionState,
   validationErrors: [],
@@ -201,6 +204,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   // 워크플로우 메타데이터
   setWorkflowName: (name) => set({ workflowName: name }),
   setWorkflowDescription: (description) => set({ workflowDescription: description }),
+  setCurrentWorkflowFileName: (fileName) => set({ currentWorkflowFileName: fileName }),
 
   // 워크플로우 전체 로드/저장
   loadWorkflow: (workflow) => {
@@ -249,6 +253,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       edges: [],
       workflowName: '새 프로젝트',
       workflowDescription: '',
+      currentWorkflowFileName: 'default',
       execution: initialExecutionState,
     }),
 

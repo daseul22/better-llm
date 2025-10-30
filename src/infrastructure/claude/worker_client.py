@@ -4,7 +4,7 @@
 WorkerAgent: Claude Code의 agentic harness를 사용하여 파일 읽기/쓰기, 코드 실행 등 수행
 """
 
-from typing import List, AsyncIterator, Optional, Callable, Dict, Any
+from typing import List, AsyncIterator, Optional, Callable, Dict, Any, Awaitable
 from pathlib import Path
 import logging
 import os
@@ -206,13 +206,9 @@ Use your thinking process liberally throughout your response to show your reason
     async def execute_task(
         self,
         task_description: str,
-<<<<<<< HEAD
-        usage_callback: Optional[Callable[[dict], None]] = None,
+        usage_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         resume_session_id: Optional[str] = None,
         user_input_callback: Optional[Callable[[str], Awaitable[str]]] = None
-=======
-        usage_callback: Optional[Callable[[Dict[str, Any]], None]] = None
->>>>>>> 2719556 (refactor: 코드 품질 개선 - 타입 힌팅, Import 정렬, 데이터클래스 최적화)
     ) -> AsyncIterator[str]:
         """
         Claude Agent SDK를 사용하여 작업 실행 (Human-in-the-Loop 지원)

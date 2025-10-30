@@ -89,7 +89,7 @@ function LogSection({ section }: { section: NodeLogSection }) {
   const [userInput, setUserInput] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
-  const [continueSessionId, setContinueSessionId] = useState<string | null>(null)
+  const [_continueSessionId, setContinueSessionId] = useState<string | null>(null)
 
   // Zustand store
   const addLog = useWorkflowStore((state) => state.addLog)

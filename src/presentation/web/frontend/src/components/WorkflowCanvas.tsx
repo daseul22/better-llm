@@ -20,6 +20,7 @@ import ReactFlow, {
   NodeTypes,
   useReactFlow,
   NodeDragHandler,
+  MarkerType,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -109,7 +110,7 @@ export const WorkflowCanvas: React.FC = () => {
       animated: true,
       style: { stroke: '#3b82f6', strokeWidth: 2 },
       markerEnd: {
-        type: 'arrowclosed' as const,
+        type: MarkerType.ArrowClosed,
         color: '#3b82f6',
       },
     }))

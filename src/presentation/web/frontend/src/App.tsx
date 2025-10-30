@@ -10,12 +10,16 @@ import { WorkflowCanvas } from './components/WorkflowCanvas'
 import { NodePanel } from './components/NodePanel'
 import { NodeConfigPanel } from './components/NodeConfigPanel'
 import { ValidationErrorsPanel } from './components/ValidationErrorsPanel'
+import { WorkflowSelector } from './components/WorkflowSelector'
 import { Button } from './components/ui/button'
 import { useWorkflowStore } from './stores/workflowStore'
 import {
   selectProject,
   saveProjectWorkflow,
   loadProjectWorkflow,
+  saveProjectWorkflowByName,
+  loadProjectWorkflowByName,
+  listProjectWorkflows,
   getWorkflowSession,
   clearProjectSessions,
   clearProjectLogs,
@@ -38,6 +42,8 @@ function App() {
     loadWorkflow,
     workflowName,
     setWorkflowName,
+    currentWorkflowFileName,
+    setCurrentWorkflowFileName,
     nodes,
     edges,
     restoreFromSession,
@@ -257,11 +263,20 @@ function App() {
           setCurrentProjectPath(result.project_path)
           console.log(`✅ localStorage에서 프로젝트 경로 복원: ${lastProjectPath}`)
 
-          // 기존 설정이 있으면 자동 로드
-          if (result.has_existing_config) {
-            const data = await loadProjectWorkflow()
-            loadWorkflow(data.workflow)
-            console.log(`✅ 프로젝트 워크플로우 자동 로드: ${lastProjectPath}`)
+          // 워크플로우 목록 로드
+          try {
+            const workflowsResult = await listProjectWorkflows()
+
+            if (workflowsResult.workflows.length > 0) {
+              // 첫 번째 워크플로우 로드
+              const firstWorkflow = workflowsResult.workflows[0]
+              const workflowData = await loadProjectWorkflowByName(firstWorkflow.name)
+              loadWorkflow(workflowData.workflow)
+              setCurrentWorkflowFileName(firstWorkflow.name)
+              console.log(`✅ 워크플로우 자동 로드: ${firstWorkflow.name}`)
+            }
+          } catch (err) {
+            console.warn('워크플로우 자동 로드 실패:', err)
           }
         } catch (err) {
           console.warn('프로젝트 자동 로드 실패:', err)
@@ -317,7 +332,7 @@ function App() {
     if (currentProjectPath && nodes.length > 0) {
       setSaveStatus('saving')
       const workflow = getCurrentWorkflow()
-      saveProjectWorkflow(workflow)
+      saveProjectWorkflowByName(currentWorkflowFileName, workflow)
         .then(() => {
           setSaveStatus('saved')
           addToast('success', '워크플로우가 저장되었습니다')
@@ -330,7 +345,7 @@ function App() {
     } else {
       addToast('warning', '저장할 프로젝트 또는 노드가 없습니다')
     }
-  }, [execution.isExecuting, currentProjectPath, nodes, getCurrentWorkflow, addToast])
+  }, [execution.isExecuting, currentProjectPath, nodes, getCurrentWorkflow, addToast, currentWorkflowFileName])
 
   // 전역 키보드 단축키 핸들링
   useEffect(() => {
@@ -388,7 +403,7 @@ function App() {
     const timer = setTimeout(() => {
       const workflow = getCurrentWorkflow()
 
-      saveProjectWorkflow(workflow)
+      saveProjectWorkflowByName(currentWorkflowFileName, workflow)
         .then(() => {
           console.log('✅ 자동 저장 완료')
           setSaveStatus('saved')
@@ -405,7 +420,7 @@ function App() {
     }, 5000) // 5초 debounce
 
     return () => clearTimeout(timer)
-  }, [nodes, edges, workflowName, currentProjectPath, execution.isExecuting, getCurrentWorkflow, addToast])
+  }, [nodes, edges, workflowName, currentProjectPath, execution.isExecuting, getCurrentWorkflow, addToast, currentWorkflowFileName])
 
   // Display 설정 변경 시 자동 저장 (debounce)
   useEffect(() => {
@@ -449,13 +464,24 @@ function App() {
       setCurrentProjectPath(result.project_path)
       localStorage.setItem(STORAGE_KEY_PROJECT_PATH, result.project_path)
 
-      // 기존 설정이 있으면 로드
-      if (result.has_existing_config) {
-        const data = await loadProjectWorkflow()
-        loadWorkflow(data.workflow)
-        addToast('success', `프로젝트 로드 완료: ${data.workflow.name}`)
-      } else {
-        addToast('info', '새 프로젝트가 선택되었습니다. 워크플로우를 구성하세요.')
+      // 워크플로우 목록 로드
+      try {
+        const workflowsResult = await listProjectWorkflows()
+
+        if (workflowsResult.workflows.length > 0) {
+          // 첫 번째 워크플로우 로드
+          const firstWorkflow = workflowsResult.workflows[0]
+          const workflowData = await loadProjectWorkflowByName(firstWorkflow.name)
+          loadWorkflow(workflowData.workflow)
+          setCurrentWorkflowFileName(firstWorkflow.name)
+          addToast('success', `프로젝트 및 워크플로우 로드 완료: ${workflowData.workflow.name}`)
+        } else {
+          // 워크플로우가 없으면 기본 워크플로우 생성 (빈 워크플로우)
+          addToast('info', '새 프로젝트가 선택되었습니다. 워크플로우를 구성하세요.')
+        }
+      } catch (err) {
+        console.warn('워크플로우 로드 실패:', err)
+        addToast('warning', '워크플로우를 로드할 수 없습니다. 새로운 워크플로우를 생성하세요.')
       }
 
       setShowProjectDialog(false)
@@ -556,12 +582,27 @@ function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <h1 className="text-2xl font-bold text-primary">Claude Flow</h1>
+
+              {/* 워크플로우 선택 */}
+              {currentProjectPath && (
+                <WorkflowSelector
+                  currentProjectPath={currentProjectPath}
+                  currentWorkflow={getCurrentWorkflow()}
+                  currentWorkflowName={currentWorkflowFileName}
+                  onWorkflowChange={(workflow, workflowName) => {
+                    loadWorkflow(workflow)
+                    setCurrentWorkflowFileName(workflowName)
+                  }}
+                  onWorkflowNameChange={(name) => setWorkflowName(name)}
+                />
+              )}
+
               <input
                 type="text"
                 value={workflowName}
                 onChange={(e) => setWorkflowName(e.target.value)}
                 className="text-lg font-medium border-b border-transparent hover:border-gray-300 focus:border-primary outline-none px-2"
-                placeholder="프로젝트 이름"
+                placeholder="워크플로우 이름"
               />
               {currentProjectPath && (
                 <div className="text-sm text-muted-foreground flex items-center gap-2">

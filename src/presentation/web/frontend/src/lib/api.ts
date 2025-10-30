@@ -460,6 +460,122 @@ export async function loadProjectWorkflow(
   return await response.json()
 }
 
+// ==================== 워크플로우 관리 API (다중 워크플로우 지원) ====================
+
+/**
+ * 워크플로우 정보
+ */
+export interface WorkflowInfo {
+  name: string
+  display_name: string
+  description: string
+  last_modified: string
+  size: number
+}
+
+/**
+ * 워크플로우 목록 조회
+ */
+export async function listProjectWorkflows(): Promise<{
+  workflows: WorkflowInfo[]
+  total_count: number
+  current_workflow: string | null
+}> {
+  const response = await fetch(`${API_BASE}/projects/workflows/list`)
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 특정 워크플로우 로드
+ */
+export async function loadProjectWorkflowByName(
+  workflowName: string
+): Promise<{
+  project_path: string
+  workflow: Workflow
+  last_modified: string | null
+}> {
+  const response = await fetch(`${API_BASE}/projects/workflows/${encodeURIComponent(workflowName)}`)
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 워크플로우 저장 (이름 지정)
+ */
+export async function saveProjectWorkflowByName(
+  workflowName: string,
+  workflow: Workflow
+): Promise<{ message: string; workflow_name: string; config_path: string }> {
+  const response = await fetch(`${API_BASE}/projects/workflows/${encodeURIComponent(workflowName)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      workflow,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 워크플로우 삭제
+ */
+export async function deleteProjectWorkflow(
+  workflowName: string
+): Promise<{ message: string; workflow_name: string }> {
+  const response = await fetch(`${API_BASE}/projects/workflows/${encodeURIComponent(workflowName)}`, {
+    method: 'DELETE',
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+/**
+ * 워크플로우 이름 변경
+ */
+export async function renameProjectWorkflow(
+  oldName: string,
+  newName: string
+): Promise<{ message: string; old_name: string; new_name: string }> {
+  const response = await fetch(
+    `${API_BASE}/projects/workflows/${encodeURIComponent(oldName)}/rename?new_name=${encodeURIComponent(newName)}`,
+    {
+      method: 'PUT',
+    }
+  )
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
 // ==================== 파일 시스템 API ====================
 
 /**

@@ -52,8 +52,6 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const nodes = useWorkflowStore((state) => state.nodes)
   const logs = useWorkflowStore((state) => state.execution.logs)
-  const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
-  const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
   const pendingUserInput = useWorkflowStore((state) => state.execution.pendingUserInput)
   const clearPendingUserInput = useWorkflowStore((state) => state.clearPendingUserInput)
 

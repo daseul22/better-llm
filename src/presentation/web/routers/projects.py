@@ -39,7 +39,7 @@ _current_project_path: Optional[str] = None
 
 def get_config_path(project_path: str) -> Path:
     """
-    프로젝트 설정 파일 경로 반환
+    프로젝트 설정 파일 경로 반환 (레거시, 하위 호환용)
 
     Args:
         project_path: 프로젝트 디렉토리 경로
@@ -50,6 +50,73 @@ def get_config_path(project_path: str) -> Path:
     project_dir = Path(project_path)
     config_dir = project_dir / ".claude-flow"
     return config_dir / "workflow-config.json"
+
+
+def get_workflows_dir(project_path: str) -> Path:
+    """
+    워크플로우 디렉토리 경로 반환
+
+    Args:
+        project_path: 프로젝트 디렉토리 경로
+
+    Returns:
+        Path: .claude-flow/workflows/ 경로
+    """
+    project_dir = Path(project_path)
+    config_dir = project_dir / ".claude-flow"
+    return config_dir / "workflows"
+
+
+def get_workflow_path(project_path: str, workflow_name: str) -> Path:
+    """
+    특정 워크플로우 파일 경로 반환
+
+    Args:
+        project_path: 프로젝트 디렉토리 경로
+        workflow_name: 워크플로우 이름
+
+    Returns:
+        Path: .claude-flow/workflows/{workflow_name}.json 경로
+    """
+    workflows_dir = get_workflows_dir(project_path)
+    return workflows_dir / f"{workflow_name}.json"
+
+
+def migrate_legacy_config(project_path: str) -> bool:
+    """
+    레거시 workflow-config.json을 workflows/default.json로 마이그레이션
+
+    Args:
+        project_path: 프로젝트 디렉토리 경로
+
+    Returns:
+        bool: 마이그레이션 수행 여부
+    """
+    legacy_config_path = get_config_path(project_path)
+
+    if not legacy_config_path.exists():
+        return False
+
+    # workflows 디렉토리 생성
+    workflows_dir = get_workflows_dir(project_path)
+    workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    # default.json으로 복사
+    default_workflow_path = get_workflow_path(project_path, "default")
+
+    try:
+        shutil.copy2(legacy_config_path, default_workflow_path)
+        logger.info(f"레거시 설정 파일 마이그레이션: {legacy_config_path} → {default_workflow_path}")
+
+        # 레거시 파일은 백업 후 삭제
+        backup_path = legacy_config_path.with_suffix(".json.bak")
+        shutil.move(str(legacy_config_path), str(backup_path))
+        logger.info(f"레거시 설정 파일 백업: {backup_path}")
+
+        return True
+    except Exception as e:
+        logger.error(f"레거시 설정 마이그레이션 실패: {e}", exc_info=True)
+        return False
 
 
 def get_display_config_path(project_path: str) -> Path:
@@ -1011,4 +1078,364 @@ async def get_session_content(session_id: str) -> SessionContentResponse:
         raise HTTPException(
             status_code=500,
             detail=f"세션 파일 내용 조회 실패: {str(e)}"
+        )
+
+
+# ============================================================================
+# 워크플로우 관리 API (다중 워크플로우 지원)
+# ============================================================================
+
+
+@router.get("/workflows/list")
+async def list_workflows() -> Dict[str, Any]:
+    """
+    프로젝트의 모든 워크플로우 목록 조회
+
+    Returns:
+        Dict[str, Any]: 워크플로우 목록 및 통계
+
+    Example:
+        GET /api/projects/workflows/list
+
+        Response: {
+            "workflows": [
+                {
+                    "name": "default",
+                    "display_name": "Default Workflow",
+                    "description": "기본 워크플로우",
+                    "last_modified": "2025-10-30T10:00:00",
+                    "size": 1024
+                },
+                {
+                    "name": "code-review",
+                    "display_name": "Code Review Workflow",
+                    "description": "코드 리뷰 워크플로우",
+                    "last_modified": "2025-10-30T09:00:00",
+                    "size": 2048
+                }
+            ],
+            "total_count": 2,
+            "current_workflow": "default"
+        }
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    # 레거시 설정 마이그레이션 시도
+    migrate_legacy_config(_current_project_path)
+
+    workflows_dir = get_workflows_dir(_current_project_path)
+
+    if not workflows_dir.exists():
+        return {
+            "workflows": [],
+            "total_count": 0,
+            "current_workflow": None
+        }
+
+    try:
+        workflows = []
+
+        for workflow_file in workflows_dir.glob("*.json"):
+            if not workflow_file.is_file():
+                continue
+
+            try:
+                stat = workflow_file.stat()
+                workflow_name = workflow_file.stem
+
+                # 워크플로우 파일에서 메타데이터 읽기
+                with open(workflow_file, 'r', encoding='utf-8') as f:
+                    workflow_data = json.load(f)
+
+                workflow_info = workflow_data.get("workflow", {})
+                display_name = workflow_info.get("name", workflow_name)
+                description = workflow_info.get("description", "")
+
+                workflows.append({
+                    "name": workflow_name,
+                    "display_name": display_name,
+                    "description": description,
+                    "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "size": stat.st_size
+                })
+            except Exception as e:
+                logger.warning(f"워크플로우 파일 읽기 실패: {workflow_file} - {e}")
+                continue
+
+        # 최근 수정 순으로 정렬
+        workflows.sort(key=lambda x: x["last_modified"], reverse=True)
+
+        # 현재 워크플로우 (기본값: 첫 번째)
+        current_workflow = workflows[0]["name"] if workflows else None
+
+        return {
+            "workflows": workflows,
+            "total_count": len(workflows),
+            "current_workflow": current_workflow
+        }
+
+    except Exception as e:
+        logger.error(f"워크플로우 목록 조회 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"워크플로우 목록 조회 실패: {str(e)}"
+        )
+
+
+@router.get("/workflows/{workflow_name}", response_model=ProjectWorkflowLoadResponse)
+async def load_workflow_by_name(workflow_name: str) -> ProjectWorkflowLoadResponse:
+    """
+    특정 워크플로우 로드
+
+    Args:
+        workflow_name: 워크플로우 이름
+
+    Returns:
+        ProjectWorkflowLoadResponse: 로드된 워크플로우 및 메타데이터
+
+    Example:
+        GET /api/projects/workflows/default
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    # 레거시 설정 마이그레이션 시도
+    migrate_legacy_config(_current_project_path)
+
+    workflow_path = get_workflow_path(_current_project_path, workflow_name)
+
+    if not workflow_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"워크플로우를 찾을 수 없습니다: {workflow_name}"
+        )
+
+    try:
+        with open(workflow_path, 'r', encoding='utf-8') as f:
+            config_data = json.load(f)
+
+        project_config = ProjectConfig(**config_data)
+
+        logger.info(f"워크플로우 로드: {workflow_name} ← {workflow_path}")
+
+        return ProjectWorkflowLoadResponse(
+            project_path=_current_project_path,
+            workflow=project_config.workflow,
+            last_modified=project_config.metadata.get("last_modified")
+        )
+
+    except Exception as e:
+        logger.error(f"워크플로우 로드 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"워크플로우 로드 실패: {str(e)}"
+        )
+
+
+@router.post("/workflows/{workflow_name}")
+async def save_workflow_by_name(
+    workflow_name: str,
+    request: ProjectWorkflowSaveRequest
+) -> Dict[str, str]:
+    """
+    워크플로우 저장 (이름 지정)
+
+    Args:
+        workflow_name: 워크플로우 이름
+        request: 워크플로우 저장 요청
+
+    Returns:
+        Dict[str, str]: 응답 메시지
+
+    Example:
+        POST /api/projects/workflows/code-review
+        Body: {
+            "workflow": {
+                "name": "Code Review Workflow",
+                "nodes": [...],
+                "edges": [...]
+            }
+        }
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    # 워크플로우 이름 검증
+    if not workflow_name or not workflow_name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="워크플로우 이름이 비어있습니다."
+        )
+
+    # 파일명으로 사용할 수 없는 문자 검증
+    invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+    if any(char in workflow_name for char in invalid_chars):
+        raise HTTPException(
+            status_code=400,
+            detail=f"워크플로우 이름에 사용할 수 없는 문자가 포함되어 있습니다: {', '.join(invalid_chars)}"
+        )
+
+    # workflows 디렉토리 생성
+    workflows_dir = get_workflows_dir(_current_project_path)
+    workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    workflow_path = get_workflow_path(_current_project_path, workflow_name)
+
+    # ProjectConfig 생성
+    project_config = ProjectConfig(
+        project_path=_current_project_path,
+        workflow=request.workflow,
+        metadata={
+            "last_modified": datetime.now().isoformat(),
+            "version": "1.0",
+        }
+    )
+
+    try:
+        workflow_dict = project_config.model_dump(mode='json', exclude_none=False)
+
+        with open(workflow_path, 'w', encoding='utf-8') as f:
+            json.dump(
+                workflow_dict,
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
+
+        logger.info(f"워크플로우 저장: {workflow_name} → {workflow_path}")
+
+        return {
+            "message": "워크플로우가 저장되었습니다",
+            "workflow_name": workflow_name,
+            "config_path": str(workflow_path)
+        }
+
+    except Exception as e:
+        logger.error(f"워크플로우 저장 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"워크플로우 저장 실패: {str(e)}"
+        )
+
+
+@router.delete("/workflows/{workflow_name}")
+async def delete_workflow_by_name(workflow_name: str) -> Dict[str, str]:
+    """
+    워크플로우 삭제
+
+    Args:
+        workflow_name: 워크플로우 이름
+
+    Returns:
+        Dict[str, str]: 응답 메시지
+
+    Example:
+        DELETE /api/projects/workflows/code-review
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    workflow_path = get_workflow_path(_current_project_path, workflow_name)
+
+    if not workflow_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"워크플로우를 찾을 수 없습니다: {workflow_name}"
+        )
+
+    try:
+        workflow_path.unlink()
+        logger.info(f"워크플로우 삭제: {workflow_name} ({workflow_path})")
+
+        return {
+            "message": "워크플로우가 삭제되었습니다",
+            "workflow_name": workflow_name
+        }
+
+    except Exception as e:
+        logger.error(f"워크플로우 삭제 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"워크플로우 삭제 실패: {str(e)}"
+        )
+
+
+@router.put("/workflows/{old_name}/rename")
+async def rename_workflow(old_name: str, new_name: str) -> Dict[str, str]:
+    """
+    워크플로우 이름 변경
+
+    Args:
+        old_name: 기존 워크플로우 이름
+        new_name: 새 워크플로우 이름 (쿼리 파라미터)
+
+    Returns:
+        Dict[str, str]: 응답 메시지
+
+    Example:
+        PUT /api/projects/workflows/old-name/rename?new_name=new-name
+    """
+    if not _current_project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트가 선택되지 않았습니다."
+        )
+
+    if not new_name or not new_name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="새 워크플로우 이름이 비어있습니다."
+        )
+
+    # 파일명으로 사용할 수 없는 문자 검증
+    invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+    if any(char in new_name for char in invalid_chars):
+        raise HTTPException(
+            status_code=400,
+            detail=f"워크플로우 이름에 사용할 수 없는 문자가 포함되어 있습니다: {', '.join(invalid_chars)}"
+        )
+
+    old_path = get_workflow_path(_current_project_path, old_name)
+    new_path = get_workflow_path(_current_project_path, new_name)
+
+    if not old_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"워크플로우를 찾을 수 없습니다: {old_name}"
+        )
+
+    if new_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"이미 존재하는 워크플로우 이름입니다: {new_name}"
+        )
+
+    try:
+        shutil.move(str(old_path), str(new_path))
+        logger.info(f"워크플로우 이름 변경: {old_name} → {new_name}")
+
+        return {
+            "message": "워크플로우 이름이 변경되었습니다",
+            "old_name": old_name,
+            "new_name": new_name
+        }
+
+    except Exception as e:
+        logger.error(f"워크플로우 이름 변경 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"워크플로우 이름 변경 실패: {str(e)}"
         )

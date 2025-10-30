@@ -39,7 +39,7 @@ export const CustomWorkerCreateModal: React.FC<CustomWorkerCreateModalProps> = (
 
   // 생성된 프롬프트
   const [generatedOutput, setGeneratedOutput] = useState('')
-  const [outputChunks, setOutputChunks] = useState<string[]>([])
+  const [_outputChunks, setOutputChunks] = useState<string[]>([])
   const [generatedPrompt, setGeneratedPrompt] = useState('')
 
   // 도구 선택
