@@ -736,7 +736,7 @@ class WorkflowExecutor:
 
         # Haiku 모델로 빠른 판단
         options = ClaudeAgentOptions(
-            model="claude-haiku-4-5",  # 버그 수정: 정확한 모델명 사용 (2025-10-15 출시)
+            model="claude-haiku-4-5-20251001",  # Claude Haiku 4.5 (2024-10-01 출시)
             allowed_tools=[],  # 도구 사용 안함
             permission_mode="bypassPermissions",  # 자동 실행을 위해 승인 우회
         )
@@ -1364,7 +1364,6 @@ class WorkflowExecutor:
             yield input_event
 
             try:
-
                 logger.info(
                     f"[{session_id}] 노드 실행: {node_id} ({agent_name}) "
                     f"- 작업 길이: {len(task_description)}"
@@ -1399,10 +1398,15 @@ class WorkflowExecutor:
                     )
 
                 # 사용자 입력 콜백 정의 (Human-in-the-Loop)
+                # user_input_queue는 execute_workflow에서 생성되어 self.user_input_queues에 저장됨
                 async def user_input_callback_impl(question: str) -> str:
                     """사용자 입력을 Queue에서 대기"""
                     logger.info(f"[{session_id}] 💬 사용자 입력 대기: {question[:100]}...")
-                    answer = await user_input_queue.get()
+                    user_queue = self.user_input_queues.get(session_id)
+                    if not user_queue:
+                        logger.error(f"[{session_id}] 사용자 입력 Queue를 찾을 수 없음")
+                        raise ValueError(f"세션 {session_id}의 사용자 입력 Queue를 찾을 수 없습니다")
+                    answer = await user_queue.get()
                     logger.info(f"[{session_id}] ✅ 사용자 답변 수신: {answer[:100]}...")
                     return answer
 

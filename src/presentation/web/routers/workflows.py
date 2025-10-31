@@ -934,13 +934,15 @@ async def continue_node_conversation(
 
         # 세션 저장소에도 저장 (SSE 스트리밍을 위해 필요)
         from src.presentation.web.services.workflow_session_store import WorkflowSession
+        from src.presentation.web.schemas.workflow import Workflow
+        
         workflow_session = WorkflowSession(
             session_id=new_session_id,
-            workflow={
-                "name": f"추가 프롬프트 - {node_id}",
-                "nodes": [],  # 단일 노드 실행이므로 빈 배열
-                "edges": [],
-            },
+            workflow=Workflow(
+                name=f"추가 프롬프트 - {node_id}",
+                nodes=[],  # 단일 노드 실행이므로 빈 배열
+                edges=[],
+            ),
             initial_input=prompt,
             project_path=executor.project_path,
             status="running",
@@ -1430,8 +1432,17 @@ async def design_workflow(request: WorkflowDesignRequest):
             # 이미 실행 중인 세션이면 대기만 (중복 실행 방지)
             if session_id in _active_design_sessions:
                 logger.info(f"[{session_id}] 이미 실행 중인 세션 - 출력 대기")
-                # 실행 중인 세션의 새 출력을 기다림
+                # 실행 중인 세션의 새 출력을 기다림 (최대 5분)
+                timeout = 300  # 5분
+                start_time = asyncio.get_event_loop().time()
                 while session_id in _active_design_sessions:
+                    # 타임아웃 체크 (무한 대기 방지)
+                    if asyncio.get_event_loop().time() - start_time > timeout:
+                        error_msg = f"세션 대기 타임아웃 ({timeout}초)"
+                        logger.error(f"[{session_id}] {error_msg}")
+                        yield {"data": json.dumps({"error": error_msg})}
+                        yield {"data": "[DONE]"}
+                        return
                     await asyncio.sleep(0.5)
                 # 완료 후 남은 출력 전송
                 yield {"data": "[DONE]"}

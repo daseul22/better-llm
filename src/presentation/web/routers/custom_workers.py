@@ -215,8 +215,17 @@ async def generate_custom_worker(request: CustomWorkerGenerateRequest):
             # 이미 실행 중인 세션이면 대기만 (중복 실행 방지)
             if session_id in _active_sessions:
                 logger.info(f"[{session_id}] 이미 실행 중인 세션 - 출력 대기")
-                # 실행 중인 세션의 새 출력을 기다림
+                # 실행 중인 세션의 새 출력을 기다림 (최대 5분)
+                timeout = 300  # 5분
+                start_time = asyncio.get_event_loop().time()
                 while session_id in _active_sessions:
+                    # 타임아웃 체크 (무한 대기 방지)
+                    if asyncio.get_event_loop().time() - start_time > timeout:
+                        error_msg = f"세션 대기 타임아웃 ({timeout}초)"
+                        logger.error(f"[{session_id}] {error_msg}")
+                        yield {"data": json.dumps({"error": error_msg})}
+                        yield {"data": "[DONE]"}
+                        return
                     await asyncio.sleep(0.5)
                 # 완료 후 남은 출력 전송
                 yield {"data": "[DONE]"}

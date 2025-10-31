@@ -10,6 +10,7 @@
 
 import json
 import asyncio
+import aiofiles
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Literal
 from datetime import datetime
@@ -190,8 +191,10 @@ class WorkflowSessionStore:
             return None
 
         try:
-            with open(session_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            # 비동기 파일 읽기 (이벤트 루프 블로킹 방지)
+            async with aiofiles.open(session_path, "r", encoding="utf-8") as f:
+                content = await f.read()
+                data = json.loads(content)
 
             session = WorkflowSession.from_dict(data)
 
@@ -361,10 +364,11 @@ class WorkflowSessionStore:
             try:
                 # JSON 직렬화
                 data = session.to_dict()
+                json_str = json.dumps(data, ensure_ascii=False, indent=2)
 
-                # 파일로 저장
-                with open(session_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                # 비동기 파일 쓰기 (이벤트 루프 블로킹 방지)
+                async with aiofiles.open(session_path, "w", encoding="utf-8") as f:
+                    await f.write(json_str)
 
                 logger.debug(f"세션 저장 완료: {session.session_id}")
 
