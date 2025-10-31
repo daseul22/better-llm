@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import AsyncIterator, Optional, Dict
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
 
 from src.domain.models import AgentConfig

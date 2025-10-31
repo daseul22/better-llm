@@ -4,17 +4,13 @@
 WorkerAgent: Claude Code의 agentic harness를 사용하여 파일 읽기/쓰기, 코드 실행 등 수행
 """
 
-from typing import List, AsyncIterator, Optional, Callable, Dict, Any, Awaitable
+from typing import AsyncIterator, Optional, Callable, Dict, Any, Awaitable
 from pathlib import Path
-import logging
 import os
-
-from claude_agent_sdk import query
-from claude_agent_sdk.types import ClaudeAgentOptions
 
 from src.domain.models import AgentConfig
 from src.infrastructure.config import get_claude_cli_path, get_project_root
-from src.infrastructure.logging import get_logger, log_exception_silently
+from src.infrastructure.logging import get_logger
 from .sdk_executor import (
     SDKExecutionConfig,
     WorkerResponseHandler,

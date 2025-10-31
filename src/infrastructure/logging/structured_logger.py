@@ -7,7 +7,6 @@ structlog 라이브러리를 사용하여 JSON 형식 로그 출력,
 
 import logging
 import logging.handlers
-import sys
 from pathlib import Path
 from typing import Any, Optional, Union
 

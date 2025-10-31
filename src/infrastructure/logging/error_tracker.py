@@ -7,7 +7,7 @@
 import threading
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 
 from .structured_logger import get_logger
 
