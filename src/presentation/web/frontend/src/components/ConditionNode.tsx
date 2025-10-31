@@ -27,8 +27,19 @@ interface ConditionNodeData {
 export const ConditionNode = memo(({ id, data, selected }: NodeProps<ConditionNodeData>) => {
   const { condition_type, condition_value } = data
 
-  // Store에서 노드 실행 메타데이터 가져오기
-  const nodeMeta = useWorkflowStore((state) => state.execution.nodeMeta[id])
+  // Store에서 노드 실행 메타데이터 가져오기 (shallow equality로 최적화)
+  const nodeMeta = useWorkflowStore(
+    (state) => state.execution.nodeMeta[id],
+    (a, b) => {
+      if (a === b) return true
+      if (!a && !b) return true
+      if (!a || !b) return false
+      return (
+        a.status === b.status &&
+        a.elapsedTime === b.elapsedTime
+      )
+    }
+  )
 
   const status = nodeMeta?.status || 'idle'
   const isExecuting = status === 'running' || data.isExecuting

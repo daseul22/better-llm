@@ -157,22 +157,35 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set((state) => ({ nodes: [...state.nodes, node] })),
 
   updateNode: (nodeId, data) =>
-    set((state) => ({
-      nodes: state.nodes.map((node) =>
-        node.id === nodeId
-          ? { ...node, data: { ...node.data, ...data } }
-          : node
-      ),
-    })),
+    set((state) => {
+      // 변경된 노드만 새로 생성하고, 나머지는 기존 참조 유지 (재렌더링 최적화)
+      const targetNode = state.nodes.find(n => n.id === nodeId)
+      if (!targetNode) return state
+
+      const updatedNode = { ...targetNode, data: { ...targetNode.data, ...data } }
+
+      // 노드 배열에서 변경된 노드만 교체
+      const newNodes = state.nodes.map((node) =>
+        node.id === nodeId ? updatedNode : node
+      )
+
+      return { nodes: newNodes }
+    }),
 
   updateNodePosition: (nodeId, position) =>
-    set((state) => ({
-      nodes: state.nodes.map((node) =>
-        node.id === nodeId
-          ? { ...node, position }
-          : node
-      ),
-    })),
+    set((state) => {
+      // 변경된 노드만 새로 생성하고, 나머지는 기존 참조 유지
+      const targetNode = state.nodes.find(n => n.id === nodeId)
+      if (!targetNode) return state
+
+      const updatedNode = { ...targetNode, position }
+
+      const newNodes = state.nodes.map((node) =>
+        node.id === nodeId ? updatedNode : node
+      )
+
+      return { nodes: newNodes }
+    }),
 
   deleteNode: (nodeId) =>
     set((state) => ({

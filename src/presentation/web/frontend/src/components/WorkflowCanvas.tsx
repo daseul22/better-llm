@@ -4,7 +4,7 @@
  * 워커 노드를 드래그 앤 드롭으로 배치하고 연결합니다.
  */
 
-import React, { useCallback, useRef, useEffect } from 'react'
+import React, { useCallback, useRef, useEffect, useMemo } from 'react'
 import ReactFlow, {
   Background,
   Controls,
@@ -71,15 +71,18 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({ onNodeDoubleClic
   const { project } = useReactFlow()
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
 
-  // Zustand 상태와 로컬 상태 동기화
-  React.useEffect(() => {
-    // 모든 노드에 deletable: false 추가 (키보드 삭제 방지)
-    const nodesWithDeletable = storeNodes.map(node => ({
+  // Zustand 상태와 로컬 상태 동기화 (메모이제이션으로 불필요한 재렌더링 방지)
+  const nodesWithDeletable = useMemo(() => {
+    return storeNodes.map(node => ({
       ...node,
       deletable: false,
     }))
+  }, [storeNodes])
+
+  // 메모이제이션된 노드를 로컬 상태에 동기화
+  React.useEffect(() => {
     setLocalNodes(nodesWithDeletable)
-  }, [storeNodes, setLocalNodes])
+  }, [nodesWithDeletable, setLocalNodes])
 
   // 실시간 워크플로우 검증 (debounce 1초)
   useEffect(() => {

@@ -32,8 +32,24 @@ interface WorkerNodeData {
 export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData>) => {
   const { agent_name } = data
 
-  // Store에서 노드 실행 메타데이터 가져오기
-  const nodeMeta = useWorkflowStore((state) => state.execution.nodeMeta[id])
+  // Store에서 노드 실행 메타데이터 가져오기 (shallow equality로 최적화)
+  const nodeMeta = useWorkflowStore(
+    (state) => state.execution.nodeMeta[id],
+    (a, b) => {
+      // 값이 정확히 같으면 재렌더링 방지
+      if (a === b) return true
+      // 둘 다 undefined면 같음
+      if (!a && !b) return true
+      // 하나만 undefined면 다름
+      if (!a || !b) return false
+      // 각 필드 비교
+      return (
+        a.status === b.status &&
+        a.elapsedTime === b.elapsedTime &&
+        a.tokenUsage?.total_tokens === b.tokenUsage?.total_tokens
+      )
+    }
+  )
 
   // nodeMeta 우선, 없으면 data fallback
   const status = nodeMeta?.status || 'idle'
