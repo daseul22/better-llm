@@ -28,7 +28,9 @@ import {
   loadDisplayConfig,
   saveDisplayConfig,
 } from './lib/api'
-import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate, Settings, Trash2, FileText, Save, Eye } from 'lucide-react'
+import { Folder, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, BookTemplate, Settings, Trash2, FileText, Save, Eye, Zap, Target, GitBranch, Merge as MergeIcon, RotateCcw } from 'lucide-react'
+import { Badge } from './components/ui/badge'
+import { DialogFooter } from './components/ui/dialog'
 import { DirectoryBrowser } from './components/DirectoryBrowser'
 import { ToastContainer, ToastType } from './components/Toast'
 import { TemplateGallery } from './components/TemplateGallery'
@@ -80,6 +82,10 @@ function App() {
 
   // 자동 저장 타이머 추적
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 노드 데이터 변경 추적 (unsaved changes detection)
+  const nodeDataSnapshotRef = useRef<any>(null)
+  const [hasUnsavedNodeChanges, setHasUnsavedNodeChanges] = useState(false)
 
   // 토스트 알림 상태
   const [toasts, setToasts] = useState<Array<{
@@ -364,6 +370,44 @@ function App() {
   const handleNodeDoubleClick = useCallback(() => {
     const selectedNode = getSelectedNode()
     if (selectedNode) {
+      // 노드 데이터 스냅샷 저장 (unsaved changes 감지용)
+      nodeDataSnapshotRef.current = JSON.parse(JSON.stringify(selectedNode.data))
+      setHasUnsavedNodeChanges(false)
+      setIsNodeConfigDialogOpen(true)
+    }
+  }, [getSelectedNode])
+
+  // Dialog 닫기 핸들러 (unsaved changes 확인)
+  const handleCloseNodeConfigDialog = useCallback((open: boolean) => {
+    if (!open) {
+      // Dialog를 닫으려고 할 때
+      const selectedNode = getSelectedNode()
+
+      // 변경사항이 있는지 확인
+      if (selectedNode && nodeDataSnapshotRef.current) {
+        const hasChanges = JSON.stringify(selectedNode.data) !== JSON.stringify(nodeDataSnapshotRef.current)
+
+        if (hasChanges) {
+          // 변경사항이 있으면 확인 창 표시
+          if (confirm('저장하지 않은 변경사항이 있습니다. 정말 닫으시겠습니까?')) {
+            setIsNodeConfigDialogOpen(false)
+            setHasUnsavedNodeChanges(false)
+            nodeDataSnapshotRef.current = null
+          }
+          // 취소하면 Dialog를 닫지 않음
+        } else {
+          // 변경사항이 없으면 그냥 닫기
+          setIsNodeConfigDialogOpen(false)
+          setHasUnsavedNodeChanges(false)
+          nodeDataSnapshotRef.current = null
+        }
+      } else {
+        // 스냅샷이 없으면 그냥 닫기
+        setIsNodeConfigDialogOpen(false)
+        setHasUnsavedNodeChanges(false)
+        nodeDataSnapshotRef.current = null
+      }
+    } else {
       setIsNodeConfigDialogOpen(true)
     }
   }, [getSelectedNode])
@@ -823,16 +867,145 @@ function App() {
         <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
 
         {/* 노드 설정 Dialog */}
-        <Dialog open={isNodeConfigDialogOpen} onOpenChange={setIsNodeConfigDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {getSelectedNode() ? `${getSelectedNode()!.data.agent_name || getSelectedNode()!.type} 설정` : '노드 설정'}
-              </DialogTitle>
+        <Dialog open={isNodeConfigDialogOpen} onOpenChange={handleCloseNodeConfigDialog}>
+          <DialogContent className="w-[95vw] max-w-6xl h-[95vh] flex flex-col p-0">
+            {/* Enhanced Header */}
+            <DialogHeader className="flex-shrink-0 px-6 py-4 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {/* 노드 아이콘 */}
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
+                    {(() => {
+                      const node = getSelectedNode()
+                      if (!node) return <Settings className="h-5 w-5 text-gray-600" />
+
+                      switch (node.type) {
+                        case 'input':
+                          return <Target className="h-5 w-5 text-blue-600" />
+                        case 'worker':
+                          return <Zap className="h-5 w-5 text-purple-600" />
+                        case 'condition':
+                          return <GitBranch className="h-5 w-5 text-orange-600" />
+                        case 'merge':
+                          return <MergeIcon className="h-5 w-5 text-green-600" />
+                        default:
+                          return <Settings className="h-5 w-5 text-gray-600" />
+                      }
+                    })()}
+                  </div>
+
+                  {/* 노드 제목 및 타입 */}
+                  <div>
+                    <DialogTitle className="text-lg">
+                      {getSelectedNode()
+                        ? `${getSelectedNode()!.data.agent_name || getSelectedNode()!.type} 설정`
+                        : '노드 설정'}
+                    </DialogTitle>
+                    {getSelectedNode() && (
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        {getSelectedNode()!.type === 'input' && 'Input Node'}
+                        {getSelectedNode()!.type === 'worker' && `Worker Node - ${getSelectedNode()!.data.agent_name || 'Unknown'}`}
+                        {getSelectedNode()!.type === 'condition' && 'Condition Node'}
+                        {getSelectedNode()!.type === 'merge' && 'Merge Node'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 상태 badges */}
+                <div className="flex items-center gap-2">
+                  {/* 노드 타입 badge */}
+                  {getSelectedNode() && (
+                    <Badge
+                      className={
+                        getSelectedNode()!.type === 'input'
+                          ? 'bg-blue-100 text-blue-800'
+                          : getSelectedNode()!.type === 'worker'
+                          ? 'bg-purple-100 text-purple-800'
+                          : getSelectedNode()!.type === 'condition'
+                          ? 'bg-orange-100 text-orange-800'
+                          : getSelectedNode()!.type === 'merge'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }
+                    >
+                      {getSelectedNode()!.type}
+                    </Badge>
+                  )}
+
+                  {/* Auto-save indicator */}
+                  {saveStatus === 'pending' && (
+                    <Badge variant="outline" className="text-blue-600 border-blue-300">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse mr-2" />
+                      저장 대기 중
+                    </Badge>
+                  )}
+                  {saveStatus === 'saving' && (
+                    <Badge variant="outline" className="text-yellow-600 border-yellow-300">
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse mr-2" />
+                      저장 중
+                    </Badge>
+                  )}
+                  {saveStatus === 'saved' && (
+                    <Badge variant="outline" className="text-green-600 border-green-300">
+                      <div className="w-2 h-2 bg-green-500 rounded-full mr-2" />
+                      저장됨
+                    </Badge>
+                  )}
+                </div>
+              </div>
             </DialogHeader>
-            <div className="mt-4">
+
+            {/* 노드 설정 내용 */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
               <NodeConfigPanel />
             </div>
+
+            {/* Enhanced Footer */}
+            <DialogFooter className="flex-shrink-0 px-6 py-4 border-t bg-gray-50">
+              <div className="flex items-center justify-between w-full">
+                {/* 키보드 단축키 힌트 */}
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <kbd className="px-2 py-1 bg-white border rounded text-xs font-mono">⌘S</kbd>
+                    <span>워크플로우 저장</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <kbd className="px-2 py-1 bg-white border rounded text-xs font-mono">Esc</kbd>
+                    <span>닫기</span>
+                  </div>
+                </div>
+
+                {/* 액션 버튼 */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const selectedNode = getSelectedNode()
+                      if (selectedNode && nodeDataSnapshotRef.current) {
+                        // 스냅샷으로 복원
+                        useWorkflowStore.getState().updateNodeData(selectedNode.id, nodeDataSnapshotRef.current)
+                        addToast('success', '변경사항이 취소되었습니다')
+                      }
+                    }}
+                    disabled={!getSelectedNode()}
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    초기화
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setIsNodeConfigDialogOpen(false)
+                      setHasUnsavedNodeChanges(false)
+                      nodeDataSnapshotRef.current = null
+                    }}
+                  >
+                    닫기
+                  </Button>
+                </div>
+              </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
