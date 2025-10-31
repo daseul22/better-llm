@@ -9,8 +9,9 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { FieldHint } from '@/components/ui/field-hint'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { Terminal, HelpCircle, CheckCircle2, Save, Maximize2, Trash2 } from 'lucide-react'
+import { Terminal, Maximize2, Trash2 } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -374,12 +375,7 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
           <TabsContent value="basic" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
             {/* 초기 입력 */}
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">초기 입력</label>
-                <span title="워크플로우를 시작하는 초기 입력입니다">
-                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                </span>
-              </div>
+              <label className="text-sm font-medium">초기 입력</label>
               <textarea
                 className="w-full p-3 border rounded-md text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 rows={10}
@@ -388,7 +384,10 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
                 onKeyDown={handleInputKeyDown}
                 placeholder="아키텍처 패턴 리뷰 해주세요"
               />
-              <p className="text-xs text-muted-foreground">이 입력이 연결된 첫 번째 노드로 전달됩니다.</p>
+              <FieldHint
+                hint="이 입력이 연결된 첫 번째 노드로 전달됩니다."
+                tooltip="워크플로우를 시작하는 초기 입력입니다. 비어있어도 실행 가능하며, 빈 문자열이 전달됩니다."
+              />
             </div>
 
             {/* 미리보기 */}
@@ -422,12 +421,7 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
 
             {/* 병렬 실행 옵션 */}
             <div className="space-y-2 border-t pt-4">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">병렬 실행</label>
-                <span title="이 노드에서 여러 자식 노드로 연결된 경우, 자식 노드들을 병렬로 실행할지 순차적으로 실행할지 선택합니다">
-                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                </span>
-              </div>
+              <label className="text-sm font-medium">병렬 실행</label>
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -437,11 +431,12 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
                 />
                 <span>자식 노드들을 병렬로 실행</span>
               </label>
-              <p className="text-xs text-muted-foreground">
-                {data.parallel_execution
-                  ? '✅ 이 노드의 자식 노드들이 동시에 실행되어 전체 실행 시간이 단축됩니다'
+              <FieldHint
+                hint={data.parallel_execution
+                  ? '✅ 자식 노드들이 동시에 실행되어 전체 실행 시간이 단축됩니다'
                   : '⚪ 자식 노드들이 순차적으로 실행됩니다'}
-              </p>
+                tooltip="이 노드에서 여러 자식 노드로 연결된 경우, 자식 노드들을 병렬로 실행할지 순차적으로 실행할지 선택합니다. 병렬 실행은 실행 시간을 단축시키지만, 노드 간 순서가 보장되지 않습니다."
+              />
             </div>
           </TabsContent>
 

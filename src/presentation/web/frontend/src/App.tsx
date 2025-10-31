@@ -9,14 +9,15 @@ import { ReactFlowProvider } from 'reactflow'
 import { WorkflowCanvas } from './components/WorkflowCanvas'
 import { NodePanel } from './components/NodePanel'
 import { NodeConfigPanel } from './components/NodeConfigPanel'
+import { NodeSummaryPanel } from './components/NodeSummaryPanel'
+import { ExecutionLogsPanel } from './components/ExecutionLogsPanel'
 import { ValidationErrorsPanel } from './components/ValidationErrorsPanel'
 import { WorkflowSelector } from './components/WorkflowSelector'
 import { Button } from './components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/ui/dialog'
 import { useWorkflowStore } from './stores/workflowStore'
 import {
   selectProject,
-  saveProjectWorkflow,
-  loadProjectWorkflow,
   saveProjectWorkflowByName,
   loadProjectWorkflowByName,
   listProjectWorkflows,
@@ -48,6 +49,8 @@ function App() {
     edges,
     restoreFromSession,
     execution,
+    getSelectedNode,
+    setSelectedNodeId,
   } = useWorkflowStore()
 
   // 프로젝트 관련 상태
@@ -69,11 +72,14 @@ function App() {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
 
+  // 노드 설정 Dialog 상태
+  const [isNodeConfigDialogOpen, setIsNodeConfigDialogOpen] = useState(false)
+
   // 저장 상태 표시
   const [saveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved'>('idle')
 
   // 자동 저장 타이머 추적
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 토스트 알림 상태
   const [toasts, setToasts] = useState<Array<{
@@ -354,6 +360,14 @@ function App() {
     }
   }, [execution.isExecuting, currentProjectPath, nodes, getCurrentWorkflow, addToast, currentWorkflowFileName])
 
+  // 노드 더블클릭 핸들러 (Dialog 열기)
+  const handleNodeDoubleClick = useCallback(() => {
+    const selectedNode = getSelectedNode()
+    if (selectedNode) {
+      setIsNodeConfigDialogOpen(true)
+    }
+  }, [getSelectedNode])
+
   // 전역 키보드 단축키 핸들링
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -366,16 +380,19 @@ function App() {
         handleManualSave()
       }
 
-      // Esc: 선택 해제
+      // Esc: Dialog 닫기 또는 선택 해제
       if (e.key === 'Escape' && !showProjectDialog) {
-        const setSelectedNodeId = useWorkflowStore.getState().setSelectedNodeId
-        setSelectedNodeId(null)
+        if (isNodeConfigDialogOpen) {
+          setIsNodeConfigDialogOpen(false)
+        } else {
+          setSelectedNodeId(null)
+        }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [showProjectDialog, handleManualSave, addToast])
+  }, [showProjectDialog, isNodeConfigDialogOpen, handleManualSave, setSelectedNodeId])
 
   // 노드/엣지 변경 시 자동 저장 (debounce)
   useEffect(() => {
@@ -753,7 +770,7 @@ function App() {
 
           {/* 중앙: 캔버스 */}
           <main className="flex-1 relative">
-            <WorkflowCanvas />
+            <WorkflowCanvas onNodeDoubleClick={handleNodeDoubleClick} />
 
             {/* 사이드바 토글 버튼 */}
             <div className="absolute top-4 left-4 flex gap-2 z-10">
@@ -789,13 +806,14 @@ function App() {
             </div>
           </main>
 
-          {/* 오른쪽: 노드 설정 패널 */}
+          {/* 오른쪽: 노드 정보 & 실행 로그 패널 */}
           {rightSidebarOpen && (
             <aside className="w-[28rem] border-l bg-white flex flex-col overflow-hidden transition-transform duration-300 ease-out">
               {/* 패널 내용 */}
               <div className="flex-1 overflow-y-auto px-2 py-4 space-y-4">
-                <NodeConfigPanel />
+                <NodeSummaryPanel onOpenFullConfig={() => setIsNodeConfigDialogOpen(true)} />
                 <ValidationErrorsPanel />
+                <ExecutionLogsPanel />
               </div>
             </aside>
           )}
@@ -803,6 +821,20 @@ function App() {
 
         {/* 토스트 알림 */}
         <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
+
+        {/* 노드 설정 Dialog */}
+        <Dialog open={isNodeConfigDialogOpen} onOpenChange={setIsNodeConfigDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {getSelectedNode() ? `${getSelectedNode()!.data.agent_name || getSelectedNode()!.type} 설정` : '노드 설정'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="mt-4">
+              <NodeConfigPanel />
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* 템플릿 갤러리 */}
         {showTemplateGallery && (
