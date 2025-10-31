@@ -11,7 +11,7 @@ import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, AlertCircle } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowValidationError } from '@/lib/api'
 
@@ -116,11 +116,13 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
       <Card
         style={{ width: '260px', boxSizing: 'border-box' }}
         className={cn(
-          'border-2 transition-all',
+          'border-2 transition-all duration-node cursor-pointer',
+          'shadow-node hover:shadow-node-hover hover:-translate-y-0.5',
           statusClass,
-          selected && 'ring-2 ring-blue-500',
-          isExecuting && 'pulse-border',
-          !isExecuting && !isCompleted && 'node-appear'
+          selected && 'ring-2 ring-blue-500 shadow-node-selected',
+          isExecuting && 'animate-pulse-border shadow-node-executing',
+          hasError && 'animate-shake shadow-node-error',
+          !isExecuting && !isCompleted && !hasError && 'animate-node-appear'
         )}
       >
         <CardHeader className="py-2 px-3">
@@ -145,38 +147,47 @@ export const WorkerNode = memo(({ id, data, selected }: NodeProps<WorkerNodeData
             {(data.task_template?.length || 0) > 80 && '...'}
           </div>
 
-          {/* 실행 시간 표시 */}
-          {elapsedTime !== undefined && (
-            <div className="flex items-center gap-1 text-[10px] text-gray-600">
-              <Clock className="h-3 w-3" />
-              <span>{elapsedTime.toFixed(1)}초</span>
-            </div>
-          )}
-
-          {/* 토큰 사용량 표시 */}
-          {tokenUsage && tokenUsage.total_tokens > 0 && (
-            <div className="text-[10px] text-gray-600 bg-gray-100 rounded px-1.5 py-1">
-              <span className="font-mono">{tokenUsage.total_tokens.toLocaleString()} tokens</span>
+          {/* 실행 시간 및 토큰 사용량 표시 */}
+          {(elapsedTime !== undefined || (tokenUsage && tokenUsage.total_tokens > 0)) && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {elapsedTime !== undefined && (
+                <Badge variant="outline" className="text-node-xs px-1.5 py-0.5 h-auto border-gray-300">
+                  <Clock className="h-2.5 w-2.5 mr-0.5" />
+                  {elapsedTime.toFixed(1)}s
+                </Badge>
+              )}
+              {tokenUsage && tokenUsage.total_tokens > 0 && (
+                <Badge variant="outline" className="text-node-xs px-1.5 py-0.5 h-auto font-mono border-gray-300">
+                  {tokenUsage.total_tokens.toLocaleString()} tok
+                </Badge>
+              )}
             </div>
           )}
 
           {/* 검증 에러 표시 */}
           {validationErrors.length > 0 && (
-            <div className="space-y-1 text-[10px]">
+            <div className="space-y-1">
               {validationErrors.map((error, idx) => (
                 <div
                   key={idx}
                   className={cn(
-                    'p-1.5 rounded',
+                    'p-1 rounded text-node-xs flex items-start gap-1',
                     error.severity === 'error' && 'bg-red-100 text-red-800',
                     error.severity === 'warning' && 'bg-yellow-100 text-yellow-800',
                     error.severity === 'info' && 'bg-blue-100 text-blue-800'
                   )}
                 >
-                  <div className="font-medium">{error.message}</div>
-                  {error.suggestion && (
-                    <div className="text-[10px] mt-0.5 opacity-90">{error.suggestion}</div>
-                  )}
+                  <div className="flex-shrink-0 mt-0.5">
+                    {error.severity === 'error' && <AlertCircle className="h-3 w-3" />}
+                    {error.severity === 'warning' && <AlertTriangle className="h-3 w-3" />}
+                    {error.severity === 'info' && <Info className="h-3 w-3" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">{error.message}</div>
+                    {error.suggestion && (
+                      <div className="mt-0.5 opacity-90">{error.suggestion}</div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

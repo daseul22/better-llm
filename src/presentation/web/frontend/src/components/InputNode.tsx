@@ -255,11 +255,13 @@ export const InputNode = memo(({ id, data, selected }: NodeProps<InputNodeData>)
       <Card
         style={{ width: '260px', boxSizing: 'border-box' }}
         className={cn(
-          'border-2 transition-all',
+          'border-2 transition-all duration-node cursor-pointer',
+          'shadow-node hover:shadow-node-hover hover:-translate-y-0.5',
           statusClass,
-          selected && 'ring-2 ring-emerald-500',
-          isExecuting && 'pulse-border',
-          !isExecuting && !isCompleted && 'node-appear'
+          selected && 'ring-2 ring-emerald-500 shadow-node-selected',
+          isExecuting && 'animate-pulse-border shadow-node-executing',
+          hasError && 'animate-shake shadow-node-error',
+          !isExecuting && !isCompleted && !hasError && 'animate-node-appear'
         )}
       >
         <CardHeader className="py-2 px-3">

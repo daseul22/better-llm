@@ -7,8 +7,9 @@
 import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { Merge, Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { Merge, Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import { useWorkflowStore } from '@/stores/workflowStore'
 
 interface MergeNodeData {
@@ -77,9 +78,13 @@ export const MergeNode = memo(({ id, data, selected }: NodeProps<MergeNodeData>)
 
       <Card
         className={cn(
-          'cursor-pointer transition-all hover:shadow-md',
+          'cursor-pointer transition-all duration-node',
+          'shadow-node hover:shadow-node-hover hover:-translate-y-0.5',
           statusClass,
-          selected && 'ring-2 ring-blue-500'
+          selected && 'ring-2 ring-blue-500 shadow-node-selected',
+          isExecuting && 'animate-pulse-border shadow-node-executing',
+          hasError && 'animate-shake shadow-node-error',
+          !isExecuting && !isCompleted && !hasError && 'animate-node-appear'
         )}
       >
         <CardHeader className="p-3 pb-2">
@@ -122,7 +127,10 @@ export const MergeNode = memo(({ id, data, selected }: NodeProps<MergeNodeData>)
 
           {/* 실행 시간 표시 */}
           {elapsedTime !== undefined && (
-            <div className="text-xs text-gray-500">⏱️ {elapsedTime.toFixed(2)}s</div>
+            <Badge variant="outline" className="text-node-xs px-1.5 py-0.5 h-auto border-gray-300">
+              <Clock className="h-2.5 w-2.5 mr-0.5" />
+              {elapsedTime.toFixed(1)}s
+            </Badge>
           )}
         </CardContent>
       </Card>
