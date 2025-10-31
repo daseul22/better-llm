@@ -80,7 +80,7 @@ def is_hidden_or_ignored(name: str) -> bool:
 
 
 @router.get("/home")
-async def get_home_directory() -> Dict[str, str]:
+async def get_home_directory() -> dict[str, str]:
     """
     사용자 홈 디렉토리 경로 반환
 

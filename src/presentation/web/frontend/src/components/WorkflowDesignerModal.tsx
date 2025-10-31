@@ -9,8 +9,9 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { designWorkflow } from '@/lib/api'
-import { Loader2, Send, Check, X, Wand2, ArrowDown } from 'lucide-react'
+import { Loader2, Send, Check, X, Wand2, ArrowDown, AlertCircle } from 'lucide-react'
 import { ParsedContent } from './ParsedContent'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { layoutWorkflow } from '@/lib/layoutNodes'
@@ -505,9 +506,10 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {error}
-              </div>
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
           </div>
         )}
@@ -515,15 +517,15 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
         {/* 단계: 생성 중 */}
         {step === 'generating' && (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-              <div className="flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                <span className="text-sm font-medium text-blue-900">워크플로우 설계 중...</span>
-              </div>
-              <div className="text-xs text-blue-700 mt-1">
-                AI가 요구사항을 분석하고 워크플로우를 설계하고 있습니다
-              </div>
-            </div>
+            <Alert variant="info">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <AlertDescription>
+                <div className="font-medium">워크플로우 설계 중...</div>
+                <div className="text-xs mt-1">
+                  AI가 요구사항을 분석하고 워크플로우를 설계하고 있습니다
+                </div>
+              </AlertDescription>
+            </Alert>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -565,10 +567,13 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                <div className="font-medium mb-1">에러 발생</div>
-                <div>{error}</div>
-              </div>
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="font-medium mb-1">에러 발생</div>
+                  <div>{error}</div>
+                </AlertDescription>
+              </Alert>
             )}
           </div>
         )}
@@ -576,12 +581,12 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
         {/* 단계: 미리보기 */}
         {step === 'preview' && (
           <div className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <div className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-green-600" />
-                <span className="text-sm font-medium text-green-900">워크플로우 설계 완료</span>
-              </div>
-            </div>
+            <Alert variant="success">
+              <Check className="h-4 w-4" />
+              <AlertDescription>
+                <span className="font-medium">워크플로우 설계 완료</span>
+              </AlertDescription>
+            </Alert>
 
             {parsedWorkflow ? (
               <div>
@@ -691,19 +696,23 @@ export const WorkflowDesignerModal: React.FC<WorkflowDesignerModalProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <div className="text-sm font-medium text-yellow-900 mb-1">파싱 실패</div>
-                <div className="text-sm text-yellow-800">{parseError}</div>
-                <div className="mt-2 text-xs text-yellow-700">
-                  전체 출력을 확인하여 수동으로 JSON을 추출해주세요
-                </div>
-              </div>
+              <Alert variant="warning">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="font-medium mb-1">파싱 실패</div>
+                  <div className="text-sm">{parseError}</div>
+                  <div className="mt-2 text-xs">
+                    전체 출력을 확인하여 수동으로 JSON을 추출해주세요
+                  </div>
+                </AlertDescription>
+              </Alert>
             )}
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {error}
-              </div>
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
           </div>
         )}

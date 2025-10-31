@@ -8,7 +8,8 @@ import React, { useState } from 'react'
 import { CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Merge, Save, RotateCcw, FileText, Maximize2 } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Merge, Save, RotateCcw, FileText, Maximize2, Info, CheckCircle2 } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -210,14 +211,17 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
         )}
 
         {/* 병합 대상 안내 */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <p className="text-sm text-blue-700 font-medium mb-2">💡 병합 동작</p>
-          <ul className="text-xs text-blue-600 space-y-1">
-            <li>• Merge 노드는 <strong>여러 부모 노드</strong>의 출력을 하나로 합칩니다</li>
-            <li>• 조건 분기(Condition)나 병렬 실행 후 결과를 통합할 때 사용</li>
-            <li>• 병합된 결과는 다음 노드로 전달됩니다</li>
-          </ul>
-        </div>
+        <Alert variant="info">
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            <p className="text-sm font-medium mb-2">💡 병합 동작</p>
+            <ul className="text-xs space-y-1">
+              <li>• Merge 노드는 <strong>여러 부모 노드</strong>의 출력을 하나로 합칩니다</li>
+              <li>• 조건 분기(Condition)나 병렬 실행 후 결과를 통합할 때 사용</li>
+              <li>• 병합된 결과는 다음 노드로 전달됩니다</li>
+            </ul>
+          </AlertDescription>
+        </Alert>
 
         {/* 예시 */}
         <div className="bg-gray-50 border rounded-lg p-3">
@@ -250,14 +254,17 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
         </div>
 
         {/* 사용 시나리오 */}
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-          <p className="text-sm text-green-700 font-medium mb-2">✅ 사용 시나리오</p>
-          <ul className="text-xs text-green-600 space-y-1">
-            <li>• <strong>조건 분기 통합:</strong> Condition 노드의 True/False 경로 결과 합치기</li>
-            <li>• <strong>병렬 작업 통합:</strong> 여러 Worker가 독립적으로 작업한 결과 결합</li>
-            <li>• <strong>반복 결과 수집:</strong> Loop 노드의 각 반복 결과를 모으기</li>
-          </ul>
-        </div>
+        <Alert variant="success">
+          <CheckCircle2 className="h-4 w-4" />
+          <AlertDescription>
+            <p className="text-sm font-medium mb-2">✅ 사용 시나리오</p>
+            <ul className="text-xs space-y-1">
+              <li>• <strong>조건 분기 통합:</strong> Condition 노드의 True/False 경로 결과 합치기</li>
+              <li>• <strong>병렬 작업 통합:</strong> 여러 Worker가 독립적으로 작업한 결과 결합</li>
+              <li>• <strong>반복 결과 수집:</strong> Loop 노드의 각 반복 결과를 모으기</li>
+            </ul>
+          </AlertDescription>
+        </Alert>
         </TabsContent>
 
         {/* 로그 탭 */}
@@ -269,9 +276,9 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
 
             {/* 노드 입력 */}
             <div className="border rounded-md overflow-hidden">
-              <div className="bg-blue-50 px-3 py-2 border-b">
-                <div className="text-sm font-medium text-blue-900">노드 입력</div>
-                <div className="text-xs text-blue-700">이 노드가 받은 입력 데이터 (모든 부모 노드 출력)</div>
+              <div className="bg-muted px-3 py-2 border-b">
+                <div className="text-sm font-medium">노드 입력</div>
+                <div className="text-xs text-muted-foreground">이 노드가 받은 입력 데이터 (모든 부모 노드 출력)</div>
               </div>
               <div className="p-3">
                 <AutoScrollContainer maxHeight="400px" dependency={nodeInputs[node.id]}>
@@ -282,9 +289,9 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
 
             {/* 노드 출력 */}
             <div className="border rounded-md overflow-hidden">
-              <div className="bg-green-50 px-3 py-2 border-b">
-                <div className="text-sm font-medium text-green-900">노드 출력</div>
-                <div className="text-xs text-green-700">병합된 결과 (전략에 따라 처리됨)</div>
+              <div className="bg-muted px-3 py-2 border-b">
+                <div className="text-sm font-medium">노드 출력</div>
+                <div className="text-xs text-muted-foreground">병합된 결과 (전략에 따라 처리됨)</div>
               </div>
               <div className="p-3">
                 <AutoScrollContainer maxHeight="400px" dependency={nodeOutputs[node.id]}>

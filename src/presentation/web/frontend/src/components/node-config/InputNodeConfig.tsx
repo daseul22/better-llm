@@ -8,6 +8,7 @@ import React, { useState } from 'react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { Terminal, HelpCircle, CheckCircle2, Save, Maximize2, Trash2 } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
@@ -78,10 +79,10 @@ const NodeExecutionLogs: React.FC = () => {
         <div className="flex items-center justify-between mb-2">
           <div className="text-sm font-medium">실행 상태</div>
           {isExecuting ? (
-            <div className="flex items-center gap-1.5 text-yellow-600">
+            <Badge variant="warning" className="flex items-center gap-1.5">
               <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
               <span className="text-xs">실행 중...</span>
-            </div>
+            </Badge>
           ) : (
             <div className="flex items-center gap-1.5 text-gray-600">
               <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
@@ -137,9 +138,9 @@ const NodeExecutionLogs: React.FC = () => {
               {/* 입력 섹션 */}
               {validLogs.filter(log => log.nodeId === execNode.id && log.type === 'input').length > 0 && (
                 <div className="border rounded-md overflow-hidden">
-                  <div className="bg-blue-50 px-3 py-2 border-b">
-                    <div className="text-sm font-medium text-blue-900">📥 입력</div>
-                    <div className="text-xs text-blue-700">이 노드가 받은 작업 설명</div>
+                  <div className="bg-muted px-3 py-2 border-b">
+                    <div className="text-sm font-medium">📥 입력</div>
+                    <div className="text-xs text-muted-foreground">이 노드가 받은 작업 설명</div>
                   </div>
                   <AutoScrollContainer
                     className="p-3"
@@ -179,9 +180,9 @@ const NodeExecutionLogs: React.FC = () => {
               {/* 출력 섹션 */}
               {validLogs.filter(log => log.nodeId === execNode.id && log.type === 'output').length > 0 && (
                 <div className="border rounded-md overflow-hidden">
-                  <div className="bg-green-50 px-3 py-2 border-b">
-                    <div className="text-sm font-medium text-green-900">📤 출력</div>
-                    <div className="text-xs text-green-700">최종 결과 (다음 노드로 전달됨)</div>
+                  <div className="bg-muted px-3 py-2 border-b">
+                    <div className="text-sm font-medium">📤 출력</div>
+                    <div className="text-xs text-muted-foreground">최종 결과 (다음 노드로 전달됨)</div>
                   </div>
                   <AutoScrollContainer
                     className="p-3"
@@ -406,15 +407,15 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
               <div className="text-xs font-medium mb-2">연결 상태</div>
               <div className="text-xs text-muted-foreground">
                 {connectedEdges.length > 0 ? (
-                  <div className="flex items-center gap-2 text-green-600">
+                  <Badge variant="success" className="flex items-center gap-2">
                     <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                     <span>{connectedEdges.length}개 노드에 연결됨</span>
-                  </div>
+                  </Badge>
                 ) : (
-                  <div className="flex items-center gap-2 text-yellow-600">
+                  <Badge variant="warning" className="flex items-center gap-2">
                     <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
                     <span>연결된 노드 없음 (실행 불가)</span>
-                  </div>
+                  </Badge>
                 )}
               </div>
             </div>

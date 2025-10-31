@@ -8,7 +8,8 @@ import React, { useState } from 'react'
 import { CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { GitBranch, Save, RotateCcw, FileText } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { GitBranch, Save, RotateCcw, FileText, Info } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -207,14 +208,17 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
         </div>
 
         {/* 분기 경로 안내 */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <p className="text-sm text-blue-700 font-medium mb-2">💡 분기 경로 설정</p>
-          <ul className="text-xs text-blue-600 space-y-1">
-            <li>• <strong>True 경로:</strong> 왼쪽 초록색 핸들에서 드래그하여 연결</li>
-            <li>• <strong>False 경로:</strong> 오른쪽 빨간색 핸들에서 드래그하여 연결</li>
-            <li>• 각 경로는 엣지의 sourceHandle로 자동 구분됩니다</li>
-          </ul>
-        </div>
+        <Alert variant="info">
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            <p className="text-sm font-medium mb-2">💡 분기 경로 설정</p>
+            <ul className="text-xs space-y-1">
+              <li>• <strong>True 경로:</strong> 왼쪽 초록색 핸들에서 드래그하여 연결</li>
+              <li>• <strong>False 경로:</strong> 오른쪽 빨간색 핸들에서 드래그하여 연결</li>
+              <li>• 각 경로는 엣지의 sourceHandle로 자동 구분됩니다</li>
+            </ul>
+          </AlertDescription>
+        </Alert>
 
         {/* 예시 */}
         <div className="bg-gray-50 border rounded-lg p-3">
@@ -243,9 +247,9 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
 
             {/* 노드 입력 */}
             <div className="border rounded-md overflow-hidden">
-              <div className="bg-blue-50 px-3 py-2 border-b">
-                <div className="text-sm font-medium text-blue-900">노드 입력</div>
-                <div className="text-xs text-blue-700">이 노드가 받은 입력 데이터 (부모 노드 출력)</div>
+              <div className="bg-muted px-3 py-2 border-b">
+                <div className="text-sm font-medium">노드 입력</div>
+                <div className="text-xs text-muted-foreground">이 노드가 받은 입력 데이터 (부모 노드 출력)</div>
               </div>
               <div className="p-3">
                 <AutoScrollContainer maxHeight="400px" dependency={nodeInputs[node.id]}>
@@ -256,9 +260,9 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
 
             {/* 노드 출력 */}
             <div className="border rounded-md overflow-hidden">
-              <div className="bg-green-50 px-3 py-2 border-b">
-                <div className="text-sm font-medium text-green-900">노드 출력</div>
-                <div className="text-xs text-green-700">조건 평가 결과 (True/False 분기 정보)</div>
+              <div className="bg-muted px-3 py-2 border-b">
+                <div className="text-sm font-medium">노드 출력</div>
+                <div className="text-xs text-muted-foreground">조건 평가 결과 (True/False 분기 정보)</div>
               </div>
               <div className="p-3">
                 <AutoScrollContainer maxHeight="400px" dependency={nodeOutputs[node.id]}>

@@ -8,8 +8,9 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { ListChecks, HelpCircle, CheckCircle2, Save, Search, Maximize2, Loader2, Trash2 } from 'lucide-react'
+import { ListChecks, HelpCircle, CheckCircle2, Save, Search, Maximize2, Loader2, Trash2, AlertCircle, Info } from 'lucide-react'
 import { WorkflowNode, getAgents, Agent, getTools, Tool, sendUserInput } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -283,14 +284,15 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
 
             {/* 실시간 미리보기 */}
             {data.task_template.includes('{{') && (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                <div className="text-xs font-medium text-blue-900 mb-2 flex items-center gap-1">
-                  <span>미리보기 (예시 입력 적용)</span>
-                </div>
-                <div className="text-sm text-gray-700 font-mono bg-white p-2 rounded border">
-                  {generateTemplatePreview(data.task_template, nodes, node.id)}
-                </div>
-              </div>
+              <Alert variant="info">
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="text-xs font-medium mb-2">미리보기 (예시 입력 적용)</div>
+                  <div className="text-sm text-gray-700 font-mono bg-white p-2 rounded border">
+                    {generateTemplatePreview(data.task_template, nodes, node.id)}
+                  </div>
+                </AlertDescription>
+              </Alert>
             )}
 
             <div className="text-xs text-muted-foreground space-y-1">
@@ -593,39 +595,45 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
 
             {/* Agent 정보 */}
             {currentAgent && (
-              <div className="border rounded-md p-3 bg-blue-50 border-blue-200">
-                <div className="text-sm font-medium mb-2 text-blue-900">Agent 정보</div>
-                <div className="space-y-2 text-xs text-blue-800">
-                  <div>
-                    <span className="font-medium">역할:</span>
-                    <div className="mt-0.5">{currentAgent.role}</div>
-                  </div>
-                  <div>
-                    <span className="font-medium">모델:</span>
-                    <div className="mt-0.5 break-all">{currentAgent.model || 'claude-sonnet-4-5-20250929'}</div>
-                  </div>
-                  <div>
-                    <span className="font-medium">기본 도구:</span>
-                    <div className="mt-0.5 break-words">
-                      {currentAgent.allowed_tools?.length > 0 ? currentAgent.allowed_tools.join(', ') : '없음'}
+              <Alert variant="info">
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="text-sm font-medium mb-2">Agent 정보</div>
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <span className="font-medium">역할:</span>
+                      <div className="mt-0.5">{currentAgent.role}</div>
+                    </div>
+                    <div>
+                      <span className="font-medium">모델:</span>
+                      <div className="mt-0.5 break-all">{currentAgent.model || 'claude-sonnet-4-5-20250929'}</div>
+                    </div>
+                    <div>
+                      <span className="font-medium">기본 도구:</span>
+                      <div className="mt-0.5 break-words">
+                        {currentAgent.allowed_tools?.length > 0 ? currentAgent.allowed_tools.join(', ') : '없음'}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                </AlertDescription>
+              </Alert>
             )}
 
             {/* 사용법 안내 */}
-            <div className="border rounded-md p-3 bg-green-50 border-green-200">
-              <div className="text-sm font-medium mb-2 text-green-900">사용법</div>
-              <ul className="list-disc list-inside space-y-1 text-xs text-green-800">
-                <li>작업 템플릿에서 {'{{parent}}'} 변수로 부모 노드 출력 참조</li>
-                <li>{'{{input}}'} 변수는 Input 노드의 초기 입력값을 참조</li>
-                <li>{'{{node_<id>}}'} 변수로 특정 노드의 출력 참조</li>
-                <li>도구 탭에서 커스텀 도구 선택 가능 (일부 워커만)</li>
-                <li>고급 탭에서 추가 지시사항 작성 가능</li>
-                <li>변경사항은 3초 후 자동 저장됩니다</li>
-              </ul>
-            </div>
+            <Alert variant="success">
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                <div className="text-sm font-medium mb-2">사용법</div>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>작업 템플릿에서 {'{{parent}}'} 변수로 부모 노드 출력 참조</li>
+                  <li>{'{{input}}'} 변수는 Input 노드의 초기 입력값을 참조</li>
+                  <li>{'{{node_<id>}}'} 변수로 특정 노드의 출력 참조</li>
+                  <li>도구 탭에서 커스텀 도구 선택 가능 (일부 워커만)</li>
+                  <li>고급 탭에서 추가 지시사항 작성 가능</li>
+                  <li>변경사항은 3초 후 자동 저장됩니다</li>
+                </ul>
+              </AlertDescription>
+            </Alert>
           </div>
         </TabsContent>
 
@@ -719,9 +727,12 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                       {pendingUserInput.question}
                     </div>
                     {sendError && (
-                      <div className="text-sm text-red-600 mb-2 p-2 bg-red-50 rounded border border-red-200">
-                        ❌ 전송 실패: {sendError}
-                      </div>
+                      <Alert variant="destructive" className="mb-2">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription className="text-sm">
+                          ❌ 전송 실패: {sendError}
+                        </AlertDescription>
+                      </Alert>
                     )}
                     <div className="flex gap-2">
                       <input
