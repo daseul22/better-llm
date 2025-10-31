@@ -60,7 +60,7 @@ if npm run build; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "✓ 빌드 완료!"
     echo ""
-    echo "빌드 출력 위치: $FRONTEND_DIR/dist"
+    echo "빌드 출력 위치: src/presentation/web/static-react"
     echo ""
     echo "웹 서버 실행 방법:"
     echo "  claude-flow-web"
