@@ -5,11 +5,10 @@
  */
 
 import React, { useState } from 'react'
-import { CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Merge, Save, RotateCcw, FileText, Maximize2, Info, CheckCircle2 } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { FileText, Maximize2, ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -17,6 +16,7 @@ import { useWorkflowStore } from '@/stores/workflowStore'
 import { ParsedContent } from '@/components/ParsedContent'
 import { AutoScrollContainer } from '@/components/AutoScrollContainer'
 import { LogDetailModal } from '@/components/LogDetailModal'
+import { FieldHint } from '@/components/ui/field-hint'
 
 interface MergeNodeConfigProps {
   node: WorkflowNode
@@ -29,8 +29,9 @@ interface MergeNodeData {
 }
 
 export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
-  const [activeTab, setActiveTab] = useState('basic')
+  const [activeTab, setActiveTab] = useState('settings')
   const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
+  const [isExamplesOpen, setIsExamplesOpen] = useState(false)
   const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
   const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
 
@@ -114,20 +115,13 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
 
   return (
     <div className="h-full flex flex-col">
-      <CardHeader className="pb-4 border-b">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Merge className="h-5 w-5 text-indigo-600" />
-          병합 노드 설정
-        </CardTitle>
-      </CardHeader>
-
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center gap-2 mx-4 mt-4">
+        <div className="flex items-center gap-2 mx-3 mt-3">
           <TabsList className="flex w-auto gap-1 flex-1">
-            <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
-              기본
+            <TabsTrigger value="settings" className="text-sm flex-1">
+              설정
             </TabsTrigger>
-            <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
+            <TabsTrigger value="logs" className="text-sm flex-1">
               <FileText className="h-3 w-3 mr-1" />
               로그
             </TabsTrigger>
@@ -144,8 +138,8 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
           )}
         </div>
 
-        {/* 기본 설정 탭 */}
-        <TabsContent value="basic" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+        {/* 설정 탭 */}
+        <TabsContent value="settings" className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 mt-3">
         {/* 병합 전략 선택 */}
         <div>
           <label className="block text-sm font-medium mb-2">
@@ -210,69 +204,33 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
           </div>
         )}
 
-        {/* 병합 대상 안내 */}
-        <Alert variant="info">
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <p className="text-sm font-medium mb-2">💡 병합 동작</p>
-            <ul className="text-xs space-y-1">
-              <li>• Merge 노드는 <strong>여러 부모 노드</strong>의 출력을 하나로 합칩니다</li>
-              <li>• 조건 분기(Condition)나 병렬 실행 후 결과를 통합할 때 사용</li>
-              <li>• 병합된 결과는 다음 노드로 전달됩니다</li>
-            </ul>
-          </AlertDescription>
-        </Alert>
+        <FieldHint
+          hint="💡 여러 부모 노드 출력을 하나로 병합 (조건 분기/병렬 실행 결과 통합)"
+          tooltip="Merge 노드는 여러 부모 노드의 출력을 하나로 합칩니다. 조건 분기나 병렬 실행 후 결과를 통합할 때 사용하세요."
+        />
 
-        {/* 예시 */}
-        <div className="bg-gray-50 border rounded-lg p-3">
-          <p className="text-sm font-medium mb-2">📝 예시</p>
-          <div className="space-y-2 text-xs">
+        {/* 예시 (Collapsible) */}
+        <Collapsible open={isExamplesOpen} onOpenChange={setIsExamplesOpen}>
+          <CollapsibleTrigger className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+            📝 예시 보기
+            <ChevronDown className={cn("h-3 w-3 transition-transform", isExamplesOpen && "rotate-180")} />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 text-xs space-y-2 bg-gray-50 border rounded p-2">
             <div>
-              <p className="font-medium">연결 (Concatenate):</p>
-              <code className="bg-white px-2 py-1 rounded block mt-1">
-                입력1의 결과
-                <br />
-                ---
-                <br />
-                입력2의 결과
-              </code>
+              <strong>연결 (Concatenate):</strong>
+              <code className="block mt-1 text-xs">입력1의 결과\n---\n입력2의 결과</code>
             </div>
             <div>
-              <p className="font-medium">커스텀 템플릿:</p>
-              <code className="bg-white px-2 py-1 rounded block mt-1">
-                ## True 경로
-                <br />
-                {'{input1}'}
-                <br />
-                <br />
-                ## False 경로
-                <br />
-                {'{input2}'}
-              </code>
+              <strong>커스텀 템플릿:</strong>
+              <code className="block mt-1 text-xs">## True 경로\n{'{input1}'}\n\n## False 경로\n{'{input2}'}</code>
             </div>
-          </div>
-        </div>
-
-        {/* 사용 시나리오 */}
-        <Alert variant="success">
-          <CheckCircle2 className="h-4 w-4" />
-          <AlertDescription>
-            <p className="text-sm font-medium mb-2">✅ 사용 시나리오</p>
-            <ul className="text-xs space-y-1">
-              <li>• <strong>조건 분기 통합:</strong> Condition 노드의 True/False 경로 결과 합치기</li>
-              <li>• <strong>병렬 작업 통합:</strong> 여러 Worker가 독립적으로 작업한 결과 결합</li>
-              <li>• <strong>반복 결과 수집:</strong> Loop 노드의 각 반복 결과를 모으기</li>
-            </ul>
-          </AlertDescription>
-        </Alert>
+          </CollapsibleContent>
+        </Collapsible>
         </TabsContent>
 
         {/* 로그 탭 */}
-        <TabsContent value="logs" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
-          <div className="space-y-4">
-            <div className="text-sm text-muted-foreground">
-              이 노드의 입력과 출력을 확인할 수 있습니다 (디버깅용)
-            </div>
+        <TabsContent value="logs" className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 mt-3">
+          <div className="space-y-3">
 
             {/* 노드 입력 */}
             <div className="border rounded-md overflow-hidden">
@@ -327,22 +285,6 @@ export const MergeNodeConfig: React.FC<MergeNodeConfigProps> = ({ node }) => {
           </div>
         </TabsContent>
       </Tabs>
-
-      {/* 자동 저장 안내 */}
-      <div className="border-t p-4 space-y-2">
-        <div className="text-xs text-muted-foreground text-center py-2">
-          💡 변경사항은 자동으로 저장됩니다. 워크플로우 저장 버튼을 눌러 파일에 저장하세요.
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={reset}
-          className="w-full"
-        >
-          <RotateCcw className="h-4 w-4 mr-1" />
-          초기화
-        </Button>
-      </div>
 
       {/* 로그 상세 모달 */}
       <LogDetailModal

@@ -5,17 +5,17 @@
  */
 
 import React, { useState } from 'react'
-import { CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { GitBranch, Save, RotateCcw, FileText, Info } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { FileText, ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { ParsedContent } from '@/components/ParsedContent'
 import { AutoScrollContainer } from '@/components/AutoScrollContainer'
+import { FieldHint } from '@/components/ui/field-hint'
 
 interface ConditionNodeConfigProps {
   node: WorkflowNode
@@ -30,7 +30,8 @@ interface ConditionNodeData {
 }
 
 export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }) => {
-  const [activeTab, setActiveTab] = useState('basic')
+  const [activeTab, setActiveTab] = useState('settings')
+  const [isExamplesOpen, setIsExamplesOpen] = useState(false)
   const nodeInputs = useWorkflowStore((state) => state.execution.nodeInputs)
   const nodeOutputs = useWorkflowStore((state) => state.execution.nodeOutputs)
 
@@ -81,26 +82,19 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
 
   return (
     <div className="h-full flex flex-col">
-      <CardHeader className="pb-4 border-b">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <GitBranch className="h-5 w-5 text-amber-600" />
-          조건 분기 노드 설정
-        </CardTitle>
-      </CardHeader>
-
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="flex w-auto mx-4 mt-4 gap-1">
-          <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
-            기본
+        <TabsList className="flex w-auto mx-3 mt-3 gap-1">
+          <TabsTrigger value="settings" className="text-sm flex-1">
+            설정
           </TabsTrigger>
-          <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
+          <TabsTrigger value="logs" className="text-sm flex-1">
             <FileText className="h-3 w-3 mr-1" />
             로그
           </TabsTrigger>
         </TabsList>
 
-        {/* 기본 설정 탭 */}
-        <TabsContent value="basic" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+        {/* 설정 탭 */}
+        <TabsContent value="settings" className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 mt-3">
         {/* 조건 타입 선택 */}
         <div>
           <label className="block text-sm font-medium mb-2">
@@ -207,43 +201,27 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
           )}
         </div>
 
-        {/* 분기 경로 안내 */}
-        <Alert variant="info">
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <p className="text-sm font-medium mb-2">💡 분기 경로 설정</p>
-            <ul className="text-xs space-y-1">
-              <li>• <strong>True 경로:</strong> 왼쪽 초록색 핸들에서 드래그하여 연결</li>
-              <li>• <strong>False 경로:</strong> 오른쪽 빨간색 핸들에서 드래그하여 연결</li>
-              <li>• 각 경로는 엣지의 sourceHandle로 자동 구분됩니다</li>
-            </ul>
-          </AlertDescription>
-        </Alert>
+        <FieldHint
+          hint="💡 True(왼쪽 초록) / False(오른쪽 빨강) 핸들로 연결"
+          tooltip="True 경로: 왼쪽 초록색 핸들 | False 경로: 오른쪽 빨간색 핸들"
+        />
 
-        {/* 예시 */}
-        <div className="bg-gray-50 border rounded-lg p-3">
-          <p className="text-sm font-medium mb-2">📝 예시</p>
-          <div className="space-y-2 text-xs">
-            <div>
-              <p className="font-medium">텍스트 포함:</p>
-              <code className="bg-white px-2 py-1 rounded">condition_value = "success"</code>
-              <p className="text-gray-600">→ 출력에 "success"가 포함되면 True</p>
-            </div>
-            <div>
-              <p className="font-medium">길이 비교:</p>
-              <code className="bg-white px-2 py-1 rounded">condition_value = "&gt;20"</code>
-              <p className="text-gray-600">→ 출력 길이가 20자 이상이면 True</p>
-            </div>
-          </div>
-        </div>
+        {/* 예시 (Collapsible) */}
+        <Collapsible open={isExamplesOpen} onOpenChange={setIsExamplesOpen}>
+          <CollapsibleTrigger className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+            📝 예시 보기
+            <ChevronDown className={cn("h-3 w-3 transition-transform", isExamplesOpen && "rotate-180")} />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 text-xs space-y-1 bg-gray-50 border rounded p-2">
+            <div><strong>텍스트 포함:</strong> <code>"success"</code> → 출력에 "success" 포함 시 True</div>
+            <div><strong>길이 비교:</strong> <code>"&gt;20"</code> → 출력 길이 20자 이상 시 True</div>
+          </CollapsibleContent>
+        </Collapsible>
         </TabsContent>
 
         {/* 로그 탭 */}
-        <TabsContent value="logs" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
-          <div className="space-y-4">
-            <div className="text-sm text-muted-foreground">
-              이 노드의 입력과 출력을 확인할 수 있습니다 (디버깅용)
-            </div>
+        <TabsContent value="logs" className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 mt-3">
+          <div className="space-y-3">
 
             {/* 노드 입력 */}
             <div className="border rounded-md overflow-hidden">
@@ -298,22 +276,6 @@ export const ConditionNodeConfig: React.FC<ConditionNodeConfigProps> = ({ node }
           </div>
         </TabsContent>
       </Tabs>
-
-      {/* 자동 저장 안내 */}
-      <div className="border-t p-4 space-y-2">
-        <div className="text-xs text-muted-foreground text-center py-2">
-          💡 변경사항은 자동으로 저장됩니다. 워크플로우 저장 버튼을 눌러 파일에 저장하세요.
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={reset}
-          className="w-full"
-        >
-          <RotateCcw className="h-4 w-4 mr-1" />
-          초기화
-        </Button>
-      </div>
     </div>
   )
 }

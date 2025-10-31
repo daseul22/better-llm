@@ -5,13 +5,11 @@
  */
 
 import React, { useState } from 'react'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { FieldHint } from '@/components/ui/field-hint'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { Terminal, Maximize2, Trash2 } from 'lucide-react'
+import { Maximize2 } from 'lucide-react'
 import { WorkflowNode } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -207,17 +205,8 @@ const NodeExecutionLogs: React.FC = () => {
 }
 
 export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
-  const [activeTab, setActiveTab] = useState('basic')
+  const [activeTab, setActiveTab] = useState('settings')
   const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
-
-  const deleteNode = useWorkflowStore((state) => state.deleteNode)
-  const setSelectedNodeId = useWorkflowStore((state) => state.setSelectedNodeId)
-
-  // 노드 삭제 핸들러
-  const handleDelete = () => {
-    deleteNode(node.id)
-    setSelectedNodeId(null)
-  }
 
   // 노드 설정 Hook 사용
   const { data, setData, hasChanges, saveMessage, save, reset } = useNodeConfig<InputNodeData>({
@@ -321,40 +310,15 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
   }, [logs, nodes])
 
   return (
-    <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
-      <CardHeader className="pb-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Terminal className="h-5 w-5 text-emerald-600" />
-              Input 노드 설정
-            </CardTitle>
-            <div className="text-sm text-muted-foreground">워크플로우 시작점</div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDelete}
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-            title="노드 삭제"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-
+    <div className="h-full overflow-hidden flex flex-col">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        {/* 탭 헤더 */}
-        <div className="flex items-center gap-2 mx-4 mt-4">
+        <div className="flex items-center gap-2 mx-3 mt-3">
           <TabsList className="flex w-auto gap-1 flex-1">
-            <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
-              기본
+            <TabsTrigger value="settings" className="text-sm flex-1">
+              설정
             </TabsTrigger>
-            <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
-              실행 로그
-            </TabsTrigger>
-            <TabsTrigger value="info" className="text-xs flex-1 min-w-0">
-              정보
+            <TabsTrigger value="logs" className="text-sm flex-1">
+              로그
             </TabsTrigger>
           </TabsList>
           {activeTab === 'logs' && (
@@ -369,10 +333,8 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
           )}
         </div>
 
-        {/* 탭 컨텐츠 */}
         <div className="flex-1 overflow-hidden">
-          {/* 기본 설정 탭 */}
-          <TabsContent value="basic" className="h-full overflow-y-auto px-4 pb-20 mt-4 space-y-4">
+          <TabsContent value="settings" className="h-full overflow-y-auto px-3 pb-3 mt-3 space-y-3">
             {/* 초기 입력 */}
             <div className="space-y-2">
               <label className="text-sm font-medium">초기 입력</label>
@@ -474,67 +436,9 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
               </div>
             </div>
 
-            {/* 사용 가이드 */}
-            <div className="space-y-3">
-              <div className="text-sm font-semibold border-b pb-2">사용 가이드</div>
-
-              <div className="text-xs text-muted-foreground space-y-2">
-                <div>
-                  <div className="font-medium text-emerald-700 mb-1">Input 노드란?</div>
-                  <div>워크플로우의 시작점입니다. 연결된 노드들에게 초기 입력을 전달합니다.</div>
-                </div>
-
-                <div>
-                  <div className="font-medium text-emerald-700 mb-1">실행 방법</div>
-                  <ul className="list-disc list-inside space-y-1 mt-1">
-                    <li>노드 내부의 "실행" 버튼 클릭</li>
-                    <li>연결된 노드가 있어야 실행 가능</li>
-                    <li>독립적으로 실행되며 다른 Input 노드에 영향 없음</li>
-                  </ul>
-                </div>
-
-                <div>
-                  <div className="font-medium text-emerald-700 mb-1">활용 팁</div>
-                  <ul className="list-disc list-inside space-y-1 mt-1">
-                    <li>여러 Input 노드를 만들어 다양한 시나리오 테스트</li>
-                    <li>각 Input 노드는 별도의 워크플로우로 실행됨</li>
-                    <li>Manager 노드에 연결하면 병렬 워커 실행 가능</li>
-                    <li>Worker 노드에 직접 연결하면 단일 작업 실행</li>
-                  </ul>
-                </div>
-
-                <div>
-                  <div className="font-medium text-emerald-700 mb-1">주의사항</div>
-                  <ul className="list-disc list-inside space-y-1 mt-1">
-                    <li>연결된 노드가 없으면 실행되지 않습니다</li>
-                    <li>입력이 비어있어도 실행 가능 (빈 문자열 전달)</li>
-                    <li>로그는 실행 완료 시까지 누적됩니다</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
           </TabsContent>
         </div>
       </Tabs>
-
-      {/* 저장/초기화 버튼 */}
-      <div className="border-t p-4 space-y-2">
-        {/* 저장 메시지 */}
-        {/* 변경사항은 자동으로 저장됩니다 (디바운스 300ms) */}
-        <div className="text-xs text-muted-foreground text-center py-2">
-          💡 변경사항은 자동으로 저장됩니다. 워크플로우 저장 버튼을 눌러 파일에 저장하세요.
-        </div>
-
-        <Button variant="outline" onClick={reset} className="w-full">
-          초기화
-        </Button>
-
-        {/* 키보드 단축키 안내 */}
-        <div className="text-xs text-muted-foreground text-center border-t pt-2">
-          <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">⌘S</kbd> 저장 ·{' '}
-          <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Esc</kbd> 초기화
-        </div>
-      </div>
 
       {/* 로그 상세 모달 */}
       <LogDetailModal
@@ -543,6 +447,6 @@ export const InputNodeConfig: React.FC<InputNodeConfigProps> = ({ node }) => {
         sections={logSections}
         title="워크플로우 실행 로그 상세"
       />
-    </Card>
+    </div>
   )
 }

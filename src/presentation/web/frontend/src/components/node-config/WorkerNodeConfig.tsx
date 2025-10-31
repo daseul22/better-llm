@@ -5,12 +5,15 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Badge } from '@/components/ui/badge'
 import { useWorkflowStore } from '@/stores/workflowStore'
-import { ListChecks, HelpCircle, CheckCircle2, Save, Search, Maximize2, Loader2, Trash2, AlertCircle, Info } from 'lucide-react'
+import { HelpCircle, Search, Maximize2, Loader2, AlertCircle, Info, ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { WorkflowNode, getAgents, Agent, getTools, Tool, sendUserInput } from '@/lib/api'
 import { useNodeConfig } from './hooks/useNodeConfig'
 import { useAutoSave } from './hooks/useAutoSave'
@@ -19,6 +22,7 @@ import { generateTemplatePreview } from '@/lib/templateRenderer'
 import { ParsedContent } from '@/components/ParsedContent'
 import { AutoScrollContainer } from '@/components/AutoScrollContainer'
 import { LogDetailModal } from '@/components/LogDetailModal'
+import { FieldHint } from '@/components/ui/field-hint'
 
 interface WorkerNodeConfigProps {
   node: WorkflowNode
@@ -37,8 +41,10 @@ interface WorkerNodeData {
 }
 
 export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
-  const [activeTab, setActiveTab] = useState('basic')
+  const [activeTab, setActiveTab] = useState('settings')
   const [isLogDetailOpen, setIsLogDetailOpen] = useState(false)
+  const [isToolsOpen, setIsToolsOpen] = useState(false)
+  const [isExamplesOpen, setIsExamplesOpen] = useState(false)
 
   // 대화 입력 상태 (Human-in-the-Loop)
   const [userInput, setUserInput] = useState('')
@@ -205,50 +211,15 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
   }
 
   return (
-    <Card className="h-full overflow-hidden flex flex-col border-0 shadow-none">
-      <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <ListChecks className="h-5 w-5 text-blue-600" />
-              Worker 노드 설정
-            </CardTitle>
-            <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
-              <span className="font-medium">{node.data.agent_name}</span>
-              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-                {currentAgent?.role || '워커'}
-              </span>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDelete}
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-            title="노드 삭제"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-
+    <div className="h-full overflow-hidden flex flex-col">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center gap-2 mx-4 mt-4">
+        <div className="flex items-center gap-2 px-3 pt-3">
           <TabsList className="flex w-auto gap-1 flex-1">
-            <TabsTrigger value="basic" className="text-xs flex-1 min-w-0">
-              기본
+            <TabsTrigger value="settings" className="text-sm flex-1">
+              설정
             </TabsTrigger>
-            <TabsTrigger value="tools" className="text-xs flex-1 min-w-0">
-              도구
-            </TabsTrigger>
-            <TabsTrigger value="advanced" className="text-xs flex-1 min-w-0">
-              고급
-            </TabsTrigger>
-            <TabsTrigger value="logs" className="text-xs flex-1 min-w-0">
+            <TabsTrigger value="logs" className="text-sm flex-1">
               로그
-            </TabsTrigger>
-            <TabsTrigger value="info" className="text-xs flex-1 min-w-0">
-              정보
             </TabsTrigger>
           </TabsList>
           {activeTab === 'logs' && (
@@ -263,118 +234,80 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
           )}
         </div>
 
-        {/* 기본 설정 탭 */}
-        <TabsContent value="basic" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
+        {/* 설정 탭 (기본 + 도구 + 고급 통합) */}
+        <TabsContent value="settings" className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 mt-3">
           {/* 작업 템플릿 */}
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">작업 템플릿</label>
-              <span title="템플릿 변수를 사용하여 이전 노드의 출력을 참조할 수 있습니다. {{parent}}: 직전 부모 노드 출력, {{input}}: 초기 입력값, {{node_<id>}}: 특정 노드 출력">
-                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
-            </div>
+            <label className="text-sm font-medium">작업 템플릿</label>
             <textarea
               className="w-full p-2 border rounded-md text-sm font-mono"
-              rows={5}
+              rows={4}
               value={data.task_template}
               onChange={(e) => setData({ ...data, task_template: e.target.value })}
               onKeyDown={handleInputKeyDown}
               placeholder="예: {{input}}을(를) 분석해주세요."
             />
+            <FieldHint
+              hint="변수: {{parent}} (부모 출력), {{input}} (초기 입력), {{node_<id>}} (특정 노드)"
+              tooltip="{{parent}}: 직전 부모 노드 출력 | {{input}}: Input 노드의 초기 입력값 | {{node_<id>}}: 특정 노드 출력 (예: {{node_merge-123}})"
+            />
 
-            {/* 실시간 미리보기 */}
+            {/* 실시간 미리보기 (간소화) */}
             {data.task_template.includes('{{') && (
-              <Alert variant="info">
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="text-xs font-medium mb-2">미리보기 (예시 입력 적용)</div>
-                  <div className="text-sm text-gray-700 font-mono bg-white p-2 rounded border">
-                    {generateTemplatePreview(data.task_template, nodes, node.id)}
-                  </div>
-                </AlertDescription>
-              </Alert>
+              <div className="text-xs bg-blue-50 border border-blue-200 rounded p-2">
+                <div className="font-medium text-blue-900 mb-1">미리보기</div>
+                <div className="text-blue-800 font-mono">
+                  {generateTemplatePreview(data.task_template, nodes, node.id)}
+                </div>
+              </div>
             )}
-
-            <div className="text-xs text-muted-foreground space-y-1">
-              <div>사용 가능한 변수:</div>
-              <div className="space-y-0.5 ml-2">
-                <div>
-                  • <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">{'{{parent}}'}</code>{' '}
-                  - 직전 부모 노드의 출력
-                </div>
-                <div>
-                  • <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">{'{{input}}'}</code>{' '}
-                  - Input 노드의 초기 입력값
-                </div>
-                <div>
-                  • <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">{'{{node_<id>}}'}</code>{' '}
-                  - 특정 노드의 출력 (예: {'{{node_merge-123}}'})
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Output 형식 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
+          {/* 출력 형식 + 병렬 실행 (2열 Grid) */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
               <label className="text-sm font-medium">출력 형식</label>
-              <span title="Worker Agent가 생성할 출력의 형식을 지정합니다">
-                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
+              <select
+                className="w-full p-2 border rounded-md text-sm"
+                value={data.config?.output_format || 'plain_text'}
+                onChange={(e) => setData({ ...data, config: { ...data.config, output_format: e.target.value } })}
+              >
+                <option value="plain_text">Plain Text</option>
+                <option value="markdown">Markdown</option>
+                <option value="json">JSON</option>
+                <option value="code">Code Block</option>
+              </select>
             </div>
-            <select
-              className="w-full p-2 border rounded-md text-sm"
-              value={data.config?.output_format || 'plain_text'}
-              onChange={(e) => setData({ ...data, config: { ...data.config, output_format: e.target.value } })}
-            >
-              <option value="plain_text">Plain Text (일반 텍스트)</option>
-              <option value="markdown">Markdown</option>
-              <option value="json">JSON</option>
-              <option value="code">Code Block</option>
-            </select>
-          </div>
 
-          {/* 병렬 실행 옵션 */}
-          <div className="space-y-2 border-t pt-4">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">병렬 실행</label>
-              <span title="이 노드에서 여러 자식 노드로 연결된 경우, 자식 노드들을 병렬로 실행할지 순차적으로 실행할지 선택합니다">
-                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={data.parallel_execution ?? false}
-                onChange={(e) => setData({ ...data, parallel_execution: e.target.checked })}
-                className="w-4 h-4"
+            <div className="space-y-2">
+              <label className="text-sm font-medium">실행 모드</label>
+              <label className="flex items-center gap-2 text-sm border rounded-md p-2 cursor-pointer hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={data.parallel_execution ?? false}
+                  onChange={(e) => setData({ ...data, parallel_execution: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span>병렬 실행</span>
+              </label>
+              <FieldHint
+                hint={data.parallel_execution ? "✅ 자식 노드 동시 실행" : "⚪ 자식 노드 순차 실행"}
               />
-              <span>자식 노드들을 병렬로 실행</span>
-            </label>
-            <p className="text-xs text-muted-foreground">
-              {data.parallel_execution
-                ? '✅ 이 노드의 자식 노드들이 동시에 실행되어 전체 실행 시간이 단축됩니다'
-                : '⚪ 자식 노드들이 순차적으로 실행됩니다'}
-            </p>
+            </div>
           </div>
-        </TabsContent>
 
-        {/* 도구 탭 */}
-        <TabsContent value="tools" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
+          {/* 도구 설정 (Collapsible) */}
+          <Collapsible open={isToolsOpen} onOpenChange={setIsToolsOpen}>
+            <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-gray-50 rounded-md border">
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">사용 가능한 도구</label>
-                <span
-                  title={
-                    canModifyTools
-                      ? 'Worker가 사용할 수 있는 도구를 선택하세요'
-                      : '이 워커는 기본 도구만 사용합니다'
-                  }
-                >
-                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                </span>
+                <span className="text-sm font-medium">🔧 도구 설정</span>
+                <Badge variant="outline" className="text-xs">
+                  {useDefaultTools ? '기본값' : `${(data.allowed_tools || []).length}개 선택`}
+                </Badge>
               </div>
+              <ChevronDown className={cn("h-4 w-4 transition-transform", isToolsOpen && "transform rotate-180")} />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-2 space-y-2">
               {canModifyTools && (
                 <label className="flex items-center gap-2 text-xs">
                   <input
@@ -391,258 +324,109 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
                   기본 설정 사용
                 </label>
               )}
-            </div>
 
-            {canModifyTools && !useDefaultTools ? (
-              <>
-                {/* 검색 바 */}
-                <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    placeholder="도구 검색... (이름 또는 설명)"
-                    className="w-full pl-8 p-2 border rounded-md text-sm"
-                    value={toolSearchQuery}
-                    onChange={(e) => setToolSearchQuery(e.target.value)}
-                    onKeyDown={handleInputKeyDown}
-                  />
-                </div>
+              {canModifyTools && !useDefaultTools ? (
+                <>
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder="도구 검색..."
+                      className="w-full pl-8 p-2 border rounded-md text-xs"
+                      value={toolSearchQuery}
+                      onChange={(e) => setToolSearchQuery(e.target.value)}
+                      onKeyDown={handleInputKeyDown}
+                    />
+                  </div>
 
-                {/* 도구 목록 */}
-                <div className="border rounded-md p-3 space-y-2 max-h-96 overflow-y-auto">
-                  {tools.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">도구 로딩 중...</div>
-                  ) : filteredTools.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">검색 결과가 없습니다</div>
-                  ) : (
-                    filteredTools.map((tool) => (
-                      <label
+                  <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-2 border rounded-md">
+                    {filteredTools.map((tool) => (
+                      <Badge
                         key={tool.name}
-                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={(data.allowed_tools || []).includes(tool.name)}
-                          onChange={() => handleToggleTool(tool.name)}
-                          className="w-4 h-4"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{tool.name}</span>
-                            {tool.readonly && (
-                              <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
-                                읽기 전용
-                              </span>
-                            )}
-                            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">
-                              {tool.category}
-                            </span>
-                          </div>
-                          <div className="text-xs text-muted-foreground">{tool.description}</div>
-                        </div>
-                      </label>
-                    ))
-                  )}
-                </div>
-
-                <p className="text-xs text-muted-foreground">선택된 도구: {(data.allowed_tools || []).length}개</p>
-              </>
-            ) : (
-              <div className="border rounded-md p-3 bg-gray-50">
-                <p className="text-sm text-muted-foreground mb-3">
-                  {canModifyTools
-                    ? 'agent_config.json의 기본 도구 설정을 사용합니다.'
-                    : '이 워커는 agent_config.json에 정의된 기본 도구만 사용합니다. (변경 불가)'}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {currentAgent?.allowed_tools.map((toolName) => {
-                    const tool = tools.find((t) => t.name === toolName)
-                    return (
-                      <div
-                        key={toolName}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border rounded-md text-sm"
-                      >
-                        <span className="font-medium">{toolName}</span>
-                        {tool?.readonly && (
-                          <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">읽기 전용</span>
+                        onClick={() => handleToggleTool(tool.name)}
+                        className={cn(
+                          "cursor-pointer text-xs",
+                          (data.allowed_tools || []).includes(tool.name)
+                            ? "bg-blue-600 text-white hover:bg-blue-700"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         )}
-                      </div>
-                    )
-                  }) || <span className="text-xs text-muted-foreground">도구 없음</span>}
+                        title={tool.description}
+                      >
+                        {tool.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 p-2 bg-gray-50 border rounded-md">
+                  {currentAgent?.allowed_tools.map((toolName) => (
+                    <Badge key={toolName} variant="outline" className="text-xs">
+                      {toolName}
+                    </Badge>
+                  )) || <span className="text-xs text-muted-foreground">도구 없음</span>}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Thinking 모드 */}
-            <div className="space-y-2 border-t pt-4 mt-4">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Thinking 모드</label>
-                <span title="Thinking 모드를 활성화하면 Worker의 시스템 프롬프트에 ultrathink가 추가되어 복잡한 작업 시 사고 과정을 더 상세히 출력합니다. 토큰 사용량이 증가할 수 있습니다.">
-                  <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                </span>
-              </div>
-
-              <label className="flex items-center gap-2 text-xs">
+              {/* Thinking 모드 */}
+              <div className="flex items-center gap-2 pt-2 border-t">
                 <input
                   type="checkbox"
+                  id="thinking-mode"
                   checked={data.thinking ?? currentAgent?.thinking ?? false}
-                  onChange={(e) => {
-                    setData({ ...data, thinking: e.target.checked })
-                  }}
+                  onChange={(e) => setData({ ...data, thinking: e.target.checked })}
                   className="w-4 h-4"
                 />
-                <span>
-                  Thinking 모드 활성화
-                  {data.thinking === undefined && (
-                    <span className="ml-2 text-muted-foreground">
-                      (기본값: {currentAgent?.thinking ? 'ON' : 'OFF'})
-                    </span>
-                  )}
-                </span>
-              </label>
-
-              <p className="text-xs text-muted-foreground">
-                {data.thinking
-                  ? '✅ Worker의 시스템 프롬프트에 ultrathink가 추가되어 사고 과정을 상세히 출력합니다'
-                  : '⚪ 기본 시스템 프롬프트만 사용합니다'}
-              </p>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* 고급 탭 */}
-        <TabsContent value="advanced" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
-          {/* 커스텀 프롬프트 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">추가 지시사항 (선택)</label>
-              <span title="이 지시사항은 Worker의 시스템 프롬프트에 추가됩니다">
-                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
-            </div>
-            <textarea
-              className="w-full p-2 border rounded-md text-sm"
-              rows={6}
-              value={data.config?.custom_prompt || ''}
-              onChange={(e) => setData({ ...data, config: { ...data.config, custom_prompt: e.target.value } })}
-              onKeyDown={handleInputKeyDown}
-              placeholder="예: 코드 작성 시 주석을 포함해주세요."
-            />
-            <p className="text-xs text-muted-foreground">
-              워커의 기본 시스템 프롬프트에 이 지시사항이 추가됩니다.
-            </p>
-          </div>
-
-          {/* 시스템 프롬프트 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">
-                시스템 프롬프트 {currentAgent?.is_custom ? '' : '(읽기 전용)'}
-              </label>
-              <span title={currentAgent?.is_custom
-                ? "커스텀 워커의 시스템 프롬프트를 수정할 수 있습니다"
-                : "기본 워커의 시스템 프롬프트는 수정할 수 없습니다"
-              }>
-                <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
-            </div>
-            <textarea
-              className={`w-full p-2 border rounded-md text-sm font-mono ${
-                currentAgent?.is_custom ? 'bg-white' : 'bg-gray-50'
-              }`}
-              rows={15}
-              value={currentAgent?.is_custom ? (data.system_prompt || systemPrompt) : systemPrompt}
-              onChange={currentAgent?.is_custom ? (e) => setData({ ...data, system_prompt: e.target.value }) : undefined}
-              onKeyDown={handleInputKeyDown}
-              readOnly={!currentAgent?.is_custom}
-            />
-            <p className="text-xs text-muted-foreground">
-              {currentAgent?.is_custom
-                ? '커스텀 워커의 시스템 프롬프트를 자유롭게 수정할 수 있습니다.'
-                : '기본 워커의 시스템 프롬프트는 수정할 수 없습니다.'}
-            </p>
-          </div>
-        </TabsContent>
-
-        {/* 정보 탭 */}
-        <TabsContent value="info" className="flex-1 overflow-y-auto px-4 pb-20 space-y-4 mt-4">
-          <div className="space-y-4">
-            {/* 노드 정보 */}
-            <div className="border rounded-md p-3 bg-gray-50">
-              <div className="text-sm font-medium mb-2">노드 정보</div>
-              <div className="space-y-2 text-xs text-muted-foreground">
-                <div>
-                  <span className="font-medium">ID:</span>
-                  <div className="font-mono text-gray-600 mt-0.5 break-all">{node.id}</div>
-                </div>
-                <div>
-                  <span className="font-medium">타입:</span>
-                  <div className="text-gray-600 mt-0.5">Worker</div>
-                </div>
-                <div>
-                  <span className="font-medium">Agent:</span>
-                  <div className="text-gray-600 mt-0.5">{node.data.agent_name}</div>
-                </div>
-                <div>
-                  <span className="font-medium">위치:</span>
-                  <div className="font-mono text-gray-600 mt-0.5">
-                    ({Math.round(node.position.x)}, {Math.round(node.position.y)})
-                  </div>
-                </div>
+                <label htmlFor="thinking-mode" className="text-xs cursor-pointer">
+                  Thinking 모드 {data.thinking ? '✅' : '⚪'}
+                </label>
               </div>
-            </div>
+            </CollapsibleContent>
+          </Collapsible>
 
-            {/* Agent 정보 */}
-            {currentAgent && (
-              <Alert variant="info">
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="text-sm font-medium mb-2">Agent 정보</div>
-                  <div className="space-y-2 text-xs">
-                    <div>
-                      <span className="font-medium">역할:</span>
-                      <div className="mt-0.5">{currentAgent.role}</div>
-                    </div>
-                    <div>
-                      <span className="font-medium">모델:</span>
-                      <div className="mt-0.5 break-all">{currentAgent.model || 'claude-sonnet-4-5-20250929'}</div>
-                    </div>
-                    <div>
-                      <span className="font-medium">기본 도구:</span>
-                      <div className="mt-0.5 break-words">
-                        {currentAgent.allowed_tools?.length > 0 ? currentAgent.allowed_tools.join(', ') : '없음'}
-                      </div>
-                    </div>
+          {/* 고급 설정 (Accordion) */}
+          <Accordion type="single" collapsible className="border rounded-md">
+            <AccordionItem value="advanced" className="border-0">
+              <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-gray-50">
+                <span className="text-sm font-medium">⚙️ 고급 설정</span>
+              </AccordionTrigger>
+              <AccordionContent className="px-3 pb-3 space-y-3">
+                {/* 추가 지시사항 */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">추가 지시사항</label>
+                  <textarea
+                    className="w-full p-2 border rounded-md text-xs"
+                    rows={4}
+                    value={data.config?.custom_prompt || ''}
+                    onChange={(e) => setData({ ...data, config: { ...data.config, custom_prompt: e.target.value } })}
+                    onKeyDown={handleInputKeyDown}
+                    placeholder="예: 코드 작성 시 주석을 포함해주세요."
+                  />
+                  <FieldHint hint="워커의 기본 시스템 프롬프트에 추가됩니다" />
+                </div>
+
+                {/* 시스템 프롬프트 (커스텀 워커만) */}
+                {currentAgent?.is_custom && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">시스템 프롬프트</label>
+                    <textarea
+                      className="w-full p-2 border rounded-md text-xs font-mono"
+                      rows={10}
+                      value={data.system_prompt || systemPrompt}
+                      onChange={(e) => setData({ ...data, system_prompt: e.target.value })}
+                      onKeyDown={handleInputKeyDown}
+                    />
+                    <FieldHint hint="커스텀 워커의 시스템 프롬프트 (수정 가능)" />
                   </div>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {/* 사용법 안내 */}
-            <Alert variant="success">
-              <CheckCircle2 className="h-4 w-4" />
-              <AlertDescription>
-                <div className="text-sm font-medium mb-2">사용법</div>
-                <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li>작업 템플릿에서 {'{{parent}}'} 변수로 부모 노드 출력 참조</li>
-                  <li>{'{{input}}'} 변수는 Input 노드의 초기 입력값을 참조</li>
-                  <li>{'{{node_<id>}}'} 변수로 특정 노드의 출력 참조</li>
-                  <li>도구 탭에서 커스텀 도구 선택 가능 (일부 워커만)</li>
-                  <li>고급 탭에서 추가 지시사항 작성 가능</li>
-                  <li>변경사항은 3초 후 자동 저장됩니다</li>
-                </ul>
-              </AlertDescription>
-            </Alert>
-          </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </TabsContent>
 
         {/* 로그 탭 */}
-        <TabsContent value="logs" className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4">
-          <div className="space-y-4">
-            <div className="text-sm text-muted-foreground">
-              이 노드의 입력, 실행 과정, 출력을 확인할 수 있습니다
-            </div>
+        <TabsContent value="logs" className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 mt-3">
+          <div className="space-y-3">
 
             {/* 입력 섹션 */}
             <div className="border rounded-md overflow-hidden">
@@ -797,24 +581,6 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
         </TabsContent>
       </Tabs>
 
-      {/* 저장/초기화 버튼 */}
-      <div className="border-t p-4 space-y-2">
-        {/* 변경사항은 자동으로 저장됩니다 (디바운스 300ms) */}
-        <div className="text-xs text-muted-foreground text-center py-2">
-          💡 변경사항은 자동으로 저장됩니다. 워크플로우 저장 버튼을 눌러 파일에 저장하세요.
-        </div>
-
-        <Button variant="outline" onClick={reset} className="w-full">
-          초기화
-        </Button>
-
-        <div className="text-xs text-muted-foreground text-center border-t pt-2">
-          <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Cmd+S</kbd> 저장 ·{' '}
-          <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Cmd+K</kbd> 검색 ·{' '}
-          <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-xs">Esc</kbd> 초기화
-        </div>
-      </div>
-
       {/* 로그 상세 모달 */}
       <LogDetailModal
         isOpen={isLogDetailOpen}
@@ -822,6 +588,6 @@ export const WorkerNodeConfig: React.FC<WorkerNodeConfigProps> = ({ node }) => {
         sections={logSections}
         title={`${node.data.agent_name || 'Worker'} 실행 로그 상세`}
       />
-    </Card>
+    </div>
   )
 }
