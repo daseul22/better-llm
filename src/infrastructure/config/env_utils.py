@@ -4,7 +4,6 @@
 """
 
 import os
-from typing import Optional
 
 
 def parse_bool_env(var_name: str, default: bool = False) -> bool:

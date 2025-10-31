@@ -7,13 +7,13 @@
 import asyncio
 import time
 from datetime import datetime
-from typing import Dict, Any, AsyncIterator, Set, List, Optional, Tuple
+from typing import Dict, Any, AsyncIterator, List, Optional, Tuple
 from collections import deque
 from dataclasses import replace
 from pathlib import Path
 
-from src.domain.models import AgentConfig, Message
-from src.infrastructure.config import JsonConfigLoader, get_project_root
+from src.domain.models import AgentConfig
+from src.infrastructure.config import JsonConfigLoader
 from src.infrastructure.claude.worker_client import WorkerAgent
 from src.infrastructure.storage.custom_worker_repository import CustomWorkerRepository
 from src.infrastructure.logging import get_logger, add_session_file_handlers, remove_session_file_handlers

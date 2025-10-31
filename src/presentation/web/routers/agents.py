@@ -4,7 +4,6 @@ Agent API 라우터
 Worker Agent 목록 조회 및 실행을 위한 엔드포인트를 제공합니다.
 """
 
-import asyncio
 import uuid
 from functools import lru_cache
 from typing import AsyncIterator
@@ -20,7 +19,6 @@ from src.presentation.web.schemas.request import (
     AgentExecuteRequest,
     AgentInfo,
     AgentListResponse,
-    ErrorResponse,
 )
 
 logger = get_logger(__name__)

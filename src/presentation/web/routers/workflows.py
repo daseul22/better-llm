@@ -20,7 +20,6 @@ from src.infrastructure.logging import get_logger
 from src.presentation.web.schemas.workflow import (
     Workflow,
     WorkflowExecuteRequest,
-    WorkflowExecuteResponse,
     WorkflowSaveRequest,
     WorkflowSaveResponse,
     WorkflowListResponse,
@@ -33,10 +32,7 @@ from src.domain.models import AgentConfig
 from typing import AsyncIterator
 from src.presentation.web.services.workflow_executor import WorkflowExecutor
 from src.presentation.web.services.workflow_validator import WorkflowValidator
-from src.presentation.web.services.workflow_session_store import (
-    get_session_store,
-    WorkflowSessionStore,
-)
+from src.presentation.web.services.workflow_session_store import get_session_store
 from src.presentation.web.services.background_workflow_manager import (
     get_background_workflow_manager,
     BackgroundWorkflowManager,
@@ -1186,9 +1182,6 @@ async def clear_node_sessions() -> Dict[str, Any]:
             "deleted_sessions": 824
         }
     """
-    import os
-    import glob
-
     try:
         # 현재 프로젝트 경로 가져오기
         from src.presentation.web.routers.projects import _current_project_path

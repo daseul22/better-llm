@@ -13,7 +13,7 @@ import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Literal
 from datetime import datetime
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, field
 
 from src.infrastructure.logging import get_logger
 from src.presentation.web.schemas.workflow import Workflow, WorkflowNodeExecutionEvent
